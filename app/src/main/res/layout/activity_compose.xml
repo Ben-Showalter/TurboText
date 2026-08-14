@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@android:color/black"
+    android:padding="8dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="New Message"
+        android:textColor="@android:color/white"
+        android:textStyle="bold"
+        android:textSize="18sp"
+        android:paddingBottom="8dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="To:"
+        android:textColor="#AAAAAA" />
+
+    <com.turbotext.app.NoImeEditText
+        android:id="@+id/toText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="40dp"
+        android:textColor="@android:color/white"
+        android:textColorHint="#888888"
+        android:textSize="18sp"
+        android:background="#1a1a1a"
+        android:padding="6dp"
+        android:inputType="none"
+        android:cursorVisible="false"
+        android:hint="Enter number, press * for letters" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Message:"
+        android:textColor="#AAAAAA"
+        android:layout_marginTop="12dp" />
+
+    <TextView
+        android:id="@+id/modeIndicator"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="T9Word"
+        android:textColor="#66CCFF"
+        android:textSize="14sp" />
+
+    <TextView
+        android:id="@+id/attachmentIndicator"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="📷 Photo attached"
+        android:textColor="#7CFC00"
+        android:textSize="13sp"
+        android:visibility="gone" />
+
+    <com.turbotext.app.NoImeEditText
+        android:id="@+id/composeText"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:scrollbars="vertical"
+        android:padding="6dp"
+        android:textColor="@android:color/white"
+        android:cursorVisible="false"
+        android:textSize="20sp"
+        android:background="#1a1a1a"
+        android:textColorHint="#555555"
+        android:inputType="textMultiLine|textNoSuggestions"
+        android:imeOptions="flagNoExtractUi"
+        android:focusable="true"
+        android:focusableInTouchMode="true" />
+
+    <TextView
+        android:id="@+id/suggestionsBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textColor="#80D8FF"
+        android:textSize="18sp"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/listeningIndicator"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/listening"
+        android:textColor="#80D8FF"
+        android:gravity="center"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:background="#222222"
+        android:padding="8dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textColor="#66CCFF" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="end"
+            android:text="@string/softkey_options"
+            android:textColor="#66CCFF" />
+    </LinearLayout>
+</LinearLayout>

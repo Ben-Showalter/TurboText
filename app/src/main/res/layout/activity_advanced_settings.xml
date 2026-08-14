@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@android:color/black">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Advanced"
+        android:textColor="@android:color/white"
+        android:textStyle="bold"
+        android:textSize="20sp"
+        android:padding="8dp"
+        android:background="#222222" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+    <TextView
+        android:id="@+id/defaultAppRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Set Default Texting App"
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
+        android:padding="14dp"
+        android:focusable="true"
+        android:focusableInTouchMode="true"
+        android:background="?android:attr/selectableItemBackground" />
+
+    <TextView
+        android:id="@+id/appShortcutRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="App Shortcut"
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
+        android:padding="14dp"
+        android:focusable="true"
+        android:focusableInTouchMode="true"
+        android:background="?android:attr/selectableItemBackground" />
+
+    <TextView
+        android:id="@+id/accessibilityRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Enable Accessibility Service"
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
+        android:padding="14dp"
+        android:focusable="true"
+        android:focusableInTouchMode="true"
+        android:background="?android:attr/selectableItemBackground" />
+
+    <TextView
+        android:id="@+id/usageAccessRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Enable Usage Access"
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
+        android:padding="14dp"
+        android:focusable="true"
+        android:focusableInTouchMode="true"
+        android:background="?android:attr/selectableItemBackground" />
+
+    <TextView
+        android:id="@+id/trustedNumberRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Trusted Provisioning Number: Not Set"
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
+        android:padding="14dp"
+        android:focusable="true"
+        android:focusableInTouchMode="true"
+        android:background="?android:attr/selectableItemBackground" />
+
+    </LinearLayout>
+    </ScrollView>
+
+</LinearLayout>

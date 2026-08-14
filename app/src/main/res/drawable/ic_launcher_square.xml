@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Solid square background, sharp corners -->
+    <path
+        android:fillColor="#1a1a1a"
+        android:pathData="M0,0 L108,0 L108,108 L0,108 Z" />
+    <!-- Simple message-bubble-style rectangle, still square-cornered -->
+    <path
+        android:fillColor="#244A6D"
+        android:pathData="M20,30 L88,30 L88,70 L50,70 L36,84 L36,70 L20,70 Z" />
+    <!-- Three dots suggesting "text" -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M32,46 L40,46 L40,54 L32,54 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M50,46 L58,46 L58,54 L50,54 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M68,46 L76,46 L76,54 L68,54 Z" />
+</vector>
