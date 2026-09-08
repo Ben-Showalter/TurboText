@@ -82,9 +82,19 @@ import android.view.accessibility.AccessibilityEvent
  *     so that's what it fell back to instead of the real foreground app.
  *     Not a timing issue, so retrying or delaying doesn't help.
  *     UsageStatsManager doesn't have that restriction (it got this one
- *     right), so it's now used as a veto: if it caught a different app
- *     going foreground within the last few seconds, a Home report from
- *     getRunningTasks() is treated as untrustworthy rather than acted on. */
+ *     right), so it's now used as a veto: if its most recent recorded
+ *     transition was to a different app, a Home report from
+ *     getRunningTasks() is treated as untrustworthy rather than acted on,
+ *     no matter how long ago that transition was. An earlier version
+ *     capped how long the veto held (a few seconds), which sounded safe
+ *     but actually meant any soft-right press more than that long after
+ *     switching apps fell through to getRunningTasks' bogus Home report
+ *     and hijacked the key mid-use of another app — confirmed in a real
+ *     captured log: repeated presses inside com.flipweather.app, each
+ *     correctly vetoed while under the old cap, started getting hijacked
+ *     the moment the recorded age crossed it, with nothing else about the
+ *     situation changed. Removed; see currentForeground() for the one
+ *     narrow case this trades away. */
 class KeyButtonAccessibilityService : AccessibilityService() {
 
     private var lastPulseAt = 0L
@@ -99,15 +109,6 @@ class KeyButtonAccessibilityService : AccessibilityService() {
     companion object {
         private const val HOME_SCREEN_CLASS = "jp.kyocera.kyocerahome.HomeScreenActivity"
         private const val HOME_SCREEN_PACKAGE = "jp.kyocera.kyocerahome"
-
-        // getRunningTasks() falls back to reporting Home whenever it can't see the
-        // real foreground app, indistinguishable from actually being on Home. This
-        // is how long a contradicting UsageStatsManager sighting of another app is
-        // trusted to override that Home report: long enough to clear the flush
-        // latency measured in earlier debugging (700ms-1.1s+), short enough not to
-        // block a deliberate soft-right press after the user has genuinely returned
-        // home.
-        private const val HOME_VETO_WINDOW_MS = 5000L
     }
 
     @Suppress("DEPRECATION")
@@ -126,10 +127,22 @@ class KeyButtonAccessibilityService : AccessibilityService() {
         // one report it's known to give even when it's wrong (see class doc).
         if (runningClass == HOME_SCREEN_CLASS) {
             val (recentPackage, recentAt) = lastForegroundFromUsageStats()
-            val age = System.currentTimeMillis() - recentAt
+            // No age cutoff here: a stale-looking timestamp just means the user has
+            // stayed on that app a while, which is the common case, not a reason to
+            // stop trusting it. This record only changes when a real transition
+            // happens, so it stays accurate however long the dwell time is. Capping
+            // it at a few seconds (an earlier version of this check did) meant any
+            // soft-right press more than that long after switching apps fell back to
+            // getRunningTasks' unreliable Home report and hijacked the key. The one
+            // corner this leaves uncovered: pressing soft-right within ~1.1s of a
+            // *genuine* return to Home, before UsageStatsManager has flushed that
+            // transition — the veto still applies from the stale prior-app record, so
+            // TurboText doesn't launch that one press. Harmless (event just passes
+            // through) versus the previous failure mode of stealing the key elsewhere.
             if (recentPackage != null && recentPackage != HOME_SCREEN_PACKAGE &&
-                recentPackage != packageName && age in 0 until HOME_VETO_WINDOW_MS
+                recentPackage != packageName && recentAt >= 0
             ) {
+                val age = System.currentTimeMillis() - recentAt
                 Log.i(
                     "TurboTextKeyService",
                     "vetoing getRunningTasks' Home report: UsageStatsManager saw $recentPackage foreground ${age}ms ago"

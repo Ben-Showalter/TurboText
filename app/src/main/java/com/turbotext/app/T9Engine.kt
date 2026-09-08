@@ -255,10 +255,14 @@ class T9Engine(private val context: Context) {
         val withLearning = if (exact.isNotEmpty()) applyLearnedOrder(exact, typedDigits) else exact
         val words = withLearning.ifEmpty { fuzzyCandidatesFor(typedDigits) }
         // The raw digit sequence itself is always available as a
-        // fallback option — reached by pressing Left from the top word
-        // match — matching how the stock T9 input handles this (e.g.
+        // fallback option, listed first so it reads left-to-right as
+        // "the numbers, then the best word guess" — but it's a fallback,
+        // not the default: T9InputController's own selection logic skips
+        // past it to focus the top word match instead (see
+        // defaultCandidateIndex there), reached by pressing Left from
+        // that word — matching how the stock T9 input handles this (e.g.
         // "43556" alongside "hello").
-        return if (words.contains(typedDigits)) words else words + typedDigits
+        return if (words.contains(typedDigits)) words else listOf(typedDigits) + words
     }
 
     /** Single-edit-distance fallback: substitution (wrong digit),

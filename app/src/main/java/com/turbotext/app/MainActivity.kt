@@ -59,6 +59,16 @@ class MainActivity : AppCompatActivity() {
         list = findViewById(R.id.conversationList)
         list.layoutManager = LinearLayoutManager(this)
         list.snapTopRowOnIdle()
+        // Without this, the RecyclerView container itself is a valid focus
+        // target — descendantFocusability="afterDescendants" only affects
+        // search order *within* it. Returning from a thread (window focus
+        // restored before row 0 is bound) could land default focus on the
+        // list container itself, which ConversationAdapter's `findFocus()
+        // == null` check then reads as "something's already focused" and
+        // skips handing focus to row 0 — visually the whole list gets the
+        // default highlight instead of just the top conversation.
+        list.isFocusable = false
+        list.isFocusableInTouchMode = false
         adapter = ConversationAdapter(
             emptyList(),
             onSelected = { convo -> openThread(convo) },
@@ -80,7 +90,48 @@ class MainActivity : AppCompatActivity() {
         GroqConfig.ensureKeyFileExists()
         if (hasAllPermissions()) {
             refreshConversations()
+            updateGroupsLabel()
         }
+    }
+
+    /** Highlights the "◀ Groups" header entry when a group thread has an
+     *  unread message, so a new one landing on that separate screen is
+     *  visible from the main list. Runs off the main thread — it's a
+     *  couple of provider queries. */
+    private fun updateGroupsLabel() {
+        Thread {
+            val unread = try {
+                repo.hasUnreadGroupMessage()
+            } catch (e: Exception) {
+                android.util.Log.w("TurboTextGroup", "updateGroupsLabel: check failed", e)
+                false
+            }
+            android.util.Log.i("TurboTextGroup", "updateGroupsLabel: unreadGroup=$unread")
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                val label = findViewById<android.widget.TextView>(R.id.groupsLabel)
+                val theme = ThemeHelper.getCurrentTheme(this)
+                // Stays the accent colour in both states — only the size,
+                // weight and a trailing dot change. This device's system
+                // font has no real bold face and Typeface.defaultFromStyle(
+                // BOLD) returns one that merely *claims* bold, so
+                // setTypeface alone is invisible — force the synthetic-bold
+                // stroke directly.
+                label.setTextColor(theme.accent)
+                if (unread) {
+                    label.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 17f)
+                    label.setTypeface(null, android.graphics.Typeface.BOLD)
+                    label.paint.isFakeBoldText = true
+                    label.text = "◀ GROUPS ●"
+                } else {
+                    label.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 12f)
+                    label.setTypeface(null, android.graphics.Typeface.NORMAL)
+                    label.paint.isFakeBoldText = false
+                    label.text = "◀ Groups"
+                }
+                label.invalidate()
+            }
+        }.start()
     }
 
     private fun hasAllPermissions() = requiredPermissions.all {

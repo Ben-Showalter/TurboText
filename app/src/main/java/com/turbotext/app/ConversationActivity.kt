@@ -29,7 +29,7 @@ class ConversationActivity : AppCompatActivity() {
     private lateinit var messageAdapter: MessageAdapter
     private lateinit var messageList: RecyclerView
     private lateinit var composeText: EditText
-    private lateinit var modeIndicator: TextView
+    private lateinit var softLeftLabel: TextView
     private lateinit var suggestionsBar: TextView
     private lateinit var attachmentIndicator: TextView
     private lateinit var listeningIndicator: TextView
@@ -82,7 +82,7 @@ class ConversationActivity : AppCompatActivity() {
         composeText.setShowSoftInputOnFocus(false)
         composeText.hint = HintHelper.dictateHint(composeText)
         composeText.post { composeText.requestFocus() }
-        modeIndicator = findViewById(R.id.modeIndicator)
+        softLeftLabel = findViewById(R.id.softLeftLabel)
         suggestionsBar = findViewById(R.id.suggestionsBar)
         attachmentIndicator = findViewById(R.id.attachmentIndicator)
         listeningIndicator = findViewById(R.id.listeningIndicator)
@@ -90,10 +90,17 @@ class ConversationActivity : AppCompatActivity() {
         inputController = T9InputController(
             engine = engine,
             outputView = composeText,
-            onModeChanged = { mode -> modeIndicator.text = mode.label },
-            onSuggestionsChanged = { candidates, selected, windowSize -> renderSuggestions(candidates, selected, windowSize) }
+            onModeChanged = { label -> softLeftLabel.text = label },
+            onSuggestionsChanged = { candidates, selected, windowSize -> renderSuggestions(candidates, selected, windowSize) },
+            suggestionsBarView = suggestionsBar
         )
         inputController.startCursorBlink()
+        // onModeChanged only fires on a change — without this the XML
+        // layout's static placeholder text would show until the first
+        // keypress, which no longer matches the real initial label now
+        // that it's lowercase ("t9word") rather than the old fixed
+        // "T9Word" the layout happened to hardcode.
+        softLeftLabel.text = inputController.currentLabel()
         val draft = DraftHelper.getDraft(this, address)
         android.util.Log.i("TurboTextDraft", "onCreate restore: address=\"$address\" draft=${if (draft != null) "\"$draft\"" else "null"}")
         draft?.let { inputController.setText(it) }
@@ -135,7 +142,7 @@ class ConversationActivity : AppCompatActivity() {
         // query at all, just what's already in memory.
         MessageCache.get(threadId)?.let { cached ->
             messageAdapter.update(cached)
-            messageList.scrollToPosition((cached.size - 1).coerceAtLeast(0))
+            scrollToBottom()
             val newest = cached.maxByOrNull { it.date }
             android.util.Log.i("TurboTextPerf", "shown from cache instantly: ${System.currentTimeMillis() - openedAt}ms, ${cached.size} messages, newest hasImage=${newest?.imageUri != null}")
         }
@@ -147,7 +154,7 @@ class ConversationActivity : AppCompatActivity() {
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 messageAdapter.update(recent)
-                messageList.scrollToPosition((recent.size - 1).coerceAtLeast(0))
+                scrollToBottom()
             }
 
             // ...then quietly fill in the rest of the history behind it.
@@ -161,12 +168,44 @@ class ConversationActivity : AppCompatActivity() {
             MessageCache.put(threadId, full)
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
-                val wasAtBottom = !messageList.canScrollVertically(1)
+                // Not browsing messages → this is a fresh open or a new
+                // incoming message, so the newest message should be what's
+                // on screen. Only when the user is stepping through history
+                // (selection mode) do we respect their scroll position and
+                // leave them where they are unless they were already at the
+                // bottom.
+                val keepAtBottom = selectedMessageIndex == null || !messageList.canScrollVertically(1)
                 messageAdapter.update(full)
-                if (wasAtBottom) messageList.scrollToPosition((full.size - 1).coerceAtLeast(0))
+                if (keepAtBottom) scrollToBottom()
                 android.util.Log.i("TurboTextPerf", "rendered: ${System.currentTimeMillis() - openedAt}ms")
             }
         }.start()
+    }
+
+    /** Pins the *bottom* of the newest message to the bottom of the list.
+     *  scrollToPosition(last) alone doesn't do this when that message is
+     *  taller than the screen — RecyclerView settles for bringing its top
+     *  into view, which leaves the thread parked in the middle of a long
+     *  final message with older messages showing above it. Re-running the
+     *  scroll after layout, using the row's real measured height, lands its
+     *  actual end at the bottom of the screen. */
+    private fun scrollToBottom() {
+        val lastIndex = messageAdapter.itemCount - 1
+        if (lastIndex < 0) return
+        messageList.scrollToPosition(lastIndex)
+        messageList.post {
+            if (isFinishing || isDestroyed) return@post
+            val lm = messageList.layoutManager as? LinearLayoutManager ?: return@post
+            val last = messageAdapter.itemCount - 1
+            if (last < 0) return@post
+            val child = lm.findViewByPosition(last)
+            if (child == null) {
+                lm.scrollToPositionWithOffset(last, 0)
+            } else {
+                val overhang = child.bottom - (messageList.height - messageList.paddingBottom)
+                if (overhang > 0) messageList.scrollBy(0, overhang)
+            }
+        }
     }
 
     private fun startVoiceRecording() {
@@ -194,6 +233,24 @@ class ConversationActivity : AppCompatActivity() {
                 Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
             }
         )
+    }
+
+    /** Left softkey — jumps straight to a top-level typing mode instead of
+     *  cycling '*' through it. Only wired up while actually composing (not
+     *  in message-selection mode — see handleSelectionModeKey). */
+    private fun showModeMenu() {
+        val options = arrayOf("T9 Word", "ABC", "123")
+        AlertDialog.Builder(this)
+            .setTitle("Typing Mode")
+            .setItems(options) { _, which ->
+                val newMode = when (which) {
+                    0 -> InputMode.WORD
+                    1 -> InputMode.MULTITAP
+                    else -> InputMode.NUMBER
+                }
+                inputController.selectMode(newMode)
+            }
+            .show()
     }
 
     /** Right softkey opens this instead of sending directly — Send now lives
@@ -323,6 +380,7 @@ class ConversationActivity : AppCompatActivity() {
         val options = mutableListOf("Copy Text to Clipboard", "Forward Message", "Translate to English")
         if (message.imageUri != null) options.add("Save to Gallery")
         if (message.vcardUri != null) options.add("Import Contact")
+        if (message.audioUri != null) options.add("Play Audio")
         options.add("View Details")
         options.add("Move to Trash")
 
@@ -335,6 +393,7 @@ class ConversationActivity : AppCompatActivity() {
                     "Translate to English" -> translateMessage(message)
                     "Save to Gallery" -> saveImageToGallery(message)
                     "Import Contact" -> importVcard(message)
+                    "Play Audio" -> playVoiceMessage(message)
                     "View Details" -> showMessageDetails(message)
                     "Move to Trash" -> moveMessageToTrash(message)
                 }
@@ -547,9 +606,27 @@ class ConversationActivity : AppCompatActivity() {
         val current = selectedMessageIndex ?: return false
         val maxIndex = messageAdapter.itemCount - 1
         val targetIndex = current + direction
-        if (targetIndex < 0 || targetIndex > maxIndex) return false
 
         val lm = messageList.layoutManager as LinearLayoutManager
+
+        if (targetIndex < 0 || targetIndex > maxIndex) {
+            // No further message in this direction — but if the edge-most
+            // message is taller than the screen and still clipped the way
+            // we're trying to move, keep scrolling *within* it so its very
+            // top (or bottom) can still be reached. This is what lets the
+            // first line of a long opening message scroll fully into view.
+            val view = lm.findViewByPosition(current) ?: return false
+            if (direction < 0 && view.top < 0) {
+                messageList.scrollBy(0, maxOf(direction * scrollStepPx(), view.top))
+                return true
+            }
+            if (direction > 0 && view.bottom > messageList.height) {
+                messageList.scrollBy(0, minOf(direction * scrollStepPx(), view.bottom - messageList.height))
+                return true
+            }
+            return false
+        }
+
         val targetView = lm.findViewByPosition(targetIndex)
 
         if (targetView != null && targetView.height <= oneInchPx()) {
@@ -583,7 +660,7 @@ class ConversationActivity : AppCompatActivity() {
     private fun setComposeAreaVisible(visible: Boolean) {
         val vis = if (visible) View.VISIBLE else View.GONE
         composeText.visibility = vis
-        modeIndicator.visibility = vis
+        softLeftLabel.visibility = vis
     }
 
     /** While a message (or the Load More row) is selected, only these
@@ -601,6 +678,10 @@ class ConversationActivity : AppCompatActivity() {
                 if (!stepSelection(1)) exitSelectionMode()
                 return true
             }
+            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
+                activateSelectedMessage(index)
+                return true
+            }
             KeyEvent.KEYCODE_SOFT_RIGHT -> {
                 showOptions()
                 return true
@@ -610,6 +691,21 @@ class ConversationActivity : AppCompatActivity() {
                 return true
             }
             else -> return true
+        }
+    }
+
+    /** Center-key ("OK") on a focused message: do the obvious thing for
+     *  its type rather than making the user open the Options menu —
+     *  play/stop a voice message, open a picture full screen, import a
+     *  contact card. A plain text message falls back to the Options menu. */
+    private fun activateSelectedMessage(adapterIndex: Int) {
+        val realIndex = if (messageAdapter.hasLoadMoreRow()) adapterIndex - 1 else adapterIndex
+        val message = messageAdapter.currentItems().getOrNull(realIndex) ?: return
+        when {
+            message.audioUri != null -> toggleVoiceMessage(message)
+            message.imageUri != null -> openImageViewer(message)
+            message.vcardUri != null -> importVcard(message)
+            else -> showMessageOptions(message)
         }
     }
 
@@ -768,6 +864,10 @@ class ConversationActivity : AppCompatActivity() {
                     showOptions()
                     return true
                 }
+                KeyEvent.KEYCODE_SOFT_LEFT -> {
+                    showModeMenu()
+                    return true
+                }
                 in MicButtonKeyCodes.CODES -> {
                     // Hold to record, release to send — key-repeat events
                     // (repeatCount > 0) fire while held, so only react to
@@ -897,6 +997,7 @@ class ConversationActivity : AppCompatActivity() {
         super.onPause()
         // No point keeping the headset in call-mode for a thread that's no
         // longer on screen.
+        stopVoiceMessagePlayback()
         btMicWarmup.coolDown()
         NotificationHelper.cancelForAddress(this, address)
         messageObserver?.let { contentResolver.unregisterContentObserver(it) }
@@ -908,8 +1009,74 @@ class ConversationActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        stopVoiceMessagePlayback()
         voiceHelper.cancelRecording()
         audioMemoRecorder.cancelRecording()
         inputController.stopCursorBlink()
+    }
+
+    /** Plays back a received (or sent) voice-message MMS part straight from
+     *  its content:// URI. Only one plays at a time; it's released on
+     *  completion and whenever the thread leaves the screen. */
+    private var voiceMessagePlayer: android.media.MediaPlayer? = null
+    private var voiceMessagePlayingId: Long? = null
+
+    /** Center-key action on a focused voice message: start it, or stop it
+     *  if it's the one already playing. */
+    private fun toggleVoiceMessage(message: Message) {
+        if (voiceMessagePlayingId == message.id) {
+            stopVoiceMessagePlayback()
+        } else {
+            playVoiceMessage(message)
+        }
+    }
+
+    private fun playVoiceMessage(message: Message) {
+        val uriString = message.audioUri ?: return
+        stopVoiceMessagePlayback()
+        try {
+            voiceMessagePlayer = android.media.MediaPlayer().apply {
+                setAudioStreamType(android.media.AudioManager.STREAM_MUSIC)
+                setDataSource(this@ConversationActivity, Uri.parse(uriString))
+                setOnCompletionListener { stopVoiceMessagePlayback() }
+                setOnErrorListener { _, what, extra ->
+                    android.util.Log.w("TurboTextAttach", "voice message playback error what=$what extra=$extra")
+                    runOnUiThread { Toast.makeText(this@ConversationActivity, "Couldn't play voice message", Toast.LENGTH_SHORT).show() }
+                    stopVoiceMessagePlayback()
+                    true
+                }
+                prepare()
+                start()
+            }
+            voiceMessagePlayingId = message.id
+            messageAdapter.setPlayingAudioId(message.id)
+        } catch (e: Exception) {
+            android.util.Log.w("TurboTextAttach", "failed to play voice message", e)
+            Toast.makeText(this, "Couldn't play voice message", Toast.LENGTH_SHORT).show()
+            stopVoiceMessagePlayback()
+        }
+    }
+
+    private fun stopVoiceMessagePlayback() {
+        voiceMessagePlayer?.let {
+            try {
+                it.stop()
+            } catch (_: Exception) {
+            }
+            it.release()
+        }
+        voiceMessagePlayer = null
+        voiceMessagePlayingId = null
+        messageAdapter.setPlayingAudioId(null)
+    }
+
+    /** Center-key action on a focused picture message — opens it full
+     *  screen (zoom with OK, save with the right softkey). */
+    private fun openImageViewer(message: Message) {
+        val uri = message.imageUri ?: return
+        startActivity(
+            android.content.Intent(this, ImageViewerActivity::class.java)
+                .putExtra(ImageViewerActivity.EXTRA_IMAGE_URI, uri)
+        )
     }
 }

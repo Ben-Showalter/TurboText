@@ -31,9 +31,11 @@ class AddWordActivity : AppCompatActivity() {
         inputController = T9InputController(
             engine = engine,
             outputView = wordText,
-            onModeChanged = { mode -> modeIndicator.text = mode.label },
-            onSuggestionsChanged = { candidates, selected, windowSize -> renderSuggestions(candidates, selected, windowSize) }
+            onModeChanged = { label -> modeIndicator.text = label },
+            onSuggestionsChanged = { candidates, selected, windowSize -> renderSuggestions(candidates, selected, windowSize) },
+            suggestionsBarView = findViewById<TextView>(R.id.suggestionsBar)
         )
+        modeIndicator.text = inputController.currentLabel()
         inputController.startCursorBlink()
         voiceHelper = GroqVoiceInputHelper(this)
         wordText.requestFocus()

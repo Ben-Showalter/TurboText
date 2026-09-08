@@ -18,6 +18,8 @@ data class Message(
     val isMms: Boolean = false,
     val imageUri: String? = null,
     val vcardUri: String? = null,
+    /** content:// URI of an audio (voice message) MMS part, when present. */
+    val audioUri: String? = null,
     /** Who sent this specific message — only populated for incoming
      *  messages in a group thread, where it isn't otherwise obvious. */
     val senderName: String? = null,

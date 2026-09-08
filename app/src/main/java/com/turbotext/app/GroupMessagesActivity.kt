@@ -56,6 +56,17 @@ class GroupMessagesActivity : AppCompatActivity() {
         if (cached != null) {
             adapter.update(cached)
             emptyView.visibility = if (cached.isEmpty()) View.VISIBLE else View.GONE
+            // Fast pass: getGroupThreads() below takes seconds, so a thread
+            // that was just opened and read would keep its ● / accent
+            // "unread" styling until then. Reconcile only the unread flags
+            // against a cheap ids-only query so it un-bolds right away.
+            Thread {
+                val unreadIds = repo.unreadThreadIds()
+                val patched = cached.map { it.copy(unread = it.threadId in unreadIds) }
+                if (patched != cached) runOnUiThread {
+                    if (!isFinishing && !isDestroyed) adapter.update(patched)
+                }
+            }.start()
         }
         Thread {
             val groups = repo.getGroupThreads()

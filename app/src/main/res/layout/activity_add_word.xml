@@ -52,8 +52,10 @@
         android:layout_height="wrap_content"
         android:textColor="#80D8FF"
         android:textSize="18sp"
-        android:paddingStart="8dp"
-        android:paddingEnd="8dp"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:maxLines="3"
+        android:ellipsize="end"
         android:visibility="gone" />
 
     <TextView

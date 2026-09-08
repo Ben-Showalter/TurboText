@@ -28,7 +28,7 @@ class MmsDownloadReceiver : BroadcastReceiver() {
                 val displayName = ContactHelper.lookupName(context, address) ?: address
                 NotificationHelper.showIncoming(
                     context, address, displayName,
-                    "A picture message arrived but couldn't be downloaded."
+                    "Could not download and parse MMS"
                 )
                 return
             }
@@ -36,10 +36,16 @@ class MmsDownloadReceiver : BroadcastReceiver() {
             val bytes = file.readBytes()
             val extracted = MmsRetrieveParser.extract(bytes)
             val resolvedAddress = address.takeIf { it != "Unknown" } ?: extracted.senderAddress ?: "Unknown"
-            Log.i(TAG, "extracted: text=\"${extracted.text}\", hasImage=${extracted.imageBytes != null}, hasVcard=${extracted.vcardBytes != null}, sender=$resolvedAddress, allAddresses=${extracted.allAddresses}")
+            Log.i(TAG, "extracted: text=\"${extracted.text}\", hasImage=${extracted.imageBytes != null}, hasVcard=${extracted.vcardBytes != null}, hasAudio=${extracted.audioBytes != null}, sender=$resolvedAddress, allAddresses=${extracted.allAddresses}")
 
             val threadId = SmsRepository(context).insertReceivedMms(
-                resolvedAddress, extracted.text, extracted.imageBytes, extracted.vcardBytes, extracted.allAddresses
+                address = resolvedAddress,
+                text = extracted.text,
+                imageBytes = extracted.imageBytes,
+                vcardBytes = extracted.vcardBytes,
+                audioBytes = extracted.audioBytes,
+                audioContentType = extracted.audioContentType,
+                groupParticipants = extracted.allAddresses
             )
             // Same immediate cache refresh as the SMS path — this thread
             // might not currently be open anywhere.
@@ -66,7 +72,9 @@ class MmsDownloadReceiver : BroadcastReceiver() {
             val preview = when {
                 extracted.text.isNotEmpty() -> extracted.text
                 extracted.imageBytes != null -> "Picture message"
-                else -> "Picture message (couldn't read contents)"
+                extracted.audioBytes != null -> "Voice message"
+                extracted.vcardBytes != null -> "Contact card"
+                else -> "Could not download and parse MMS"
             }
             val groupAddress = if (trueParticipants.size > 1) trueParticipants.joinToString(",") else null
             NotificationHelper.showIncoming(

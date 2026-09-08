@@ -58,11 +58,19 @@
         android:icon="@drawable/ic_launcher_square"
         android:theme="@style/Theme.TurboText">
 
-        <!-- Conversation list: also the entry point when picked as default SMS handler -->
+        <!-- Conversation list: also the entry point when picked as default SMS handler.
+             singleTask (not singleTop) so re-launching from outside the app — the
+             home-screen icon, or KeyButtonAccessibilityService's hardware-key
+             interception — always lands here, discarding whatever screen (a
+             conversation thread, compose, settings, etc.) was left open on top of
+             it, rather than just resuming the task as-is the way Android's default
+             behavior would. A notification tap still deep-links straight into that
+             specific conversation thread — see NotificationHelper's TaskStackBuilder,
+             an independent path this doesn't affect. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTop">
+            android:launchMode="singleTask">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -115,6 +123,10 @@
 
         <activity
             android:name=".GroupMessagesActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".ImageViewerActivity"
             android:exported="false" />
 
         <activity

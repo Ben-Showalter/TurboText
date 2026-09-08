@@ -38,26 +38,131 @@ class SmsRepository(private val context: Context) {
     fun hasAnyUnread(): Boolean {
         val trashedKeys = TrashHelper.allTrashedKeys(context)
         val smsUnread = context.contentResolver.query(
-            Telephony.Sms.CONTENT_URI, arrayOf(Telephony.Sms._ID),
+            Telephony.Sms.CONTENT_URI,
+            arrayOf(Telephony.Sms._ID, Telephony.Sms.THREAD_ID, Telephony.Sms.ADDRESS),
             "${Telephony.Sms.READ}=0", null, null
         )?.use { c ->
             var found = false
             while (c.moveToNext()) {
-                if ("sms:${c.getLong(0)}" !in trashedKeys) { found = true; break }
+                val id = c.getLong(0)
+                if ("sms:$id" !in trashedKeys) {
+                    // Diagnostic for a report that the outer-screen pulse
+                    // kept blinking after the only visible conversation was
+                    // opened and read — this logs exactly which row is
+                    // still READ=0 and its thread/address, to tell whether
+                    // it's genuinely a different, unopened thread (e.g. a
+                    // self-sent SMS landing back in a thread_id that
+                    // doesn't match the sent copy's) versus markThreadRead
+                    // simply not having reached this row.
+                    android.util.Log.i("TurboTextUnread", "unread sms: id=$id threadId=${c.getLong(1)} address=${c.getString(2)}")
+                    found = true
+                    break
+                }
             }
             found
         } ?: false
         if (smsUnread) return true
         return context.contentResolver.query(
-            Telephony.Mms.CONTENT_URI, arrayOf(Telephony.Mms._ID),
+            Telephony.Mms.CONTENT_URI,
+            arrayOf(Telephony.Mms._ID, Telephony.Mms.THREAD_ID),
             "${Telephony.Mms.READ}=0", null, null
         )?.use { c ->
             var found = false
             while (c.moveToNext()) {
-                if ("mms:${c.getLong(0)}" !in trashedKeys) { found = true; break }
+                val id = c.getLong(0)
+                if ("mms:$id" !in trashedKeys) {
+                    android.util.Log.i("TurboTextUnread", "unread mms: id=$id threadId=${c.getLong(1)}")
+                    found = true
+                    break
+                }
             }
             found
         } ?: false
+    }
+
+    /** Thread ids that currently have at least one unread (READ=0) SMS or
+     *  MMS row, excluding rows hidden by the local trash. Cheap — ids
+     *  only, no bodies or contact lookups. Shared by hasUnreadGroupMessage()
+     *  and by GroupMessagesActivity's fast un-bold reconcile. */
+    fun unreadThreadIds(): Set<Long> {
+        val trashedKeys = TrashHelper.allTrashedKeys(context)
+        val ids = mutableSetOf<Long>()
+        try {
+            context.contentResolver.query(
+                Telephony.Sms.CONTENT_URI,
+                arrayOf(Telephony.Sms._ID, Telephony.Sms.THREAD_ID),
+                "${Telephony.Sms.READ}=0", null, null
+            )?.use { c ->
+                while (c.moveToNext()) {
+                    if ("sms:${c.getLong(0)}" !in trashedKeys) ids.add(c.getLong(1))
+                }
+            }
+            context.contentResolver.query(
+                Telephony.Mms.CONTENT_URI,
+                arrayOf(Telephony.Mms._ID, Telephony.Mms.THREAD_ID),
+                "${Telephony.Mms.READ}=0", null, null
+            )?.use { c ->
+                while (c.moveToNext()) {
+                    if ("mms:${c.getLong(0)}" !in trashedKeys) ids.add(c.getLong(1))
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("TurboTextGroup", "unreadThreadIds: scan failed", e)
+        }
+        return ids
+    }
+
+    /** True when at least one unread SMS/MMS row sits in a group
+     *  (multi-recipient) thread — used to bold the "Groups" entry on the
+     *  conversation list so a new group message isn't hidden behind that
+     *  separate screen. Deliberately lighter than getGroupThreads(): it
+     *  only reads ids, never loads message bodies or resolves contacts.
+     *  Honours the local trash the same way hasAnyUnread() does. */
+    fun hasUnreadGroupMessage(): Boolean {
+        val unreadThreadIds = unreadThreadIds()
+        android.util.Log.i("TurboTextGroup", "hasUnreadGroupMessage: unread threadIds=$unreadThreadIds")
+        if (unreadThreadIds.isEmpty()) return false
+        return try {
+            var found = false
+            // Read the WHOLE conversations view and match columns BY NAME —
+            // this pseudo-provider ignores the projection and returns its
+            // own fixed column set, so positional getString(1) would read
+            // the wrong column (this is why getGroupThreads/getConversations
+            // also use getColumnIndexOrThrow here).
+            context.contentResolver.query(
+                android.net.Uri.parse("content://mms-sms/conversations?simple=true"),
+                null, null, null, null
+            )?.use { c ->
+                val idCol = c.getColumnIndex("_id")
+                val recipCol = c.getColumnIndex("recipient_ids")
+                if (idCol < 0 || recipCol < 0) {
+                    android.util.Log.w("TurboTextGroup", "hasUnreadGroupMessage: columns not found (id=$idCol recip=$recipCol)")
+                    return@use
+                }
+                while (c.moveToNext()) {
+                    val tid = c.getLong(idCol)
+                    if (tid !in unreadThreadIds) continue
+                    val ids = (c.getString(recipCol) ?: "").trim().split(" ").filter { it.isNotEmpty() }
+                    android.util.Log.i("TurboTextGroup", "hasUnreadGroupMessage: unread thread $tid has ${ids.size} recipients")
+                    if (ids.size > 1) { found = true; break }
+                }
+            }
+            // Fallback: the bulk conversations view didn't flag any of the
+            // unread threads as a group — ask per-thread via the same
+            // recipient_ids path MmsDownloadReceiver uses for its notification.
+            if (!found) {
+                for (tid in unreadThreadIds) {
+                    val participants = getThreadParticipants(tid)
+                    android.util.Log.i("TurboTextGroup", "hasUnreadGroupMessage: per-thread $tid -> ${participants.size} participants")
+                    if (participants.size > 1) { found = true; break }
+                }
+            }
+            android.util.Log.i("TurboTextGroup", "hasUnreadGroupMessage -> $found")
+            found
+        } catch (e: Exception) {
+            android.util.Log.w("TurboTextGroup", "hasUnreadGroupMessage: thread lookup failed", e)
+            false
+        }
     }
 
     /** Best-effort detection of existing group (multi-recipient) MMS
@@ -93,10 +198,40 @@ class SmsRepository(private val context: Context) {
 
     fun getGroupThreads(): List<Conversation> {
         val result = mutableListOf<Conversation>()
+        // Per-thread unread state read straight from the individual
+        // Sms/Mms rows (READ=0), not the conversations view's aggregate
+        // "read" column — that column doesn't reliably flip when a fresh
+        // inbound group MMS lands, so a new message never turned the row
+        // bold. Same approach getConversations()/hasAnyUnread() already
+        // use, and it honors the local trash the same way.
+        val trashedKeys = TrashHelper.allTrashedKeys(context)
+        val unreadThreadIds = mutableSetOf<Long>()
+        try {
+            context.contentResolver.query(
+                Telephony.Sms.CONTENT_URI,
+                arrayOf(Telephony.Sms._ID, Telephony.Sms.THREAD_ID),
+                "${Telephony.Sms.READ}=0", null, null
+            )?.use { c ->
+                while (c.moveToNext()) {
+                    if ("sms:${c.getLong(0)}" !in trashedKeys) unreadThreadIds.add(c.getLong(1))
+                }
+            }
+            context.contentResolver.query(
+                Telephony.Mms.CONTENT_URI,
+                arrayOf(Telephony.Mms._ID, Telephony.Mms.THREAD_ID),
+                "${Telephony.Mms.READ}=0", null, null
+            )?.use { c ->
+                while (c.moveToNext()) {
+                    if ("mms:${c.getLong(0)}" !in trashedKeys) unreadThreadIds.add(c.getLong(1))
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("TurboTextGroup", "group unread scan failed", e)
+        }
         try {
             val cursor = context.contentResolver.query(
                 android.net.Uri.parse("content://mms-sms/conversations?simple=true"),
-                arrayOf("_id", "recipient_ids", "snippet", "date", "read"),
+                arrayOf("_id", "recipient_ids", "snippet", "date"),
                 null, null, "date DESC"
             ) ?: return result
             cursor.use {
@@ -107,7 +242,6 @@ class SmsRepository(private val context: Context) {
                     val threadId = it.getLong(it.getColumnIndexOrThrow("_id"))
                     val snippet = it.getString(it.getColumnIndexOrThrow("snippet")) ?: ""
                     val date = it.getLong(it.getColumnIndexOrThrow("date"))
-                    val read = it.getInt(it.getColumnIndexOrThrow("read")) == 1
                     val addresses = ids.mapNotNull { id -> lookupCanonicalAddress(id) }
                     val names = addresses.map { addr -> lookupContactName(addr) ?: addr }
                     val displayName = GroupNicknameHelper.getNickname(context, threadId) ?: names.joinToString(", ")
@@ -118,7 +252,7 @@ class SmsRepository(private val context: Context) {
                             displayName = displayName,
                             snippet = snippet,
                             date = date,
-                            unread = !read
+                            unread = unreadThreadIds.contains(threadId)
                         )
                     )
                 }
@@ -128,8 +262,15 @@ class SmsRepository(private val context: Context) {
         }
         // Matches getConversations()'s behavior: a thread whose messages
         // are all trashed correctly disappears rather than lingering
-        // with a stale snippet.
-        return result.filter { getMessages(it.threadId).isNotEmpty() }
+        // with a stale snippet. The conversations view's own "date DESC"
+        // isn't honored by every OEM provider, so re-derive each thread's
+        // real timestamp from its newest surviving message and sort here.
+        return result
+            .mapNotNull { convo ->
+                val msgs = getMessages(convo.threadId)
+                if (msgs.isEmpty()) null else convo.copy(date = msgs.last().date)
+            }
+            .sortedByDescending { it.date }
     }
 
     private fun lookupCanonicalAddress(id: String): String? {
@@ -270,8 +411,9 @@ class SmsRepository(private val context: Context) {
                 val snippet = when {
                     parts.text.isNotEmpty() -> parts.text
                     parts.imageUri != null -> "Picture message"
+                    parts.audioUri != null -> "Voice message"
                     parts.vcardUri != null -> "Contact card"
-                    else -> ""
+                    else -> "Could not download and parse MMS"
                 }
                 candidates[threadId] = Conversation(
                     threadId = threadId,
@@ -484,8 +626,10 @@ class SmsRepository(private val context: Context) {
                         isMms = true,
                         imageUri = parts.imageUri,
                         vcardUri = parts.vcardUri,
+                        audioUri = parts.audioUri,
                         senderName = senderName,
-                        isUnretrievedMms = parts.text.isEmpty() && parts.imageUri == null && parts.vcardUri == null,
+                        isUnretrievedMms = parts.text.isEmpty() && parts.imageUri == null &&
+                            parts.vcardUri == null && parts.audioUri == null,
                         sendStatus = sendStatus
                     )
                 )
@@ -517,31 +661,52 @@ class SmsRepository(private val context: Context) {
         val text: String,
         val imageUri: String?,
         val vcardUri: String? = null,
+        val audioUri: String? = null,
         val senderAddress: String? = null
     )
 
     private fun readMmsParts(messageId: Long): MmsParts {
-        var text = ""
+        val textParts = mutableListOf<String>()
         var imageUri: String? = null
         var vcardUri: String? = null
+        var audioUri: String? = null
         val partUri = android.net.Uri.parse("content://mms/part")
         val cursor = context.contentResolver.query(
-            partUri, arrayOf("_id", "ct", "text"),
+            partUri, arrayOf("_id", "ct", "text", "_data"),
             "mid = ?", arrayOf(messageId.toString()), null
         )
 
         cursor?.use {
             while (it.moveToNext()) {
                 val partId = it.getLong(0)
-                val contentType = it.getString(1) ?: ""
+                // "ct" can carry parameters ("text/plain; charset=utf-8") and
+                // arrives in varying case — normalise before matching so a
+                // group thread's plain-text part isn't missed and shown as
+                // "[Picture message]".
+                val contentType = (it.getString(1) ?: "").substringBefore(';').trim().lowercase()
+                val hasDataFile = it.getString(3) != null
                 when {
-                    contentType == "text/plain" -> it.getString(2)?.let { t -> text = t }
+                    contentType == "application/smil" -> {
+                        // Layout markup, never message content — skip it.
+                    }
+                    contentType == "text/plain" -> {
+                        // The body is in the "text" column only when it isn't
+                        // spilled to a part file; when "_data" is set the
+                        // column is null and the text must be streamed from
+                        // the part itself.
+                        val inline = it.getString(2)
+                        val body = if (!inline.isNullOrEmpty()) inline
+                            else if (hasDataFile) readMmsPartText(partId) else null
+                        if (!body.isNullOrEmpty()) textParts.add(body)
+                    }
                     contentType.startsWith("image/") -> imageUri = "content://mms/part/$partId"
                     contentType == "text/x-vcard" || contentType == "text/vcard" ->
                         vcardUri = "content://mms/part/$partId"
+                    contentType.startsWith("audio/") -> audioUri = "content://mms/part/$partId"
                 }
             }
         }
+        val text = textParts.joinToString("\n").trim()
 
         // Who actually sent this specific message — mainly useful in a
         // group thread, where an incoming message could be from any of
@@ -558,7 +723,22 @@ class SmsRepository(private val context: Context) {
             // Non-critical — the message still displays fine without a sender label.
         }
 
-        return MmsParts(text, imageUri, vcardUri, senderAddress)
+        return MmsParts(text, imageUri, vcardUri, audioUri, senderAddress)
+    }
+
+    /** Reads a text/plain MMS part's body straight from the part's own
+     *  stream — needed when the provider stored the text in a file
+     *  ("_data" set) and left the "text" column null, which is common for
+     *  the plain-text part of a group MMS. */
+    private fun readMmsPartText(partId: Long): String? {
+        return try {
+            context.contentResolver.openInputStream(
+                android.net.Uri.parse("content://mms/part/$partId")
+            )?.use { it.readBytes().toString(Charsets.UTF_8) }
+        } catch (e: Exception) {
+            android.util.Log.w("TurboTextMms", "failed to read MMS text part $partId", e)
+            null
+        }
     }
 
     /** Sends an MMS (with an optional photo) using the system MmsManager
@@ -633,8 +813,9 @@ class SmsRepository(private val context: Context) {
                         Message(
                             id = id, address = "", body = parts.text, date = dateSeconds * 1000L,
                             isOutgoing = isOutgoing, isMms = true, imageUri = parts.imageUri,
-                            vcardUri = parts.vcardUri,
-                            isUnretrievedMms = parts.text.isEmpty() && parts.imageUri == null && parts.vcardUri == null
+                            vcardUri = parts.vcardUri, audioUri = parts.audioUri,
+                            isUnretrievedMms = parts.text.isEmpty() && parts.imageUri == null &&
+                                parts.vcardUri == null && parts.audioUri == null
                         )
                     )
                 }
@@ -688,6 +869,8 @@ class SmsRepository(private val context: Context) {
         text: String,
         imageBytes: ByteArray?,
         vcardBytes: ByteArray? = null,
+        audioBytes: ByteArray? = null,
+        audioContentType: String? = null,
         groupParticipants: List<String> = emptyList()
     ): Long? {
         val tag = "TurboTextMms"
@@ -774,6 +957,37 @@ class SmsRepository(private val context: Context) {
                     }
                 } catch (e: Exception) {
                     android.util.Log.e(tag, "insertReceivedMms: vcard part insert/write failed", e)
+                }
+            }
+
+            if (audioBytes != null) {
+                try {
+                    val ct = audioContentType?.takeIf { it.startsWith("audio/") } ?: "audio/3gpp"
+                    // File extension only matters for apps that hand the
+                    // part off by name; the "ct" above is what actually
+                    // drives decoding. Cover the common MMS voice codecs.
+                    val ext = when {
+                        ct.contains("amr") -> "amr"
+                        ct.contains("3gpp") || ct.contains("3gp") -> "3gp"
+                        ct.contains("mp4") || ct.contains("m4a") || ct.contains("aac") -> "m4a"
+                        ct.contains("mpeg") || ct.contains("mp3") -> "mp3"
+                        ct.contains("ogg") || ct.contains("opus") -> "ogg"
+                        ct.contains("wav") || ct.contains("x-wav") -> "wav"
+                        else -> "bin"
+                    }
+                    val audioPartValues = android.content.ContentValues().apply {
+                        put("mid", messageId)
+                        put("ct", ct)
+                        put("name", "audio.$ext")
+                    }
+                    val partUri = context.contentResolver.insert(android.net.Uri.parse("content://mms/$messageId/part"), audioPartValues)
+                    android.util.Log.i(tag, "insertReceivedMms: audio part insert -> $partUri ($ct), ${audioBytes.size} bytes to write")
+                    if (partUri != null) {
+                        context.contentResolver.openOutputStream(partUri)?.use { it.write(audioBytes) }
+                        android.util.Log.i(tag, "insertReceivedMms: audio bytes written")
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e(tag, "insertReceivedMms: audio part insert/write failed", e)
                 }
             }
 

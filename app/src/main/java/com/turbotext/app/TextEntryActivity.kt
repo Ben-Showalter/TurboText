@@ -24,7 +24,7 @@ class TextEntryActivity : AppCompatActivity() {
     }
 
     private lateinit var fieldText: EditText
-    private lateinit var modeIndicator: TextView
+    private lateinit var softLeftLabel: TextView
     private lateinit var suggestionsBar: TextView
     private lateinit var listeningIndicator: TextView
     private lateinit var softRightLabel: TextView
@@ -46,7 +46,11 @@ class TextEntryActivity : AppCompatActivity() {
 
         fieldText = findViewById(R.id.fieldText)
         fieldText.setShowSoftInputOnFocus(false)
-        modeIndicator = findViewById(R.id.modeIndicator)
+        // Voice used to be triggered by the left softkey — now the
+        // physical mic/assistant button does that instead, so this label
+        // (id kept as softLeftLabel2 for layout compatibility) is free to
+        // show the live typing-mode label instead of sitting unused.
+        softLeftLabel = findViewById(R.id.softLeftLabel2)
         suggestionsBar = findViewById(R.id.suggestionsBar)
         listeningIndicator = findViewById(R.id.listeningIndicator)
 
@@ -54,19 +58,37 @@ class TextEntryActivity : AppCompatActivity() {
         inputController = T9InputController(
             engine = engine,
             outputView = fieldText,
-            onModeChanged = { mode -> modeIndicator.text = mode.label },
-            onSuggestionsChanged = { candidates, selected, windowSize -> renderSuggestions(candidates, selected, windowSize) }
+            onModeChanged = { label -> softLeftLabel.text = label },
+            onSuggestionsChanged = { candidates, selected, windowSize -> renderSuggestions(candidates, selected, windowSize) },
+            suggestionsBarView = suggestionsBar
         )
         intent.getStringExtra(EXTRA_INITIAL_TEXT)?.let { inputController.setText(it) }
+        // onModeChanged only fires on a change — without this the softkey
+        // label would show nothing at all until the first keypress.
+        softLeftLabel.text = inputController.currentLabel()
         inputController.startCursorBlink()
         fieldText.requestFocus()
 
         if (allowVoice) {
             voiceHelper = GroqVoiceInputHelper(this)
         }
-        // Voice is triggered by the physical mic/assistant button now, not
-        // the left softkey — that on-screen label no longer applies.
-        findViewById<TextView>(R.id.softLeftLabel2).visibility = View.GONE
+    }
+
+    /** Left softkey — jumps straight to a top-level typing mode instead of
+     *  cycling '*' through it. */
+    private fun showModeMenu() {
+        val options = arrayOf("T9 Word", "ABC", "123")
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Typing Mode")
+            .setItems(options) { _, which ->
+                val newMode = when (which) {
+                    0 -> InputMode.WORD
+                    1 -> InputMode.MULTITAP
+                    else -> InputMode.NUMBER
+                }
+                inputController.selectMode(newMode)
+            }
+            .show()
     }
 
     private fun renderSuggestions(candidates: List<String>, selected: Int, windowSize: Int = 5) {
@@ -120,6 +142,10 @@ class TextEntryActivity : AppCompatActivity() {
 
         if (event.keyCode == KeyEvent.KEYCODE_SOFT_RIGHT) {
             if (sendMode) showOptions() else saveAndClose()
+            return true
+        }
+        if (event.keyCode == KeyEvent.KEYCODE_SOFT_LEFT) {
+            showModeMenu()
             return true
         }
         if (event.keyCode == KeyEvent.KEYCODE_CALL && sendMode) {

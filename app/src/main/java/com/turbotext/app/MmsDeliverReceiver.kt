@@ -34,7 +34,7 @@ class MmsDeliverReceiver : BroadcastReceiver() {
                 data.joinToString(" ") { "%02X".format(it) })
             NotificationHelper.showIncoming(
                 context, "Picture message", "Picture message",
-                "A picture message arrived but couldn't be processed."
+                "Could not download and parse MMS"
             )
             return
         }
@@ -75,7 +75,7 @@ class MmsDeliverReceiver : BroadcastReceiver() {
             Log.e(TAG, "failed to start MMS download", e)
             NotificationHelper.showIncoming(
                 context, "Picture message", "Picture message",
-                "A picture message arrived but couldn't be downloaded."
+                "Could not download and parse MMS"
             )
         }
     }

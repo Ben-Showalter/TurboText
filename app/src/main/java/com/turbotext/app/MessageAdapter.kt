@@ -22,6 +22,18 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
      *  scroll-based selection in ConversationActivity. */
     private var selectedPosition: Int? = null
 
+    /** id of the voice-message row currently playing, so its bubble can
+     *  show a ⏸ / "Playing…" state. Null when nothing is playing. */
+    private var playingAudioId: Long? = null
+
+    /** Called by ConversationActivity when it starts/stops voice-message
+     *  playback, so the bubble reflects it. */
+    fun setPlayingAudioId(id: Long?) {
+        if (playingAudioId == id) return
+        playingAudioId = id
+        notifyDataSetChanged()
+    }
+
     // Small cache so scrolling back over an already-decoded image doesn't
     // pay the decode cost again — a handful of thumbnails is trivial
     // memory, and this device's decode is slow enough that avoiding
@@ -175,6 +187,11 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
         val msg = items[if (hasMore) position - 1 else position]
         holder.time.text = buildTimeLabel(msg, theme)
 
+        // Default alignment for a plain text bubble — the voice-message
+        // branch overrides this to CENTER, so reset it here or a recycled
+        // row keeps the centered layout.
+        holder.text.gravity = Gravity.START
+
         when {
             msg.imageUri != null -> {
                 holder.imageFrame.visibility = View.VISIBLE
@@ -209,10 +226,29 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
                 holder.text.visibility = if (msg.body.isNotEmpty()) View.VISIBLE else View.GONE
                 holder.text.text = msg.body
             }
+            msg.audioUri != null -> {
+                holder.imageFrame.visibility = View.GONE
+                holder.text.visibility = View.VISIBLE
+                holder.text.gravity = Gravity.CENTER
+                val playing = playingAudioId == msg.id
+                // ■ (stop) and ▶ (play) are plain geometric-shapes glyphs
+                // that render on this device's stock font; ⏯/⏸ do not.
+                val symbol = if (playing) "■" else "▶"
+                val label = if (playing) "Playing… (OK to stop)" else "Voice message"
+                val caption = if (msg.body.isNotEmpty()) "\n${msg.body}" else ""
+                val full = "$symbol\n$label$caption"
+                val span = android.text.SpannableString(full)
+                // Make the play/pause glyph noticeably bigger than the label.
+                span.setSpan(
+                    android.text.style.RelativeSizeSpan(2.0f),
+                    0, symbol.length, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                holder.text.text = span
+            }
             msg.isUnretrievedMms -> {
                 holder.imageFrame.visibility = View.GONE
                 holder.text.visibility = View.VISIBLE
-                holder.text.text = "[Picture message — see README]"
+                holder.text.text = "⚠ Could not download and parse MMS"
             }
             msg.vcardUri != null -> {
                 holder.imageFrame.visibility = View.GONE

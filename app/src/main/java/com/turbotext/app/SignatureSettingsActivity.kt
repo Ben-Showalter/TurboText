@@ -42,8 +42,9 @@ class SignatureSettingsActivity : AppCompatActivity() {
         inputController = T9InputController(
             engine = engine,
             outputView = signatureText,
-            onModeChanged = { mode -> modeIndicator.text = mode.label },
+            onModeChanged = { label -> modeIndicator.text = label },
         )
+        modeIndicator.text = inputController.currentLabel()
         inputController.setText(SettingsHelper.getSignatureText(this))
         voiceHelper = GroqVoiceInputHelper(this)
 

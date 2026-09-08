@@ -67,7 +67,14 @@ object ThemeHelper {
             remapTextColor(view, theme)
             remapHintColor(view, theme)
         }
-        if (view is EditText) applyCursorColor(view, theme)
+        // NoImeEditText disables the native cursor entirely (see its own
+        // init block) and draws its own themed one — this reflection-based
+        // recolor is for the platform's native cursor and would be actively
+        // harmful to apply here: on-device testing showed a native cursor
+        // rendering independently of (and getting stuck out of sync with)
+        // NoImeEditText's custom-drawn one, and re-touching cursor drawable
+        // state here risks undoing the null it explicitly sets.
+        if (view is EditText && view !is NoImeEditText) applyCursorColor(view, theme)
         if (view is ViewGroup) {
             for (i in 0 until view.childCount) walk(view.getChildAt(i), theme)
         }

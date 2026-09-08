@@ -32,7 +32,7 @@ class ComposeActivity : AppCompatActivity() {
     private lateinit var btMicWarmup: BluetoothMicWarmup
     private lateinit var toText: EditText
     private lateinit var composeText: EditText
-    private lateinit var modeIndicator: TextView
+    private lateinit var softLeftLabel: TextView
     private lateinit var suggestionsBar: TextView
     private lateinit var attachmentIndicator: TextView
     private lateinit var listeningIndicator: TextView
@@ -64,7 +64,7 @@ class ComposeActivity : AppCompatActivity() {
         composeText.movementMethod = android.text.method.ScrollingMovementMethod()
         composeText.setShowSoftInputOnFocus(false)
         composeText.hint = HintHelper.dictateHint(composeText)
-        modeIndicator = findViewById(R.id.modeIndicator)
+        softLeftLabel = findViewById(R.id.softLeftLabel)
         suggestionsBar = findViewById(R.id.suggestionsBar)
         attachmentIndicator = findViewById(R.id.attachmentIndicator)
         listeningIndicator = findViewById(R.id.listeningIndicator)
@@ -72,9 +72,9 @@ class ComposeActivity : AppCompatActivity() {
         recipientController = T9InputController(
             engine = engine,
             outputView = toText,
-            onModeChanged = { mode ->
-                recipientMode = mode
-                if (editingRecipient) modeIndicator.text = mode.label
+            onModeChanged = { label ->
+                recipientMode = recipientController.currentMode()
+                if (editingRecipient) softLeftLabel.text = label
             },
             onSuggestionsChanged = { candidates, selected, windowSize ->
                 if (editingRecipient) renderSuggestions(candidates, selected, windowSize)
@@ -87,7 +87,9 @@ class ComposeActivity : AppCompatActivity() {
             initialMode = InputMode.WORD,
             candidateProvider = { digits -> contactNameCandidatesFor(digits) },
             resolveWord = { candidate -> resolveRecipientWord(candidate) },
-            learnsWords = false
+            learnsWords = false,
+            previewRawDigits = true,
+            suggestionsBarView = suggestionsBar
         )
 
         // Pre-fill recipient if launched from an sms: link
@@ -100,11 +102,12 @@ class ComposeActivity : AppCompatActivity() {
         inputController = T9InputController(
             engine = engine,
             outputView = composeText,
-            onModeChanged = { mode -> if (!editingRecipient) modeIndicator.text = mode.label },
-            onSuggestionsChanged = { candidates, selected, windowSize -> renderSuggestions(candidates, selected, windowSize) }
+            onModeChanged = { label -> if (!editingRecipient) softLeftLabel.text = label },
+            onSuggestionsChanged = { candidates, selected, windowSize -> renderSuggestions(candidates, selected, windowSize) },
+            suggestionsBarView = suggestionsBar
         )
         if (!editingRecipient) inputController.startCursorBlink() else recipientController.startCursorBlink()
-        modeIndicator.text = if (editingRecipient) recipientMode.label else InputMode.WORD.label
+        softLeftLabel.text = if (editingRecipient) recipientController.currentLabel() else inputController.currentLabel()
 
         // Forwarding a message launches here with these extras — recipient
         // still needs to be chosen, so this doesn't touch editingRecipient.
@@ -217,25 +220,61 @@ class ComposeActivity : AppCompatActivity() {
      *  directly, since emails aren't reachable through T9 digit codes at
      *  all. contactMatches stays empty outside MULTITAP mode, so the
      *  Left/Right/Center handling in dispatchKeyEvent naturally falls
-     *  through to the recipientController's own native handling there. */
+     *  through to the recipientController's own native handling there.
+     *  Note this early-return deliberately skips renderContactMatches():
+     *  in WORD/NUMBER mode the suggestions bar is already being driven by
+     *  T9InputController's own onSuggestionsChanged callback (fired from
+     *  the onKeyDown call that runs right before this), so calling
+     *  renderContactMatches() here — which hides the bar whenever
+     *  contactMatches is empty, which it always is outside MULTITAP —
+     *  would immediately hide the WORD-mode contact dropdown that call
+     *  just showed. */
     private fun updateContactMatches() {
         if (recipientMode != InputMode.MULTITAP) {
             contactMatches = emptyList()
-            renderContactMatches()
             return
         }
-        val typed = recipientController.currentText()
-        contactMatches = if (typed.isEmpty()) {
-            emptyList()
-        } else {
-            val lower = typed.lowercase()
-            allContacts.filter { contact ->
-                contact.name.lowercase().split(Regex("\\s+")).any { it.startsWith(lower) } ||
-                    contact.number.lowercase().startsWith(lower)
-            }.take(10)
-        }
+        contactMatches = contactsMatchingTypedText(recipientController.currentText())
         contactMatchIndex = 0
         renderContactMatches()
+    }
+
+    /** Same literal-text matching updateContactMatches() does for
+     *  MULTITAP, but usable regardless of the current mode — voice
+     *  dictation into the "To:" field (see stopVoiceRecordingAndSend)
+     *  inserts whatever was spoken as literal text via appendVoiceResult,
+     *  completely bypassing T9 digit-code entry (WORD mode's own
+     *  contactNameCandidatesFor), so it needs its own path to surface
+     *  matches — updateContactMatches()'s mode gate would otherwise
+     *  silently drop a dictated name with no dropdown at all whenever
+     *  WORD mode (the default for this field) is active. */
+    private fun updateContactMatchesFromVoice() {
+        contactMatches = contactsMatchingTypedText(recipientController.currentText())
+        contactMatchIndex = 0
+        renderContactMatches()
+    }
+
+    /** Matches spoken/typed text against contact names word-by-word rather
+     *  than as one literal phrase — voice dictation and MULTITAP both hand
+     *  this a whole name in one shot (e.g. "John Smith"), and no single
+     *  word in a contact's name is ever a prefix of that entire two-word
+     *  string. Each typed word just needs to prefix some later word in the
+     *  contact's name, in order (so "John Michael Smith" still matches
+     *  typing "john smith") — a single typed word still matches as before. */
+    private fun contactsMatchingTypedText(typed: String): List<ContactMatch> {
+        if (typed.isBlank()) return emptyList()
+        val typedWords = typed.trim().lowercase().split(Regex("\\s+"))
+        return allContacts.filter { contact ->
+            if (contact.number.lowercase().startsWith(typed.lowercase())) return@filter true
+            val nameWords = contact.name.lowercase().split(Regex("\\s+"))
+            var searchFrom = 0
+            for (word in typedWords) {
+                val foundAt = (searchFrom until nameWords.size).firstOrNull { nameWords[it].startsWith(word) }
+                    ?: return@filter false
+                searchFrom = foundAt + 1
+            }
+            true
+        }.take(10)
     }
 
     private fun renderContactMatches() {
@@ -286,10 +325,12 @@ class ComposeActivity : AppCompatActivity() {
                 if (text.isNotEmpty()) {
                     if (recipientStage) {
                         recipientController.appendVoiceResult(text)
-                        // Same refresh a manually-typed character would
-                        // trigger — a dictated name/number should surface
-                        // contact matches just like typing it would.
-                        updateContactMatches()
+                        // Not updateContactMatches() — that only matches in
+                        // MULTITAP mode (WORD mode's own T9 digit-code
+                        // candidates handle typing there instead), but
+                        // dictation inserts literal text regardless of
+                        // mode, so it needs the mode-independent path.
+                        updateContactMatchesFromVoice()
                     } else {
                         inputController.appendVoiceResult(text)
                     }
@@ -300,6 +341,25 @@ class ComposeActivity : AppCompatActivity() {
                 Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
             }
         )
+    }
+
+    /** Left softkey — jumps straight to a top-level typing mode instead of
+     *  cycling '*' through it. Targets whichever field is actually active
+     *  (recipient vs. body), same split showOptions() uses. */
+    private fun showModeMenu() {
+        val controller = if (editingRecipient) recipientController else inputController
+        val options = arrayOf("T9 Word", "ABC", "123")
+        AlertDialog.Builder(this)
+            .setTitle("Typing Mode")
+            .setItems(options) { _, which ->
+                val newMode = when (which) {
+                    0 -> InputMode.WORD
+                    1 -> InputMode.MULTITAP
+                    else -> InputMode.NUMBER
+                }
+                controller.selectMode(newMode)
+            }
+            .show()
     }
 
     private fun showOptions() {
@@ -584,6 +644,10 @@ class ComposeActivity : AppCompatActivity() {
                     showOptions()
                     return true
                 }
+                KeyEvent.KEYCODE_SOFT_LEFT -> {
+                    showModeMenu()
+                    return true
+                }
             }
             if (event.keyCode in MicButtonKeyCodes.CODES) {
                 if (event.repeatCount == 0) startVoiceRecording()
@@ -646,7 +710,7 @@ class ComposeActivity : AppCompatActivity() {
                             editingRecipient = false
                             recipientController.stopCursorBlink()
                             inputController.startCursorBlink()
-                            modeIndicator.text = inputController.currentMode().label
+                            softLeftLabel.text = inputController.currentLabel()
                             composeText.post { composeText.requestFocus() }
                         }
                         return true
@@ -667,7 +731,7 @@ class ComposeActivity : AppCompatActivity() {
                             editingRecipient = false
                             recipientController.stopCursorBlink()
                             inputController.startCursorBlink()
-                            modeIndicator.text = inputController.currentMode().label
+                            softLeftLabel.text = inputController.currentLabel()
                             composeText.post { composeText.requestFocus() }
                         }
                         return true
@@ -705,19 +769,45 @@ class ComposeActivity : AppCompatActivity() {
                     editingRecipient = true
                     inputController.stopCursorBlink()
                     recipientController.startCursorBlink()
-                    modeIndicator.text = recipientMode.label
+                    softLeftLabel.text = recipientController.currentLabel()
+                    // NoImeEditText's cursor overlay only draws while its
+                    // view is focused (see its onFocusChanged/cursorDrawable)
+                    // — the forward transition below moves focus to
+                    // composeText itself, but nothing was ever moving it
+                    // back to toText here, so the cursor stayed invisible
+                    // even with startCursorBlink() called above.
+                    toText.post { toText.requestFocus() }
                 }
                 return true
             }
-            // Up backs out to the "To:" field — but only when Up isn't
-            // already spoken for browsing a Word-mode candidate list
-            // (hasPendingWord()), which takes priority so it keeps working
-            // exactly as before.
-            if (event.keyCode == KeyEvent.KEYCODE_DPAD_UP && !inputController.hasPendingWord()) {
-                editingRecipient = true
-                inputController.stopCursorBlink()
-                recipientController.startCursorBlink()
-                modeIndicator.text = recipientMode.label
+            // Up moves the cursor up a line within the message, same as
+            // in-thread composing (ConversationActivity's own DPAD_UP
+            // handling) — only once there's no line above to go to
+            // (moveCursorLineUp returns false) does it back out of the
+            // compose box. There's no message list on this screen to land
+            // on, so it backs out to the "To:" field instead.
+            if (event.keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                if (inputController.hasPendingWord()) {
+                    inputController.onKeyDown(event.keyCode, event)
+                } else if (!inputController.moveCursorLineUp()) {
+                    editingRecipient = true
+                    inputController.stopCursorBlink()
+                    recipientController.startCursorBlink()
+                    softLeftLabel.text = recipientController.currentLabel()
+                    toText.post { toText.requestFocus() }
+                }
+                return true
+            }
+            // Down moves the cursor down a line the same way — mirroring
+            // ConversationActivity, which never exits the compose box on
+            // Down either (there's nothing below it to exit to there, same
+            // as here).
+            if (event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                if (inputController.hasPendingWord()) {
+                    inputController.onKeyDown(event.keyCode, event)
+                } else {
+                    inputController.moveCursorLineDown()
+                }
                 return true
             }
             if (inputController.onKeyDown(event.keyCode, event)) return true

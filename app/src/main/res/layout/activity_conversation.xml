@@ -22,16 +22,6 @@
         android:layout_weight="1" />
 
     <TextView
-        android:id="@+id/modeIndicator"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="T9Word"
-        android:textColor="#66CCFF"
-        android:textSize="14sp"
-        android:paddingStart="8dp"
-        android:paddingEnd="8dp" />
-
-    <TextView
         android:id="@+id/attachmentIndicator"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -66,9 +56,11 @@
         android:layout_height="wrap_content"
         android:textColor="#80D8FF"
         android:textSize="18sp"
-        android:paddingStart="8dp"
-        android:paddingEnd="8dp"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
         android:paddingBottom="2dp"
+        android:maxLines="3"
+        android:ellipsize="end"
         android:visibility="gone" />
 
     <TextView
@@ -89,6 +81,7 @@
         android:padding="8dp">
 
         <TextView
+            android:id="@+id/softLeftLabel"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
