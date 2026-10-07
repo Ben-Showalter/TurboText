@@ -180,6 +180,8 @@ class MainActivity : AppCompatActivity() {
     private fun ensurePermissions() {
         if (!hasAllPermissions()) {
             ActivityCompat.requestPermissions(this, requiredPermissions, 100)
+        } else {
+            continueSetup()
         }
         // No else-branch refresh call here — onResume() always fires
         // immediately after onCreate() regardless, and already handles
@@ -197,12 +199,43 @@ class MainActivity : AppCompatActivity() {
         if (hasAllPermissions()) {
             refreshConversations()
         }
+        continueSetup()
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == DefaultSmsRoleHelper.REQUEST_CODE) {
             refreshConversations()
+            continueSetup()
+        }
+    }
+
+    // Each setup prompt is shown at most once per launch; anything still
+    // missing is asked for again on the next launch.
+    private var askedDefaultThisLaunch = false
+    private var askedAccessibilityThisLaunch = false
+
+    /** Startup setup, one step at a time (each step's result calls this
+     *  again): app permissions → default SMS app → accessibility. Steps
+     *  already granted are skipped. */
+    private fun continueSetup() {
+        if (isFinishing || isDestroyed) return
+        if (!DefaultSmsRoleHelper.isDefault(this) && !askedDefaultThisLaunch) {
+            askedDefaultThisLaunch = true
+            DefaultSmsRoleHelper.requestDefault(this)
+            return
+        }
+        if (!AccessibilityHelper.isServiceEnabled(this) && !askedAccessibilityThisLaunch) {
+            askedAccessibilityThisLaunch = true
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Turn on Accessibility for TurboText")
+                .setMessage(
+                    "Lets TurboText flash the outer-screen message icon when you press a key " +
+                        "while you have unread texts. On the next screen, choose TurboText and turn it on."
+                )
+                .setPositiveButton("Open Settings") { _, _ -> AccessibilityHelper.openSettings(this) }
+                .setNegativeButton("Not now", null)
+                .show()
         }
     }
 

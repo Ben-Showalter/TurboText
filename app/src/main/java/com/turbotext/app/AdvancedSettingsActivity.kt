@@ -137,19 +137,9 @@ class AdvancedSettingsActivity : AppCompatActivity() {
         }
     }
 
-    /** Deep-links to the system's own Accessibility settings list — there's
-     *  no reliable cross-OEM way to jump straight to TurboText's specific
-     *  toggle within it, so the fallback Toast tells the user what to look
-     *  for. This is the one-time manual step the outer-screen unread pulse
+    /** The one-time manual step the outer-screen unread pulse
      *  (KeyButtonAccessibilityService) depends on. */
-    private fun openAccessibilitySettings() {
-        try {
-            startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            Toast.makeText(this, "Find and enable \"TurboText\" in the list", Toast.LENGTH_LONG).show()
-        } catch (e: Exception) {
-            Toast.makeText(this, "Open Settings > Accessibility > TurboText", Toast.LENGTH_LONG).show()
-        }
-    }
+    private fun openAccessibilitySettings() = AccessibilityHelper.openSettings(this)
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action != KeyEvent.ACTION_DOWN) return super.dispatchKeyEvent(event)

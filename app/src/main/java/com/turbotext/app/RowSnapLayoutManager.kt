@@ -34,12 +34,12 @@ class RowSnapLayoutManager(context: Context) : LinearLayoutManager(context) {
     )
 }
 
-/** Adds the MatChat-style right-edge scroll bar, in the current theme's
- *  colors, following whatever [selected] returns. */
+/** Adds the MatChat-style right-edge scroll bar — grey thumb on a faint
+ *  grey track — following whatever [selected] returns. */
 fun RecyclerView.addFocusScrollbar(selected: (RecyclerView) -> Int?) {
     val theme = ThemeHelper.getCurrentTheme(context)
     addItemDecoration(
-        FocusScrollbarDecoration(theme.accent, theme.surface2, resources.displayMetrics.density, selected)
+        FocusScrollbarDecoration(theme.textTertiary, theme.surface2, resources.displayMetrics.density, selected)
     )
 }
 

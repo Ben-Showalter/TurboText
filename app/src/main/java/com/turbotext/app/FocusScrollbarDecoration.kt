@@ -17,7 +17,7 @@ import androidx.recyclerview.widget.RecyclerView
  * when nothing is selected.
  */
 class FocusScrollbarDecoration(
-    private val accentColor: Int,
+    private val thumbColor: Int,
     private val trackColor: Int,
     private val density: Float,
     private val selectedPosition: (RecyclerView) -> Int?
@@ -25,7 +25,7 @@ class FocusScrollbarDecoration(
 
     private val width = (5 * density).toInt()
     private val minThumb = 24 * density
-    private val thumbPaint = Paint().apply { color = accentColor }
+    private val thumbPaint = Paint().apply { color = thumbColor }
     private val trackPaint = Paint().apply { color = trackColor }
 
     override fun getItemOffsets(outRect: Rect, view: View, parent: RecyclerView, state: RecyclerView.State) {
