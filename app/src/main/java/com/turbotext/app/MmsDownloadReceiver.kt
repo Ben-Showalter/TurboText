@@ -47,6 +47,9 @@ class MmsDownloadReceiver : BroadcastReceiver() {
                 audioContentType = extracted.audioContentType,
                 groupParticipants = extracted.allAddresses
             )
+            // Same as SmsDeliverReceiver — any conversation-list snapshot
+            // taken before this insert is now stale.
+            ProviderChangeTracker.bump()
             // Same immediate cache refresh as the SMS path — this thread
             // might not currently be open anywhere.
             if (threadId != null) {

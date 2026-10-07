@@ -19,6 +19,27 @@ class MainActivity : AppCompatActivity() {
     private lateinit var list: RecyclerView
     private var focusedConversation: Conversation? = null
 
+    // Keeps the list live while it's on screen — without this, a message
+    // (or an MMS download finishing) after the list loaded only showed up
+    // after leaving and coming back. Same debounced-observer approach as
+    // ConversationActivity's thread view.
+    private val reloadHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val reloadRunnable = Runnable {
+        if (isFinishing || isDestroyed) return@Runnable
+        refreshConversations()
+        updateGroupsLabel()
+    }
+    private val messageObserver = object : android.database.ContentObserver(reloadHandler) {
+        override fun onChange(selfChange: Boolean) {
+            // One incoming message fires several notifications in a row
+            // (row insert, then parts/thread updates) — reload once per
+            // burst rather than once per notification.
+            reloadHandler.removeCallbacks(reloadRunnable)
+            reloadHandler.postDelayed(reloadRunnable, 800)
+        }
+    }
+    private var observerRegistered = false
+
     // WRITE/READ_EXTERNAL_STORAGE are declared in the manifest with
     // maxSdkVersion="28" (scoped storage replaces them from API 29 on —
     // see MANAGE_EXTERNAL_STORAGE, requested separately via
@@ -91,7 +112,34 @@ class MainActivity : AppCompatActivity() {
         if (hasAllPermissions()) {
             refreshConversations()
             updateGroupsLabel()
+            registerMessageObserver()
         }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        if (observerRegistered) {
+            contentResolver.unregisterContentObserver(messageObserver)
+            observerRegistered = false
+        }
+        reloadHandler.removeCallbacks(reloadRunnable)
+    }
+
+    /** Watches all three URIs for the same reason ConversationActivity
+     *  does — this device's provider can't be relied on to propagate
+     *  changes up to the combined content://mms-sms/ authority alone. */
+    private fun registerMessageObserver() {
+        if (observerRegistered) return
+        contentResolver.registerContentObserver(
+            android.net.Uri.parse("content://mms-sms/"), true, messageObserver
+        )
+        contentResolver.registerContentObserver(
+            android.provider.Telephony.Sms.CONTENT_URI, true, messageObserver
+        )
+        contentResolver.registerContentObserver(
+            android.provider.Telephony.Mms.CONTENT_URI, true, messageObserver
+        )
+        observerRegistered = true
     }
 
     /** Highlights the "◀ Groups" header entry when a group thread has an

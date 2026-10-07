@@ -118,12 +118,20 @@ class TurboTextApplication : Application() {
             // triggers at the same time.
             val conversations = try {
                 val repo = SmsRepository(this)
+                // Captured before the query — if the message that woke
+                // this process is inserted while it runs, the version
+                // moves on and MainActivity won't trust this snapshot.
+                val version = ProviderChangeTracker.current()
                 val list = repo.getConversations()
                 // Published immediately — MainActivity's first load can
                 // pick this up the moment it's ready, rather than waiting
                 // for the message-prewarm loop below to finish too.
-                ConversationPrewarm.publish(list)
-                ConversationListCache.put(list)
+                ConversationPrewarm.publish(list, version)
+                // A possibly-stale list shouldn't become what MainActivity
+                // shows "instantly" either.
+                if (ProviderChangeTracker.current() == version) {
+                    ConversationListCache.put(list)
+                }
                 list
             } catch (e: Exception) {
                 android.util.Log.w("TurboTextPerf", "conversation prewarm fetch failed (harmless, just means no head start)", e)
@@ -131,7 +139,7 @@ class TurboTextApplication : Application() {
                 // instead of leaving it stuck until the timeout — a
                 // failed prewarm just means it falls through to its own
                 // normal query, same as if this thread never existed.
-                ConversationPrewarm.publish(emptyList())
+                ConversationPrewarm.publish(emptyList(), ConversationPrewarm.STALE)
                 emptyList()
             }
             try {
