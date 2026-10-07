@@ -31,6 +31,9 @@ class SmsDeliverReceiver : BroadcastReceiver() {
             put(Telephony.Sms.TYPE, Telephony.Sms.MESSAGE_TYPE_INBOX)
         }
         context.contentResolver.insert(Telephony.Sms.CONTENT_URI, values)
+        // Synchronously, before anything else — a conversation-list
+        // snapshot taken before this insert must not be trusted.
+        ProviderChangeTracker.bump()
 
         // Refresh this thread's cache right away, regardless of what
         // screen (if any) is currently showing — without this, a thread
