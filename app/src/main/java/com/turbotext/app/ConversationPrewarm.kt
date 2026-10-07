@@ -16,6 +16,11 @@ import java.util.concurrent.TimeUnit
  *  fetch's result instead of starting its own — one query pays the
  *  cold-connection cost instead of two racing each other for it. */
 object ConversationPrewarm {
+    // Declared first: Kotlin rejects a forward reference to it from the
+    // resultVersion initializer below, even though it's a const.
+    /** Never equals a real ProviderChangeTracker version (those start at 0). */
+    const val STALE = -1L
+
     @Volatile private var result: List<Conversation>? = null
     @Volatile private var resultVersion: Long = STALE
     @Volatile private var consumed = false
@@ -65,7 +70,4 @@ object ConversationPrewarm {
             null
         }
     }
-
-    /** Never equals a real ProviderChangeTracker version (those start at 0). */
-    const val STALE = -1L
 }
