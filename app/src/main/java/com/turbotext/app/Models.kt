@@ -20,6 +20,16 @@ data class Message(
     val vcardUri: String? = null,
     /** content:// URI of an audio (voice message) MMS part, when present. */
     val audioUri: String? = null,
+    /** content:// URI of a video MMS part, when present. */
+    val videoUri: String? = null,
+    /** Any other attachment (PDF, document, unknown type) — shown as a
+     *  file row and opened/saved by type. */
+    val fileUri: String? = null,
+    val fileMime: String? = null,
+    val fileName: String? = null,
+    /** An MMS whose content hasn't been downloaded (yet) — the provider
+     *  only has the carrier's notification for it. */
+    val mmsDownloadPending: Boolean = false,
     /** Who sent this specific message — only populated for incoming
      *  messages in a group thread, where it isn't otherwise obvious. */
     val senderName: String? = null,

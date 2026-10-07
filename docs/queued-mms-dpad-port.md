@@ -1,6 +1,6 @@
 # Queued: port DPAD-Messaging's MMS receive structure
 
-Status: **queued, not started.** Reference: https://github.com/jbriones95/DPAD-Messaging (MIT — keep attribution on anything copied).
+Status: **done** — see MmsReceiver, LibraryMmsReceivedReceiver, MmsReceivePostProcessor, MmsTransmitter and MessageSender. mmslib is vendored as the `:mmslib` module (FossifyOrg/mmslib) rather than fetched from JitPack. Reference: https://github.com/jbriones95/DPAD-Messaging (MIT — keep attribution on anything copied).
 
 ## Why
 TurboText receives MMS with its own code: `MmsDeliverReceiver` + `MmsPduParser` parse the WAP push,

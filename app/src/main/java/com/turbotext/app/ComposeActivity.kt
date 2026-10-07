@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
-import android.provider.MediaStore
 import android.view.KeyEvent
 import android.view.View
 import android.widget.EditText
@@ -14,8 +13,6 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
-import java.io.File
 
 /**
  * Two-stage compose: first the recipient number (numeric keypad, no T9
@@ -23,6 +20,13 @@ import java.io.File
  * / the OK key moves from the "To" field to the body once a number is entered.
  */
 class ComposeActivity : AppCompatActivity() {
+
+    companion object {
+        /** Forwarding: an attachment (content:// URI + MIME type) to
+         *  start the new message with. */
+        const val EXTRA_PREFILL_ATTACHMENT_URI = "prefillAttachmentUri"
+        const val EXTRA_PREFILL_ATTACHMENT_MIME = "prefillAttachmentMime"
+    }
 
     private lateinit var repo: SmsRepository
     private lateinit var engine: T9Engine
@@ -39,10 +43,9 @@ class ComposeActivity : AppCompatActivity() {
 
     private var editingRecipient = true
     private var recipientMode = InputMode.WORD
-    private var pendingPhotoUri: Uri? = null
-    private var pendingAudioUri: Uri? = null
-    private var pendingVcardBytes: ByteArray? = null
-    private var pendingVcardName: String = "contact.vcf"
+    private var pendingAttachment: OutgoingAttachment? = null
+    private lateinit var picker: AttachmentPicker
+    private var sending = false
     private lateinit var audioMemoRecorder: AudioMemoRecorder
     private var isRecordingMemo = false
 
@@ -112,15 +115,28 @@ class ComposeActivity : AppCompatActivity() {
         // Forwarding a message launches here with these extras — recipient
         // still needs to be chosen, so this doesn't touch editingRecipient.
         intent?.getStringExtra("prefillText")?.let { inputController.setText(it) }
-        intent?.getStringExtra("prefillImageUri")?.let {
-            pendingPhotoUri = Uri.parse(it)
-            onPhotoAttached()
-        }
-
         voiceHelper = GroqVoiceInputHelper(this)
         voiceHelper.keepBluetoothRouteWarm = true
         btMicWarmup = BluetoothMicWarmup(this)
         audioMemoRecorder = AudioMemoRecorder(this)
+        picker = AttachmentPicker(this) { setAttachment(it) }
+
+        // Shared in from another app ("Share → TurboText").
+        if (intent?.action == android.content.Intent.ACTION_SEND) {
+            intent.getStringExtra(android.content.Intent.EXTRA_TEXT)?.let { inputController.setText(it) }
+            @Suppress("DEPRECATION")
+            (intent.getParcelableExtra<Uri>(android.content.Intent.EXTRA_STREAM))?.let {
+                setAttachment(OutgoingAttachment.fromUri(this, it, intent.type ?: "application/octet-stream"))
+            }
+        }
+
+        val prefillUri = intent?.getStringExtra(EXTRA_PREFILL_ATTACHMENT_URI)
+            ?: intent?.getStringExtra("prefillImageUri")
+        if (prefillUri != null) {
+            val mime = intent?.getStringExtra(EXTRA_PREFILL_ATTACHMENT_MIME) ?: "image/jpeg"
+            val ext = android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(mime) ?: "bin"
+            setAttachment(OutgoingAttachment(mime, "forwarded_${System.currentTimeMillis()}.$ext", uri = Uri.parse(prefillUri)))
+        }
 
         Thread {
             allContacts = loadAllContacts()
@@ -364,80 +380,26 @@ class ComposeActivity : AppCompatActivity() {
 
     private fun showOptions() {
         if (editingRecipient) return
-        val hasAttachment = pendingPhotoUri != null || pendingAudioUri != null || pendingVcardBytes != null
-        val options = if (hasAttachment) {
-            arrayOf("Take Photo", "Attach", "Remove Attachment", "Paste")
+        val options = if (pendingAttachment != null) {
+            arrayOf("Take Photo", "Record Video", "Attach", "Remove Attachment", "Paste")
         } else {
-            arrayOf("Take Photo", "Attach", "Paste")
+            arrayOf("Take Photo", "Record Video", "Attach", "Paste")
         }
         AlertDialog.Builder(this)
             .setTitle("Options")
             .setItems(options) { _, which ->
                 when (options[which]) {
-                    "Take Photo" -> startPhotoCapture()
-                    "Attach" -> showAttachMenu()
+                    "Take Photo" -> picker.takePhoto()
+                    "Record Video" -> picker.recordVideo()
+                    "Attach" -> picker.showAttachMenu { startAudioMemoRecording() }
                     "Remove Attachment" -> {
-                        pendingPhotoUri = null
-                        pendingAudioUri = null
-                        pendingVcardBytes = null
-                        attachmentIndicator.visibility = View.GONE
+                        setAttachment(null)
                         Toast.makeText(this, "Attachment removed", Toast.LENGTH_SHORT).show()
                     }
                     "Paste" -> pasteFromClipboard()
                 }
             }
             .show()
-    }
-
-    private fun showAttachMenu() {
-        val options = arrayOf("Photo from Gallery", "Audio Recording", "Contact")
-        AlertDialog.Builder(this)
-            .setTitle("Attach")
-            .setItems(options) { _, which ->
-                when (options[which]) {
-                    "Photo from Gallery" -> startGalleryPick()
-                    "Audio Recording" -> startAudioMemoRecording()
-                    "Contact" -> startContactPick()
-                }
-            }
-            .show()
-    }
-
-    private fun startContactPick() {
-        val intent = android.content.Intent(
-            android.content.Intent.ACTION_PICK, android.provider.ContactsContract.Contacts.CONTENT_URI
-        )
-        startActivityForResult(intent, 403)
-    }
-
-    private fun loadVcardBytes(contactUri: Uri): Pair<ByteArray, String>? {
-        return try {
-            val cursor = contentResolver.query(
-                contactUri,
-                arrayOf(
-                    android.provider.ContactsContract.Contacts.LOOKUP_KEY,
-                    android.provider.ContactsContract.Contacts.DISPLAY_NAME
-                ),
-                null, null, null
-            )
-            cursor?.use {
-                if (it.moveToFirst()) {
-                    val lookupKey = it.getString(0)
-                    val name = it.getString(1) ?: "contact"
-                    val vcardUri = Uri.withAppendedPath(
-                        android.provider.ContactsContract.Contacts.CONTENT_VCARD_URI, lookupKey
-                    )
-                    val bytes = contentResolver.openInputStream(vcardUri)?.use { stream -> stream.readBytes() }
-                    if (bytes != null) {
-                        val safeName = name.replace(Regex("[^A-Za-z0-9]"), "_") + ".vcf"
-                        bytes to safeName
-                    } else null
-                } else null
-            }
-        } catch (e: Exception) {
-            android.util.Log.w("TurboTextAttach", "failed to load vcard", e)
-            null
-        }
     }
 
     private fun startAudioMemoRecording() {
@@ -461,12 +423,7 @@ class ComposeActivity : AppCompatActivity() {
         isRecordingMemo = false
         listeningIndicator.visibility = View.GONE
         if (uri != null) {
-            pendingPhotoUri = null
-            pendingVcardBytes = null
-            pendingAudioUri = uri
-            attachmentIndicator.text = "🎤 Audio attached"
-            attachmentIndicator.visibility = View.VISIBLE
-            Toast.makeText(this, "Audio attached — press Send", Toast.LENGTH_SHORT).show()
+            setAttachment(OutgoingAttachment("audio/mp4", "audio_${System.currentTimeMillis()}.m4a", uri = uri))
         } else {
             Toast.makeText(this, "Recording failed", Toast.LENGTH_SHORT).show()
         }
@@ -487,121 +444,62 @@ class ComposeActivity : AppCompatActivity() {
         inputController.appendVoiceResult(text)
     }
 
-    private fun startPhotoCapture() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), 300)
-            return
-        }
-        val dir = File(cacheDir, "camera").apply { mkdirs() }
-        val file = File(dir, "mms_${System.currentTimeMillis()}.jpg")
-        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
-        pendingPhotoUri = uri
-        val captureIntent = android.content.Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
-            putExtra(MediaStore.EXTRA_OUTPUT, uri)
-        }
-        if (captureIntent.resolveActivity(packageManager) != null) {
-            startActivityForResult(captureIntent, 400)
-        } else {
-            Toast.makeText(this, "No camera app available", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private fun startGalleryPick() {
-        val intent = android.content.Intent(android.content.Intent.ACTION_GET_CONTENT).apply {
-            type = "image/*"
-        }
-        startActivityForResult(android.content.Intent.createChooser(intent, "Choose Photo"), 401)
-    }
-
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        when (requestCode) {
-            400 -> {
-                if (resultCode == RESULT_OK && pendingPhotoUri != null) {
-                    onPhotoAttached()
-                } else {
-                    pendingPhotoUri = null
-                }
-            }
-            401 -> {
-                val uri = data?.data
-                if (resultCode == RESULT_OK && uri != null) {
-                    pendingPhotoUri = uri
-                    onPhotoAttached()
-                }
-            }
-            403 -> {
-                val contactUri = data?.data
-                if (resultCode == RESULT_OK && contactUri != null) {
-                    Thread {
-                        val vcard = loadVcardBytes(contactUri)
-                        runOnUiThread {
-                            if (isFinishing || isDestroyed) return@runOnUiThread
-                            if (vcard != null) {
-                                pendingPhotoUri = null
-                                pendingAudioUri = null
-                                pendingVcardBytes = vcard.first
-                                pendingVcardName = vcard.second
-                                attachmentIndicator.text = "👤 Contact attached"
-                                attachmentIndicator.visibility = View.VISIBLE
-                                Toast.makeText(this, "Contact attached — press Send", Toast.LENGTH_SHORT).show()
-                            } else {
-                                Toast.makeText(this, "Couldn't read that contact", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    }.start()
-                }
-            }
-        }
+        picker.handleResult(requestCode, resultCode, data)
     }
 
-    private fun onPhotoAttached() {
-        pendingAudioUri = null
-        pendingVcardBytes = null
-        attachmentIndicator.text = "📷 Photo attached"
-        attachmentIndicator.visibility = View.VISIBLE
-        Toast.makeText(this, "Photo attached — press Send", Toast.LENGTH_SHORT).show()
+    /** Sets (or with null, clears) what will go out with the message. */
+    private fun setAttachment(attachment: OutgoingAttachment?) {
+        pendingAttachment = attachment
+        if (attachment == null) {
+            attachmentIndicator.visibility = View.GONE
+        } else {
+            attachmentIndicator.text = attachment.label
+            attachmentIndicator.visibility = View.VISIBLE
+            Toast.makeText(this, "${attachment.label} — press Send", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun sendMessage() {
+        if (sending) return
         recipientController.confirmPending()
         val address = recipientController.currentText().trim()
         val body = SettingsHelper.applySignature(this, inputController.currentText().trim())
-        val photoUri = pendingPhotoUri
-        val audioUri = pendingAudioUri
-        val vcardBytes = pendingVcardBytes
-        val vcardName = pendingVcardName
+        val attachment = pendingAttachment
 
         if (address.isEmpty()) {
             Toast.makeText(this, "Enter a recipient first", Toast.LENGTH_SHORT).show()
             return
         }
-        if (body.isEmpty() && photoUri == null && audioUri == null && vcardBytes == null) {
+        if (body.isEmpty() && attachment == null) {
             Toast.makeText(this, "Nothing to send", Toast.LENGTH_SHORT).show()
             return
         }
 
+        sending = true
+        if (attachment != null) {
+            listeningIndicator.text = if (attachment.isVideo) "Compressing video…" else "Preparing attachment…"
+            listeningIndicator.visibility = View.VISIBLE
+        }
         Thread {
-            if (photoUri != null) {
-                repo.sendMmsMessage(address, body, imageUri = photoUri)
-            } else if (audioUri != null) {
-                repo.sendMmsMessage(address, body, audioUri = audioUri)
-            } else if (vcardBytes != null) {
-                repo.sendMmsMessage(address, body, vcardBytes = vcardBytes, vcardName = vcardName)
-            } else if (repo.isEmailAddress(address)) {
-                // Plain SMS has no concept of an email recipient at all —
-                // this has to go out as MMS, routed through the carrier's
-                // MMSC. Whether that actually reaches the inbox depends on
-                // the carrier supporting/enabling that bridge — not
-                // something this app can guarantee.
-                repo.sendMmsMessage(address, body)
-            } else {
-                repo.sendMessage(address, body)
+            // MessageSender picks SMS or MMS (attachments and email
+            // addresses go out as MMS).
+            val error = MessageSender.send(this, listOf(address), body, attachment) { status ->
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) {
+                        listeningIndicator.text = status
+                        listeningIndicator.visibility = View.VISIBLE
+                    }
+                }
             }
             runOnUiThread {
-                if (!isFinishing && !isDestroyed) {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                sending = false
+                listeningIndicator.visibility = View.GONE
+                if (error != null) {
+                    Toast.makeText(this, error, Toast.LENGTH_LONG).show()
+                } else {
                     Toast.makeText(this, "Sent", Toast.LENGTH_SHORT).show()
                     finish()
                 }

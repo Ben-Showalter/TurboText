@@ -158,6 +158,13 @@
                 <data android:scheme="mms" />
                 <data android:scheme="mmsto" />
             </intent-filter>
+            <!-- "Share" from the gallery, files, contacts etc. — anything
+                 can be sent as an MMS attachment. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
         </activity>
 
         <!-- Thread view for a single conversation -->
@@ -176,9 +183,11 @@
             </intent-filter>
         </receiver>
 
-        <!-- Required: receives incoming MMS when this app is the default handler -->
+        <!-- Required: receives incoming MMS when this app is the default handler.
+             MmsReceiver is mmslib's PushReceiver: it parses the carrier's
+             notification and asks the system MMS service to download it. -->
         <receiver
-            android:name=".MmsDeliverReceiver"
+            android:name=".MmsReceiver"
             android:exported="true"
             android:permission="android.permission.BROADCAST_WAP_PUSH">
             <intent-filter>
@@ -187,15 +196,18 @@
             </intent-filter>
         </receiver>
 
-        <!-- Receives the completion callback from MmsManager.downloadMultimediaMessage()
-             (triggered via PendingIntent from MmsDeliverReceiver). This was
-             missing entirely at first, which is exactly why the download
-             request went out but nothing ever came back — Android has
-             nowhere to deliver to without this declaration, even for a
-             PendingIntent-only receiver like this one. -->
+        <!-- Download finished and saved. mmslib finds this receiver by its
+             taskAffinity (BroadcastUtils.sendExplicitBroadcast), so the
+             value must stay exactly this. -->
         <receiver
-            android:name=".MmsDownloadReceiver"
-            android:exported="true" />
+            android:name=".LibraryMmsReceivedReceiver"
+            android:exported="false"
+            android:taskAffinity="com.klinker.android.messaging.MMS_RECEIVED" />
+
+        <!-- Result of an MMS sent by MmsTransmitter. -->
+        <receiver
+            android:name=".MmsSentReceiver"
+            android:exported="false" />
 
         <!-- Required: lets the phone's "respond via message" (decline call with text) work -->
         <service
@@ -222,18 +234,6 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
-
-        <!-- MMS-sending library (com.klinkerapps:android-smsmms) plumbing.
-             Note: we only use this library for MMS (photos) — plain SMS
-             sending goes through our own SmsRepository — so we only need
-             the receiver that marks an MMS as sent afterward. The library's
-             SentReceiver/DeliveredReceiver classes are abstract and require
-             a per-app subclass we don't need since we don't route SMS
-             through this library. -->
-        <receiver
-            android:name="com.klinker.android.send_message.MmsSentReceiver"
-            android:exported="false"
-            android:taskAffinity="com.klinker.android.messaging.MMS_SENT" />
 
         <!-- Experimental — see KeyButtonAccessibilityService for why this
              is the only way to observe hardware key presses (like volume)

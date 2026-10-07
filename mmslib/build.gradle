@@ -1,0 +1,34 @@
+// Vendored copy of FossifyOrg/mmslib (a maintained fork of Klinker's
+// android-smsmms, itself built on AOSP's MMS code) — Apache-2.0, see
+// NOTICE. Pulled into the repo instead of fetched from JitPack so the
+// build doesn't depend on JitPack being reachable, and so carrier tweaks
+// (res/xml/mms_config.xml) can be made in place.
+plugins {
+    id 'com.android.library'
+}
+
+android {
+    namespace 'com.klinker.android.send_message'
+    compileSdk 34
+
+    defaultConfig {
+        minSdk 24
+    }
+
+    lint {
+        abortOnError false
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    useLibrary 'org.apache.http.legacy'
+}
+
+dependencies {
+    implementation 'com.klinkerapps:logger:1.0.3'
+    implementation 'com.squareup.okhttp:okhttp:2.5.0'
+    implementation 'com.squareup.okhttp:okhttp-urlconnection:2.5.0'
+}

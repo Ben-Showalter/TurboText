@@ -2,8 +2,8 @@ package com.turbotext.app
 
 /** Some carriers/phones deliver a small vCard as a plain concatenated SMS
  *  (text/plain) rather than an MMS attachment, so it never reaches the
- *  MMS-part vCard detection in SmsRepository.readMmsParts() /
- *  MmsRetrieveParser — it would otherwise just sit in Telephony.Sms.BODY
+ *  MMS-part vCard detection in SmsRepository.readMmsParts()
+ *  — it would otherwise just sit in Telephony.Sms.BODY
  *  as raw vCard syntax, which reads like garbled text (e.g. "N:Doe;John;;;").
  *  This finds that same BEGIN:VCARD ... END:VCARD block inside a plain SMS
  *  body string so it can be handled the same way as an MMS vCard part. */

@@ -22,6 +22,15 @@ class TurboTextApplication : Application() {
         super.onCreate()
         SettingsHelper.clearRemovedSettings(this)
 
+        // mmslib's incoming-MMS path (PushReceiver) reads these: download
+        // through the phone's own MMS service, and treat multi-recipient
+        // messages as one group thread.
+        com.klinker.android.send_message.Transaction.settings =
+            com.klinker.android.send_message.Settings().apply {
+                setUseSystemSending(true)
+                setGroup(true)
+            }
+
         // Contact saves/edits happen in the system Contacts app, outside
         // our control — this is the only way to learn a name changed, so
         // ContactHelper's cached lookups (otherwise stuck for the life of

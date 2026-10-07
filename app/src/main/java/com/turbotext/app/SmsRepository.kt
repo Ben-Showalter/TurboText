@@ -7,16 +7,6 @@ import android.provider.ContactsContract
 import android.provider.Telephony
 import android.telephony.SmsManager
 
-/** Most carriers cap an MMS around ~1MB end-to-end (often less, and the
- *  stricter of sender/recipient carrier limits wins), but the sending
- *  library (com.klinkerapps:android-smsmms) always JPEG-compresses
- *  attached images at a fixed quality with no size awareness of its own.
- *  A modern full-resolution camera photo (often 3-8MB) sails past that
- *  limit — the carrier accepts the upload and reports "sent" back to us,
- *  then silently fails to relay it to the recipient. This target leaves
- *  headroom under the ~1MB ceiling for PDU/SMIL overhead. */
-private const val MMS_MAX_IMAGE_BYTES = 900_000
-
 /**
  * Thin wrapper around Android's SMS ContentProvider.
  * Only works correctly once this app is set as the default SMS app
@@ -174,11 +164,8 @@ class SmsRepository(private val context: Context) {
      *  the same class of OEM quirk this project has hit before. */
     /** The provider's own authoritative participant list for a specific
      *  thread (via recipient_ids, same mechanism as getGroupThreads),
-     *  rather than trusting our own PDU-byte-scanning heuristic
-     *  (extractAllAddresses) — the two can disagree, and this is the
-     *  one that's actually correct, since it comes from what the
-     *  provider itself resolved after insertReceivedMms ran. Returns a
-     *  single-element list for a normal 1:1 thread. */
+     *  — what the provider itself resolved when the MMS was saved.
+     *  Returns a single-element list for a normal 1:1 thread. */
     fun getThreadParticipants(threadId: Long): List<String> {
         return try {
             context.contentResolver.query(
@@ -284,42 +271,12 @@ class SmsRepository(private val context: Context) {
         }
     }
 
-    /** Attempts a true multi-recipient group MMS send — one shared
-     *  envelope, so (carrier and recipient devices permitting) everyone
-     *  sees the same thread and each other's replies. This is the
-     *  single most uncertain piece of this whole feature: it depends on
-     *  the underlying library actually supporting multiple "to"
-     *  addresses the way this is written, and on carrier-level group MMS
-     *  support that can't be verified or guaranteed from here. */
-    fun sendGroupMmsMessage(addresses: List<String>, body: String) {
-        val settings = com.klinker.android.send_message.Settings()
-        settings.setUseSystemSending(true)
-        // Confirmed via the library's own source and documentation: this
-        // is what actually controls whether a multi-recipient message
-        // goes out as one shared group MMS envelope versus separate
-        // individual messages to each address. Without this, "group"
-        // sends were silently falling back to the latter — exactly the
-        // "doesn't load as a group on the recipient's end" symptom.
-        settings.setGroup(true)
-        // Normalizing every address to the same plain-digit format
-        // (dropping formatting characters, keeping a leading + if
-        // present) — a real test showed one address as "(555) 491-8332"
-        // and the other as "+1 555-535-6558", genuinely inconsistent
-        // formatting between recipients in the same send, which is a
-        // plausible cause for only one being correctly processed.
-        val normalized = addresses.map { normalizePhoneNumber(it) }
-        val transaction = com.klinker.android.send_message.Transaction(context, settings)
-        val message = com.klinker.android.send_message.Message(body, normalized.toTypedArray())
-        android.util.Log.i("TurboTextGroup", "sending group MMS to (normalized): ${normalized.joinToString(", ")}")
-        transaction.sendNewMessage(message, com.klinker.android.send_message.Transaction.NO_THREAD_ID)
-    }
-
     /** Deliberately simple — good enough to distinguish "someone@email.com"
      *  from a phone number, not meant to be a full RFC-5322 validator. */
     fun isEmailAddress(address: String): Boolean =
         address.contains("@") && address.matches(Regex("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$"))
 
-    private fun normalizePhoneNumber(raw: String): String {
+    fun normalizePhoneNumber(raw: String): String {
         // An email address isn't a phone number at all — stripping it down
         // to digits-only would destroy it. MMS (unlike SMS) can address a
         // recipient by email, routed through the carrier's MMSC, so this
@@ -413,7 +370,9 @@ class SmsRepository(private val context: Context) {
                     parts.imageUri != null -> "Picture message"
                     parts.audioUri != null -> "Voice message"
                     parts.vcardUri != null -> "Contact card"
-                    else -> "Could not download and parse MMS"
+                    parts.videoUri != null -> "Video"
+                    parts.fileUri != null -> "File: ${parts.fileName ?: parts.fileMime}"
+                    else -> "Multimedia message"
                 }
                 candidates[threadId] = Conversation(
                     threadId = threadId,
@@ -591,7 +550,7 @@ class SmsRepository(private val context: Context) {
         val result = mutableListOf<Message>()
         val isGroup = isGroupThread(threadId)
         val uri = Telephony.Mms.CONTENT_URI
-        val projection = arrayOf(Telephony.Mms._ID, Telephony.Mms.DATE, Telephony.Mms.MESSAGE_BOX)
+        val projection = arrayOf(Telephony.Mms._ID, Telephony.Mms.DATE, Telephony.Mms.MESSAGE_BOX, Telephony.Mms.MESSAGE_TYPE)
         val sortOrder = if (limit != null) "${Telephony.Mms.DATE} DESC LIMIT $limit" else "${Telephony.Mms.DATE} ASC"
         val cursor = context.contentResolver.query(
             uri, projection,
@@ -614,12 +573,16 @@ class SmsRepository(private val context: Context) {
                     Telephony.Mms.MESSAGE_BOX_INBOX -> "received"
                     else -> null
                 }
+                // 130 = m-notification-ind: the carrier's "you have an MMS"
+                // notice, persisted before (or instead of, if it failed)
+                // the real content download.
+                val isNotificationInd = it.getInt(it.getColumnIndexOrThrow(Telephony.Mms.MESSAGE_TYPE)) == 130
                 val parts = readMmsParts(id)
                 val senderName = if (isGroup && !isOutgoing) lookupMmsSenderName(id) else null
                 result.add(
                     Message(
                         id = id,
-                        address = "",
+                        address = if (!isOutgoing) parts.senderAddress ?: "" else "",
                         body = parts.text,
                         date = dateSeconds * 1000L,
                         isOutgoing = isOutgoing,
@@ -627,9 +590,13 @@ class SmsRepository(private val context: Context) {
                         imageUri = parts.imageUri,
                         vcardUri = parts.vcardUri,
                         audioUri = parts.audioUri,
+                        videoUri = parts.videoUri,
+                        fileUri = parts.fileUri,
+                        fileMime = parts.fileMime,
+                        fileName = parts.fileName,
                         senderName = senderName,
-                        isUnretrievedMms = parts.text.isEmpty() && parts.imageUri == null &&
-                            parts.vcardUri == null && parts.audioUri == null,
+                        mmsDownloadPending = isNotificationInd,
+                        isUnretrievedMms = !isNotificationInd && parts.text.isEmpty() && !parts.hasMedia,
                         sendStatus = sendStatus
                     )
                 )
@@ -662,17 +629,28 @@ class SmsRepository(private val context: Context) {
         val imageUri: String?,
         val vcardUri: String? = null,
         val audioUri: String? = null,
-        val senderAddress: String? = null
-    )
+        val senderAddress: String? = null,
+        val videoUri: String? = null,
+        val fileUri: String? = null,
+        val fileMime: String? = null,
+        val fileName: String? = null
+    ) {
+        val hasMedia get() = imageUri != null || vcardUri != null || audioUri != null ||
+            videoUri != null || fileUri != null
+    }
 
     private fun readMmsParts(messageId: Long): MmsParts {
         val textParts = mutableListOf<String>()
         var imageUri: String? = null
         var vcardUri: String? = null
         var audioUri: String? = null
+        var videoUri: String? = null
+        var fileUri: String? = null
+        var fileMime: String? = null
+        var fileName: String? = null
         val partUri = android.net.Uri.parse("content://mms/part")
         val cursor = context.contentResolver.query(
-            partUri, arrayOf("_id", "ct", "text", "_data"),
+            partUri, arrayOf("_id", "ct", "text", "_data", "name", "cl", "fn"),
             "mid = ?", arrayOf(messageId.toString()), null
         )
 
@@ -703,6 +681,13 @@ class SmsRepository(private val context: Context) {
                     contentType == "text/x-vcard" || contentType == "text/vcard" ->
                         vcardUri = "content://mms/part/$partId"
                     contentType.startsWith("audio/") -> audioUri = "content://mms/part/$partId"
+                    contentType.startsWith("video/") -> videoUri = "content://mms/part/$partId"
+                    contentType.isNotEmpty() && fileUri == null -> {
+                        // Anything else — PDF, document, unknown type.
+                        fileUri = "content://mms/part/$partId"
+                        fileMime = contentType
+                        fileName = it.getString(4) ?: it.getString(6) ?: it.getString(5)
+                    }
                 }
             }
         }
@@ -723,7 +708,22 @@ class SmsRepository(private val context: Context) {
             // Non-critical — the message still displays fine without a sender label.
         }
 
-        return MmsParts(text, imageUri, vcardUri, audioUri, senderAddress)
+        return MmsParts(text, imageUri, vcardUri, audioUri, senderAddress, videoUri, fileUri, fileMime, fileName)
+    }
+
+    /** Notification preview for a received MMS — its text, or a short
+     *  description of what's attached. */
+    fun mmsPreview(messageId: Long): String {
+        val parts = readMmsParts(messageId)
+        return when {
+            parts.text.isNotEmpty() -> parts.text
+            parts.imageUri != null -> "Picture message"
+            parts.videoUri != null -> "Video"
+            parts.audioUri != null -> "Voice message"
+            parts.vcardUri != null -> "Contact card"
+            parts.fileUri != null -> "File: ${parts.fileName ?: parts.fileMime}"
+            else -> "Multimedia message"
+        }
     }
 
     /** Reads a text/plain MMS part's body straight from the part's own
@@ -741,11 +741,6 @@ class SmsRepository(private val context: Context) {
         }
     }
 
-    /** Sends an MMS (with an optional photo) using the system MmsManager
-     *  (SDK 21+) via the android-smsmms library, which composes the PDU. */
-    /** Inserts a downloaded incoming MMS (text and/or image) into the
-     *  standard Mms/Part provider tables, so it shows up through the same
-     *  getMessages() query as everything else. */
     /** Fetches every trashed message (across all conversations) for the
      *  Trash Bin screen — view-only for now, matching what's actually
      *  been asked for; nothing here restores or permanently deletes. */
@@ -797,7 +792,7 @@ class SmsRepository(private val context: Context) {
 
         if (mmsIds.isNotEmpty()) {
             val placeholders = mmsIds.joinToString(",") { "?" }
-            val projection = arrayOf(Telephony.Mms._ID, Telephony.Mms.DATE, Telephony.Mms.MESSAGE_BOX)
+            val projection = arrayOf(Telephony.Mms._ID, Telephony.Mms.DATE, Telephony.Mms.MESSAGE_BOX, Telephony.Mms.MESSAGE_TYPE)
             context.contentResolver.query(
                 Telephony.Mms.CONTENT_URI, projection,
                 "${Telephony.Mms._ID} IN ($placeholders)",
@@ -823,304 +818,6 @@ class SmsRepository(private val context: Context) {
         }
 
         return result.sortedByDescending { it.date }
-    }
-
-    /** Finds/creates the shared thread for a group MMS's full
-     *  participant set, excluding our own number where we can determine
-     *  it (Android's threading expects the OTHER participants, not the
-     *  local device). Returns null (caller falls back to a sender-only
-     *  thread) if this can't be resolved for any reason, rather than
-     *  ever risk losing the message. */
-    private fun resolveGroupThreadId(participants: List<String>, tag: String): Long? {
-        return try {
-            val ownNumber = getOwnPhoneNumber()?.let { normalizePhoneNumber(it) }
-            val others = participants.map { normalizePhoneNumber(it) }.distinct()
-                .filter { ownNumber == null || it != ownNumber }
-            if (others.size < 2) {
-                android.util.Log.i(tag, "resolveGroupThreadId: fewer than 2 distinct others after filtering self — not a group after all")
-                return null
-            }
-            android.util.Log.i(tag, "resolveGroupThreadId: own=$ownNumber, group=${others.joinToString(", ")}")
-            android.provider.Telephony.Threads.getOrCreateThreadId(context, others.toSet())
-        } catch (e: Exception) {
-            android.util.Log.w(tag, "resolveGroupThreadId failed, falling back to sender-only thread", e)
-            null
-        }
-    }
-
-    /** Best-effort — a known-flaky API on some carriers/devices. If it
-     *  comes back empty, our own number just won't get filtered out of
-     *  the group's participant set, which could create a differently
-     *  keyed thread than one the stock Messages app made from the same
-     *  group previously. */
-    private fun getOwnPhoneNumber(): String? {
-        return try {
-            @Suppress("DEPRECATION", "MissingPermission")
-            val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as? android.telephony.TelephonyManager
-            @Suppress("DEPRECATION", "MissingPermission")
-            tm?.line1Number?.takeIf { it.isNotBlank() }
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    fun insertReceivedMms(
-        address: String,
-        text: String,
-        imageBytes: ByteArray?,
-        vcardBytes: ByteArray? = null,
-        audioBytes: ByteArray? = null,
-        audioContentType: String? = null,
-        groupParticipants: List<String> = emptyList()
-    ): Long? {
-        val tag = "TurboTextMms"
-        return try {
-            val threadId = if (groupParticipants.size > 1) {
-                resolveGroupThreadId(groupParticipants, tag) ?: android.provider.Telephony.Threads.getOrCreateThreadId(context, address)
-            } else {
-                android.provider.Telephony.Threads.getOrCreateThreadId(context, address)
-            }
-            val values = android.content.ContentValues().apply {
-                put(Telephony.Mms.THREAD_ID, threadId)
-                put(Telephony.Mms.DATE, System.currentTimeMillis() / 1000L) // Mms dates are in seconds
-                put(Telephony.Mms.MESSAGE_BOX, Telephony.Mms.MESSAGE_BOX_INBOX)
-                put(Telephony.Mms.READ, 0)
-            }
-            val mmsUri = context.contentResolver.insert(Telephony.Mms.CONTENT_URI, values)
-            android.util.Log.i(tag, "insertReceivedMms: mms row insert -> $mmsUri")
-            if (mmsUri == null) return null
-            val messageId = android.content.ContentUris.parseId(mmsUri)
-
-            // Sender address row — not required for our own reading path
-            // (which doesn't look at it for MMS), but keeps the message
-            // consistent for other apps that might read this provider.
-            try {
-                val addrValues = android.content.ContentValues().apply {
-                    put("address", address)
-                    put("charset", 106) // 106 = UTF-8, per the MIBenum charset registry
-                    put("type", 137) // 137 = FROM, per PduHeaders' address-type constants
-                }
-                val addrUri = context.contentResolver.insert(
-                    android.net.Uri.parse("content://mms/$messageId/addr"), addrValues
-                )
-                android.util.Log.i(tag, "insertReceivedMms: addr insert -> $addrUri")
-            } catch (e: Exception) {
-                android.util.Log.w(tag, "insertReceivedMms: addr insert failed (non-critical)", e)
-            }
-
-            if (text.isNotEmpty()) {
-                try {
-                    val textPartValues = android.content.ContentValues().apply {
-                        put("mid", messageId)
-                        put("ct", "text/plain")
-                        put("text", text)
-                    }
-                    val textUri = context.contentResolver.insert(android.net.Uri.parse("content://mms/$messageId/part"), textPartValues)
-                    android.util.Log.i(tag, "insertReceivedMms: text part insert -> $textUri")
-                } catch (e: Exception) {
-                    android.util.Log.w(tag, "insertReceivedMms: text part insert failed", e)
-                }
-            }
-
-            if (imageBytes != null) {
-                try {
-                    val imagePartValues = android.content.ContentValues().apply {
-                        put("mid", messageId)
-                        put("ct", "image/jpeg")
-                        put("name", "image.jpg")
-                    }
-                    val partUri = context.contentResolver.insert(android.net.Uri.parse("content://mms/$messageId/part"), imagePartValues)
-                    android.util.Log.i(tag, "insertReceivedMms: image part insert -> $partUri, ${imageBytes.size} bytes to write")
-                    if (partUri != null) {
-                        val stream = context.contentResolver.openOutputStream(partUri)
-                        android.util.Log.i(tag, "insertReceivedMms: openOutputStream -> ${if (stream != null) "got stream" else "NULL"}")
-                        stream?.use { it.write(imageBytes) }
-                        android.util.Log.i(tag, "insertReceivedMms: image bytes written")
-                    }
-                } catch (e: Exception) {
-                    android.util.Log.e(tag, "insertReceivedMms: image part insert/write failed", e)
-                }
-            }
-
-            if (vcardBytes != null) {
-                try {
-                    val vcardPartValues = android.content.ContentValues().apply {
-                        put("mid", messageId)
-                        put("ct", "text/x-vcard")
-                        put("name", "contact.vcf")
-                    }
-                    val partUri = context.contentResolver.insert(android.net.Uri.parse("content://mms/$messageId/part"), vcardPartValues)
-                    android.util.Log.i(tag, "insertReceivedMms: vcard part insert -> $partUri, ${vcardBytes.size} bytes to write")
-                    if (partUri != null) {
-                        context.contentResolver.openOutputStream(partUri)?.use { it.write(vcardBytes) }
-                        android.util.Log.i(tag, "insertReceivedMms: vcard bytes written")
-                    }
-                } catch (e: Exception) {
-                    android.util.Log.e(tag, "insertReceivedMms: vcard part insert/write failed", e)
-                }
-            }
-
-            if (audioBytes != null) {
-                try {
-                    val ct = audioContentType?.takeIf { it.startsWith("audio/") } ?: "audio/3gpp"
-                    // File extension only matters for apps that hand the
-                    // part off by name; the "ct" above is what actually
-                    // drives decoding. Cover the common MMS voice codecs.
-                    val ext = when {
-                        ct.contains("amr") -> "amr"
-                        ct.contains("3gpp") || ct.contains("3gp") -> "3gp"
-                        ct.contains("mp4") || ct.contains("m4a") || ct.contains("aac") -> "m4a"
-                        ct.contains("mpeg") || ct.contains("mp3") -> "mp3"
-                        ct.contains("ogg") || ct.contains("opus") -> "ogg"
-                        ct.contains("wav") || ct.contains("x-wav") -> "wav"
-                        else -> "bin"
-                    }
-                    val audioPartValues = android.content.ContentValues().apply {
-                        put("mid", messageId)
-                        put("ct", ct)
-                        put("name", "audio.$ext")
-                    }
-                    val partUri = context.contentResolver.insert(android.net.Uri.parse("content://mms/$messageId/part"), audioPartValues)
-                    android.util.Log.i(tag, "insertReceivedMms: audio part insert -> $partUri ($ct), ${audioBytes.size} bytes to write")
-                    if (partUri != null) {
-                        context.contentResolver.openOutputStream(partUri)?.use { it.write(audioBytes) }
-                        android.util.Log.i(tag, "insertReceivedMms: audio bytes written")
-                    }
-                } catch (e: Exception) {
-                    android.util.Log.e(tag, "insertReceivedMms: audio part insert/write failed", e)
-                }
-            }
-
-            threadId
-        } catch (e: Exception) {
-            android.util.Log.e(tag, "insertReceivedMms: unexpected failure", e)
-            null
-        }
-    }
-
-    /** [imageUri]/[audioUri]/[vcardBytes] are mutually exclusive in
-     *  practice (the UI only ever sets one at a time), but nothing here
-     *  enforces that — whichever are non-null get attached.
-     *
-     *  Audio/vcard attachment uses Message.Part — confirmed for real this
-     *  time: the constructor (media, contentType, name) resolved cleanly
-     *  in Android Studio, and attaching it goes through message.parts
-     *  (a confirmed-real mutable list — Message.Part) rather than an
-     *  addPart() method, which turned out not to exist. */
-    fun sendMmsMessage(
-        address: String,
-        body: String,
-        imageUri: android.net.Uri? = null,
-        audioUri: android.net.Uri? = null,
-        vcardBytes: ByteArray? = null,
-        vcardName: String = "contact.vcf"
-    ) {
-        val settings = com.klinker.android.send_message.Settings()
-        settings.setUseSystemSending(true)
-        val transaction = com.klinker.android.send_message.Transaction(context, settings)
-        val message = com.klinker.android.send_message.Message(body, address)
-        var hasAttachment = false
-        if (imageUri != null) {
-            val bitmap = loadFullResolutionBitmap(imageUri)
-            if (bitmap != null) { message.setImage(fitBitmapForMms(bitmap)); hasAttachment = true }
-        }
-        if (audioUri != null) {
-            try {
-                val bytes = context.contentResolver.openInputStream(audioUri)?.use { it.readBytes() }
-                if (bytes != null) {
-                    val part = com.klinker.android.send_message.Message.Part(
-                        bytes, "audio/mp4", "audio_${System.currentTimeMillis()}.m4a"
-                    )
-                    message.parts.add(part)
-                    hasAttachment = true
-                }
-            } catch (e: Exception) {
-                android.util.Log.w("TurboTextAttach", "failed to attach audio", e)
-            }
-        }
-        if (vcardBytes != null) {
-            try {
-                val part = com.klinker.android.send_message.Message.Part(vcardBytes, "text/x-vcard", vcardName)
-                message.parts.add(part)
-                hasAttachment = true
-            } catch (e: Exception) {
-                android.util.Log.w("TurboTextAttach", "failed to attach vcard", e)
-            }
-        }
-        // A real log capture showed a plain-text send to an email address
-        // going out via SmsManager.sendTextMessage() anyway — a phone
-        // destination is all that transport can actually reach, so it
-        // just hung on "Sending" forever. The library's SMS-vs-MMS choice
-        // appears to key off whether the message has any attached parts
-        // — this reuses that same already-proven mechanism (identical to
-        // how photos/audio/vcards already reliably go out as MMS) rather
-        // than relying on an unfamiliar library setting I can't verify
-        // the exact behavior of.
-        if (!hasAttachment && isEmailAddress(address.trim())) {
-            try {
-                val part = com.klinker.android.send_message.Message.Part(
-                    body.toByteArray(), "text/plain", "text_0.txt"
-                )
-                message.parts.add(part)
-            } catch (e: Exception) {
-                android.util.Log.w("TurboTextAttach", "failed to force MMS transport for email address", e)
-            }
-        }
-        transaction.sendNewMessage(message, com.klinker.android.send_message.Transaction.NO_THREAD_ID)
-    }
-
-    /** Decodes an image at its actual, full resolution — downscaling for
-     *  MMS delivery (if needed at all) happens separately in
-     *  [fitBitmapForMms], not here. The only safety net kept is catching
-     *  OutOfMemoryError itself, so a truly huge image fails the attach
-     *  cleanly instead of crashing the app — that's a crash-prevention
-     *  floor, not a quality-reducing cap. */
-    private fun loadFullResolutionBitmap(uri: android.net.Uri): android.graphics.Bitmap? {
-        return try {
-            context.contentResolver.openInputStream(uri)?.use {
-                android.graphics.BitmapFactory.decodeStream(it)
-            }
-        } catch (e: OutOfMemoryError) {
-            android.util.Log.w("TurboTextAttach", "image too large to load at full resolution", e)
-            null
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    /** Shrinks [original] only as much as needed to fit under
-     *  [MMS_MAX_IMAGE_BYTES] once JPEG-compressed — an image that already
-     *  fits is returned untouched. Measures against the library's actual
-     *  compress step (JPEG @ quality 90, matching Message.bitmapToByteArray)
-     *  rather than estimating, so the check reflects the real attachment
-     *  size. Scale factor is computed from the byte-size ratio each pass
-     *  (JPEG size scales roughly with pixel count) with a small safety
-     *  margin, capped at a few iterations so a pathological image (e.g.
-     *  one that resists compression) can't loop indefinitely. */
-    private fun fitBitmapForMms(original: android.graphics.Bitmap): android.graphics.Bitmap {
-        var current = original
-        var size = jpegByteSize(current)
-        var attempts = 0
-        while (size > MMS_MAX_IMAGE_BYTES && attempts < 6) {
-            val scale = kotlin.math.sqrt(MMS_MAX_IMAGE_BYTES.toDouble() / size.toDouble()) * 0.95
-            val newWidth = (current.width * scale).toInt().coerceAtLeast(1)
-            val newHeight = (current.height * scale).toInt().coerceAtLeast(1)
-            val scaled = android.graphics.Bitmap.createScaledBitmap(current, newWidth, newHeight, true)
-            if (scaled !== current) current.recycle()
-            current = scaled
-            size = jpegByteSize(current)
-            attempts++
-        }
-        if (size > MMS_MAX_IMAGE_BYTES) {
-            android.util.Log.w("TurboTextAttach", "image still ${size}B after $attempts downscale passes, sending anyway")
-        }
-        return current
-    }
-
-    private fun jpegByteSize(bitmap: android.graphics.Bitmap): Int {
-        val stream = java.io.ByteArrayOutputStream()
-        bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, stream)
-        return stream.size()
     }
 
     /** Sends the message and writes a copy into the Sent folder ourselves (required for default SMS apps). */
@@ -1150,18 +847,29 @@ class SmsRepository(private val context: Context) {
         val rowUri = context.contentResolver.insert(Telephony.Sms.CONTENT_URI, values)
 
         if (rowUri != null) {
-            val sentIntent = Intent(context, SmsSentReceiver::class.java).apply {
-                data = rowUri // makes this PendingIntent unique per message
-                putExtra("row_uri", rowUri.toString())
-                putExtra("thread_id", threadId ?: -1L)
-            }
             val requestCode = rowUri.lastPathSegment?.toIntOrNull() ?: System.currentTimeMillis().toInt()
-            val sentPendingIntent = android.app.PendingIntent.getBroadcast(
-                context, requestCode, sentIntent,
-                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_MUTABLE
-            )
+            // One PendingIntent per part (the data URI differs by part
+            // index, which keeps them distinct) so SmsSentReceiver hears
+            // about every part and only marks the message Sent once all
+            // of them went out — previously one shared PendingIntent meant
+            // whichever part reported last decided the status.
+            SmsSentReceiver.expectParts(rowUri.toString(), parts.size)
             val sentIntents = ArrayList<android.app.PendingIntent>()
-            for (i in parts.indices) sentIntents.add(sentPendingIntent)
+            for (i in parts.indices) {
+                val sentIntent = Intent(context, SmsSentReceiver::class.java).apply {
+                    data = rowUri.buildUpon().appendQueryParameter("part", i.toString()).build()
+                    putExtra("row_uri", rowUri.toString())
+                    putExtra("thread_id", threadId ?: -1L)
+                    putExtra(SmsSentReceiver.EXTRA_PART_INDEX, i)
+                    putExtra(SmsSentReceiver.EXTRA_PART_COUNT, parts.size)
+                }
+                sentIntents.add(
+                    android.app.PendingIntent.getBroadcast(
+                        context, requestCode, sentIntent,
+                        android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_MUTABLE
+                    )
+                )
+            }
 
             // Separate from sentIntent — this only fires if/when the
             // carrier reports the recipient's phone actually received

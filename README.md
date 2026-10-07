@@ -4,7 +4,7 @@ Key features:
 
 •	Speech-to-text provided using a Groq API key. Simply press the dictate button and say what you want it to type!
 
-•	MMS support. Convenient to send and receive pictures and audio.
+•	MMS support. Send and receive pictures, video, voice messages, contact cards and other files. Videos are compressed automatically to fit your carrier's picture-message size limit.
 
 •	Group messaging support. Groups show up in a separate list.
 

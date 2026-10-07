@@ -73,9 +73,16 @@ dependencies {
     implementation 'androidx.recyclerview:recyclerview:1.3.1'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
 
-    // MMS (picture message) *sending* — composes and sends the MMS PDU via
-    // the SDK21+ system MmsManager. See README for the receiving-side caveat.
-    implementation 'com.klinkerapps:android-smsmms:5.2.6'
+    // MMS send + receive: PDU building/parsing, the WAP-push receiver and
+    // download-complete handling. Vendored FossifyOrg/mmslib (the
+    // maintained fork of com.klinkerapps:android-smsmms) — see mmslib/NOTICE.
+    implementation project(':mmslib')
+
+    // Re-encodes video attachments small enough to fit the carrier's MMS
+    // size limit (see VideoCompressor).
+    implementation 'androidx.media3:media3-transformer:1.4.1'
+    implementation 'androidx.media3:media3-effect:1.4.1'
+    implementation 'androidx.media3:media3-common:1.4.1'
 
     // For Groq's Whisper API (cloud voice-to-text) — 4.x rather than the
     // newer 5.x line, which split into separate JVM/Android artifacts and

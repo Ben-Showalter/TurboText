@@ -278,6 +278,14 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
                 holder.text.visibility = if (msg.body.isNotEmpty()) View.VISIBLE else View.GONE
                 holder.text.text = msg.body
             }
+            msg.videoUri != null -> {
+                holder.imageFrame.visibility = View.VISIBLE
+                holder.playOverlay.visibility = View.VISIBLE
+                val px = (180 * context.resources.displayMetrics.density).toInt()
+                ThumbnailLoader.load(holder.image, msg.videoUri, px, isVideo = true)
+                holder.text.visibility = if (msg.body.isNotEmpty()) View.VISIBLE else View.GONE
+                holder.text.text = msg.body
+            }
             msg.audioUri != null -> {
                 holder.imageFrame.visibility = View.GONE
                 holder.text.visibility = View.VISIBLE
@@ -294,6 +302,18 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
                     0, symbol.length, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
                 )
                 holder.text.text = span
+            }
+            msg.fileUri != null -> {
+                holder.imageFrame.visibility = View.GONE
+                holder.text.visibility = View.VISIBLE
+                val name = msg.fileName ?: msg.fileMime ?: "File"
+                val caption = if (msg.body.isNotEmpty()) "\n${msg.body}" else ""
+                holder.text.text = "📎 $name\nOK to open$caption"
+            }
+            msg.mmsDownloadPending -> {
+                holder.imageFrame.visibility = View.GONE
+                holder.text.visibility = View.VISIBLE
+                holder.text.text = "⬇ Multimedia message — not downloaded yet"
             }
             msg.isUnretrievedMms -> {
                 holder.imageFrame.visibility = View.GONE

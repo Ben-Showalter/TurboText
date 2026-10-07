@@ -211,23 +211,22 @@ class GroupMessagesActivity : AppCompatActivity() {
         }
     }
 
-    /** This is the single most uncertain part of this whole feature —
-     *  see SmsRepository.sendGroupMmsMessage's own note. If this doesn't
-     *  work as-is, it's the specific place to focus on fixing, likely
-     *  with real error feedback the same way the earlier audio/vcard
-     *  attachment work needed. */
+    /** One group MMS to everyone picked, via MessageSender — whether the
+     *  recipients' phones show it as a shared thread is up to their
+     *  carriers and handsets. */
     private fun sendNewGroup(body: String) {
         val addresses = pendingAddresses.toList()
         Toast.makeText(this, "Sending group message…", Toast.LENGTH_SHORT).show()
         Thread {
-            try {
-                repo.sendGroupMmsMessage(addresses, body)
+            val error = try {
+                MessageSender.send(this, addresses, body, null)
             } catch (e: Exception) {
                 android.util.Log.e("TurboTextGroup", "group send failed", e)
+                e.message ?: "Group send failed"
             }
             runOnUiThread {
                 if (!isFinishing && !isDestroyed) {
-                    Toast.makeText(this, "Sent", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, error ?: "Sent", if (error != null) Toast.LENGTH_LONG else Toast.LENGTH_SHORT).show()
                 }
             }
         }.start()
