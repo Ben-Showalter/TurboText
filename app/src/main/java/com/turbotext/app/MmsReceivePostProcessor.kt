@@ -66,6 +66,9 @@ object MmsReceivePostProcessor {
             }
             val sender = senderOf(context, id) ?: "Unknown"
             val repo = SmsRepository(context)
+            // The carrier's notice for this message should be gone now;
+            // make sure it doesn't linger as a "press OK to download" twin.
+            repo.removeStaleMmsNotices()
             val preview = repo.mmsPreview(id)
 
             ProviderChangeTracker.bump()

@@ -950,6 +950,12 @@ class ConversationActivity : AppCompatActivity() {
      *  LibraryMmsReceivedReceiver saves it and the thread refreshes. */
     private fun downloadPendingMms(message: Message) {
         Thread {
+            // Already downloaded (a leftover notice)? Just clear it.
+            repo.removeStaleMmsNotices()
+            if (!repo.mmsRowExists(message.id)) {
+                runOnUiThread { if (!isFinishing && !isDestroyed) loadMessages() }
+                return@Thread
+            }
             val info = repo.mmsDownloadInfo(message.id)
             runOnUiThread {
                 if (info == null) {

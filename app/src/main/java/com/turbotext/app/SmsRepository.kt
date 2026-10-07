@@ -26,6 +26,7 @@ class SmsRepository(private val context: Context) {
      *  conversation, where they show as "press OK to download". Normally
      *  finds nothing — one indexed query. */
     fun rehomeOrphanedMmsNotifications() {
+        removeStaleMmsNotices()
         try {
             val orphans = context.contentResolver.query(
                 Telephony.Mms.CONTENT_URI, arrayOf(Telephony.Mms._ID),
@@ -47,6 +48,54 @@ class SmsRepository(private val context: Context) {
         } catch (e: Exception) {
             android.util.Log.w("TurboTextMms", "rehoming MMS notices failed", e)
         }
+    }
+
+    /** Deletes carrier notices (m_type 130) for messages that have in fact
+     *  been downloaded (an m_type 132 row with the same transaction id or
+     *  download URL). mmslib used to leave these behind after every
+     *  download; they showed up as a second "press OK to download" bubble. */
+    fun removeStaleMmsNotices() {
+        try {
+            data class Notice(val id: Long, val trId: String?, val location: String?)
+            val notices = context.contentResolver.query(
+                Telephony.Mms.CONTENT_URI,
+                arrayOf(Telephony.Mms._ID, Telephony.Mms.TRANSACTION_ID, Telephony.Mms.CONTENT_LOCATION),
+                "${Telephony.Mms.MESSAGE_TYPE} = 130", null, null
+            )?.use { c -> generateSequence { if (c.moveToNext()) Notice(c.getLong(0), c.getString(1), c.getString(2)) else null }.toList() }
+                ?: return
+            if (notices.isEmpty()) return
+            val downloadedKeys = HashSet<String>()
+            context.contentResolver.query(
+                Telephony.Mms.CONTENT_URI,
+                arrayOf(Telephony.Mms.TRANSACTION_ID, Telephony.Mms.CONTENT_LOCATION),
+                "${Telephony.Mms.MESSAGE_TYPE} = 132", null, null
+            )?.use { c ->
+                while (c.moveToNext()) {
+                    c.getString(0)?.takeIf { it.isNotEmpty() }?.let { downloadedKeys.add("t:$it") }
+                    c.getString(1)?.takeIf { it.isNotEmpty() }?.let { downloadedKeys.add("l:$it") }
+                }
+            }
+            for (n in notices) {
+                val done = (n.trId != null && "t:${n.trId}" in downloadedKeys) ||
+                    (n.location != null && "l:${n.location}" in downloadedKeys)
+                if (!done) continue
+                context.contentResolver.delete(
+                    android.net.Uri.withAppendedPath(Telephony.Mms.CONTENT_URI, n.id.toString()), null, null
+                )
+                android.util.Log.i("TurboTextMms", "removed stale MMS notice ${n.id} (already downloaded)")
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("TurboTextMms", "stale MMS notice cleanup failed", e)
+        }
+    }
+
+    fun mmsRowExists(messageId: Long): Boolean = try {
+        context.contentResolver.query(
+            android.net.Uri.withAppendedPath(Telephony.Mms.CONTENT_URI, messageId.toString()),
+            arrayOf(Telephony.Mms._ID), null, null, null
+        )?.use { it.moveToFirst() } ?: false
+    } catch (e: Exception) {
+        false
     }
 
     /** What's needed to (re)download an MMS that only has its carrier

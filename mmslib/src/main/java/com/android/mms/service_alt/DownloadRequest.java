@@ -236,14 +236,18 @@ public class DownloadRequest extends MmsRequest {
                 }
             }
 
-            // Delete the corresponding NotificationInd
+            // Delete the corresponding NotificationInd. (TurboText: upstream
+            // matched tr_id against locationUrl, which never matches, so the
+            // notice was left behind next to every downloaded message.)
             SqliteWrapper.delete(context,
                     context.getContentResolver(),
                     Telephony.Mms.CONTENT_URI,
-                    TRANSACTION_ID_SELECTION,
+                    Telephony.Mms.MESSAGE_TYPE + "=? AND (" + Telephony.Mms.CONTENT_LOCATION + "=? OR "
+                            + Telephony.Mms.TRANSACTION_ID + "=?)",
                     new String[]{
                             Integer.toString(PduHeaders.MESSAGE_TYPE_NOTIFICATION_IND),
-                            locationUrl
+                            locationUrl == null ? "" : locationUrl,
+                            transactionId == null ? "" : transactionId
                     });
 
             return messageUri;

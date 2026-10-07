@@ -22,3 +22,7 @@ limitations under the License.
 Changes made for TurboText:
 - build.gradle rewritten (Groovy) with minSdk 24.
 - res/xml/mms_config.xml: enabledTransID set to true.
+- service_alt/DownloadRequest.java: after a download, the carrier's
+  notification row is deleted by content location or transaction id
+  (upstream matched the transaction id column against the location URL,
+  so the row was never deleted).
