@@ -74,6 +74,8 @@ class ConversationActivity : AppCompatActivity() {
         // by taking focus, so it should never intercept key events itself.
         messageList.isFocusable = false
         messageList.isFocusableInTouchMode = false
+        messageList.itemAnimator = null
+        messageList.setItemViewCacheSize(6)
         messageAdapter = MessageAdapter(emptyList())
         messageList.adapter = messageAdapter
 
@@ -140,21 +142,27 @@ class ConversationActivity : AppCompatActivity() {
 
         // Instant if we've already loaded this thread this session — no
         // query at all, just what's already in memory.
-        MessageCache.get(threadId)?.let { cached ->
-            messageAdapter.update(cached)
+        val cached = MessageCache.get(threadId)
+        if (cached != null) {
+            messageAdapter.update(cached, context = this)
             scrollToBottom()
             val newest = cached.maxByOrNull { it.date }
             android.util.Log.i("TurboTextPerf", "shown from cache instantly: ${System.currentTimeMillis() - openedAt}ms, ${cached.size} messages, newest hasImage=${newest?.imageUri != null}")
         }
 
         Thread {
-            // Fast path: show the most recent messages immediately...
-            val recent = repo.getRecentMessages(threadId, 12)
-            android.util.Log.i("TurboTextPerf", "fast query done: ${System.currentTimeMillis() - openedAt}ms, got ${recent.size} messages")
-            runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
-                messageAdapter.update(recent)
-                scrollToBottom()
+            // Fast path: show the most recent messages immediately — but
+            // only when nothing is on screen yet. If the cache was already
+            // shown, swapping in a 12-message list and then the full list
+            // again would remove and re-add the whole history twice.
+            if (cached == null) {
+                val recent = repo.getRecentMessages(threadId, 12)
+                android.util.Log.i("TurboTextPerf", "fast query done: ${System.currentTimeMillis() - openedAt}ms, got ${recent.size} messages")
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    messageAdapter.update(recent)
+                    scrollToBottom()
+                }
             }
 
             // ...then quietly fill in the rest of the history behind it.
@@ -175,6 +183,7 @@ class ConversationActivity : AppCompatActivity() {
                 // leave them where they are unless they were already at the
                 // bottom.
                 val keepAtBottom = selectedMessageIndex == null || !messageList.canScrollVertically(1)
+                if (full == messageAdapter.currentItems()) return@runOnUiThread
                 messageAdapter.update(full)
                 if (keepAtBottom) scrollToBottom()
                 android.util.Log.i("TurboTextPerf", "rendered: ${System.currentTimeMillis() - openedAt}ms")

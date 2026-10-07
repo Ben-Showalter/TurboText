@@ -9,7 +9,6 @@ import android.view.KeyEvent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 
 class MainActivity : AppCompatActivity() {
@@ -78,8 +77,7 @@ class MainActivity : AppCompatActivity() {
         repo = SmsRepository(this)
 
         list = findViewById(R.id.conversationList)
-        list.layoutManager = LinearLayoutManager(this)
-        list.snapTopRowOnIdle()
+        list.setUpForDpad()
         // Without this, the RecyclerView container itself is a valid focus
         // target — descendantFocusability="afterDescendants" only affects
         // search order *within* it. Returning from a thread (window focus
@@ -227,7 +225,7 @@ class MainActivity : AppCompatActivity() {
         // cache was built.
         val cachedList = ConversationListCache.get()
         if (cachedList != null) {
-            adapter.update(cachedList)
+            adapter.update(cachedList, this)
             findViewById<android.view.View>(R.id.emptyView).visibility =
                 if (cachedList.isEmpty()) android.view.View.VISIBLE else android.view.View.GONE
             android.util.Log.i("TurboTextPerf", "shown from cache instantly: ${System.currentTimeMillis() - startedAt}ms")
@@ -255,7 +253,7 @@ class MainActivity : AppCompatActivity() {
             }
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
-                adapter.update(conversations)
+                adapter.update(conversations, this)
                 findViewById<android.view.View>(R.id.emptyView).visibility =
                     if (conversations.isEmpty()) android.view.View.VISIBLE else android.view.View.GONE
                 android.util.Log.i("TurboTextPerf", "refreshConversations() rendered: ${System.currentTimeMillis() - startedAt}ms")

@@ -71,6 +71,15 @@ object SettingsHelper {
         prefs(context).edit().putString("notif_vibrate_pattern", patternId).apply()
     }
 
+    /** Contact photo / initials circle on conversation rows and next to
+     *  group-thread senders. On by default. */
+    fun isShowAvatars(context: Context): Boolean =
+        prefs(context).getBoolean("show_avatars", true)
+
+    fun setShowAvatars(context: Context, show: Boolean) {
+        prefs(context).edit().putBoolean("show_avatars", show).apply()
+    }
+
     fun getThemeId(context: Context): String =
         prefs(context).getString("theme_id", "classic_dark") ?: "classic_dark"
 

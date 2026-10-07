@@ -1,41 +1,70 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- One flat RelativeLayout (was nested weighted LinearLayouts, which
+     measure twice). Avatar on the left, focus bar on the right edge. -->
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="horizontal"
     android:focusable="true"
     android:focusableInTouchMode="false"
-    android:background="?android:attr/selectableItemBackground">
+    android:minHeight="56dp">
 
-    <LinearLayout
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:orientation="vertical"
-        android:padding="12dp">
-
-        <TextView
-            android:id="@+id/name"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textColor="@android:color/white"
-            android:textStyle="bold"
-            android:textSize="20sp" />
-
-        <TextView
-            android:id="@+id/snippet"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textColor="#AAAAAA"
-            android:maxLines="1"
-            android:ellipsize="end"
-            android:textSize="16sp" />
-    </LinearLayout>
+    <ImageView
+        android:id="@+id/avatar"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:layout_alignParentStart="true"
+        android:layout_centerVertical="true"
+        android:layout_marginStart="8dp"
+        android:importantForAccessibility="no" />
 
     <View
         android:id="@+id/selectionBar"
         android:layout_width="5dp"
         android:layout_height="match_parent"
+        android:layout_alignParentEnd="true"
+        android:layout_alignParentTop="true"
+        android:layout_alignParentBottom="true"
         android:background="@android:color/transparent" />
 
-</LinearLayout>
+    <TextView
+        android:id="@+id/time"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentTop="true"
+        android:layout_toStartOf="@id/selectionBar"
+        android:paddingTop="10dp"
+        android:paddingEnd="8dp"
+        android:textColor="#AAAAAA"
+        android:textSize="13sp" />
+
+    <TextView
+        android:id="@+id/name"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentTop="true"
+        android:layout_toEndOf="@id/avatar"
+        android:layout_toStartOf="@id/time"
+        android:paddingStart="10dp"
+        android:paddingTop="8dp"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:textColor="@android:color/white"
+        android:textStyle="bold"
+        android:textSize="20sp" />
+
+    <TextView
+        android:id="@+id/snippet"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/name"
+        android:layout_toEndOf="@id/avatar"
+        android:layout_toStartOf="@id/selectionBar"
+        android:paddingStart="10dp"
+        android:paddingEnd="8dp"
+        android:paddingBottom="8dp"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:textColor="#AAAAAA"
+        android:textSize="16sp" />
+
+</RelativeLayout>

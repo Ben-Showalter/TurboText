@@ -13,10 +13,11 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var signatureSettingsRow: TextView
     private lateinit var addWordRow: TextView
     private lateinit var themeRow: TextView
+    private lateinit var avatarsRow: TextView
     private lateinit var micSourceRow: TextView
     private lateinit var advancedRow: TextView
     private var currentRow = 0
-    private val lastRow = 5
+    private val lastRow = 6
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -27,6 +28,7 @@ class SettingsActivity : AppCompatActivity() {
         signatureSettingsRow = findViewById(R.id.signatureSettingsRow)
         addWordRow = findViewById(R.id.addWordRow)
         themeRow = findViewById(R.id.themeRow)
+        avatarsRow = findViewById(R.id.avatarsRow)
         micSourceRow = findViewById(R.id.micSourceRow)
         advancedRow = findViewById(R.id.advancedRow)
 
@@ -40,12 +42,14 @@ class SettingsActivity : AppCompatActivity() {
             startActivity(Intent(this, MyWordsActivity::class.java))
         }
         themeRow.setOnClickListener { showThemePicker() }
+        avatarsRow.setOnClickListener { toggleAvatars() }
         micSourceRow.setOnClickListener { showMicSourcePicker() }
         advancedRow.setOnClickListener {
             startActivity(Intent(this, AdvancedSettingsActivity::class.java))
         }
 
         updateThemeRowLabel()
+        updateAvatarsRowLabel()
         updateMicSourceRowLabel()
         updateRowHighlight()
     }
@@ -75,6 +79,15 @@ class SettingsActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun updateAvatarsRowLabel() {
+        avatarsRow.text = "Show Avatars: ${if (SettingsHelper.isShowAvatars(this)) "On" else "Off"}"
+    }
+
+    private fun toggleAvatars() {
+        SettingsHelper.setShowAvatars(this, !SettingsHelper.isShowAvatars(this))
+        updateAvatarsRowLabel()
+    }
+
     private fun updateMicSourceRowLabel() {
         val label = if (SettingsHelper.isBluetoothMicEnabled(this)) "Bluetooth Headset" else "Phone"
         micSourceRow.text = "Voice Input Mic: $label"
@@ -99,7 +112,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun updateRowHighlight() {
         val surface2 = ThemeHelper.getCurrentTheme(this).surface2
-        val rows = listOf(notificationSettingsRow, signatureSettingsRow, addWordRow, themeRow, micSourceRow, advancedRow)
+        val rows = listOf(notificationSettingsRow, signatureSettingsRow, addWordRow, themeRow, avatarsRow, micSourceRow, advancedRow)
         rows.forEachIndexed { index, row ->
             row.setBackgroundColor(if (currentRow == index) surface2 else android.graphics.Color.TRANSPARENT)
         }
@@ -131,8 +144,9 @@ class SettingsActivity : AppCompatActivity() {
                     1 -> startActivity(Intent(this, SignatureSettingsActivity::class.java))
                     2 -> startActivity(Intent(this, MyWordsActivity::class.java))
                     3 -> showThemePicker()
-                    4 -> showMicSourcePicker()
-                    5 -> startActivity(Intent(this, AdvancedSettingsActivity::class.java))
+                    4 -> toggleAvatars()
+                    5 -> showMicSourcePicker()
+                    6 -> startActivity(Intent(this, AdvancedSettingsActivity::class.java))
                 }
                 return true
             }

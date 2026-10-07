@@ -10,7 +10,6 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 
 class GroupMessagesActivity : AppCompatActivity() {
@@ -34,8 +33,7 @@ class GroupMessagesActivity : AppCompatActivity() {
         repo = SmsRepository(this)
         list = findViewById(R.id.groupList)
         emptyView = findViewById(R.id.groupEmptyView)
-        list.layoutManager = LinearLayoutManager(this)
-        list.snapTopRowOnIdle()
+        list.setUpForDpad()
         adapter = ConversationAdapter(
             emptyList(),
             onSelected = { convo ->
@@ -54,7 +52,7 @@ class GroupMessagesActivity : AppCompatActivity() {
         super.onResume()
         val cached = GroupThreadsCache.get()
         if (cached != null) {
-            adapter.update(cached)
+            adapter.update(cached, this)
             emptyView.visibility = if (cached.isEmpty()) View.VISIBLE else View.GONE
             // Fast pass: getGroupThreads() below takes seconds, so a thread
             // that was just opened and read would keep its ● / accent
@@ -64,7 +62,7 @@ class GroupMessagesActivity : AppCompatActivity() {
                 val unreadIds = repo.unreadThreadIds()
                 val patched = cached.map { it.copy(unread = it.threadId in unreadIds) }
                 if (patched != cached) runOnUiThread {
-                    if (!isFinishing && !isDestroyed) adapter.update(patched)
+                    if (!isFinishing && !isDestroyed) adapter.update(patched, this)
                 }
             }.start()
         }
@@ -79,7 +77,7 @@ class GroupMessagesActivity : AppCompatActivity() {
             if (groups == cached) return@Thread
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
-                adapter.update(groups)
+                adapter.update(groups, this)
                 emptyView.visibility = if (groups.isEmpty()) View.VISIBLE else View.GONE
             }
         }.start()
@@ -130,7 +128,7 @@ class GroupMessagesActivity : AppCompatActivity() {
                 Thread {
                     val groups = repo.getGroupThreads()
                     runOnUiThread {
-                        if (!isFinishing && !isDestroyed) adapter.update(groups)
+                        if (!isFinishing && !isDestroyed) adapter.update(groups, this)
                     }
                 }.start()
             }
@@ -290,7 +288,7 @@ class GroupMessagesActivity : AppCompatActivity() {
                 Toast.makeText(this, "Moved to trash", Toast.LENGTH_SHORT).show()
                 Thread {
                     val groups = repo.getGroupThreads()
-                    runOnUiThread { if (!isFinishing && !isDestroyed) adapter.update(groups) }
+                    runOnUiThread { if (!isFinishing && !isDestroyed) adapter.update(groups, this) }
                 }.start()
             }
         }.start()

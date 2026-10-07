@@ -45,6 +45,7 @@ class TurboTextApplication : Application() {
                 object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
                     override fun onChange(selfChange: Boolean) {
                         ContactHelper.invalidateCache()
+                        AvatarLoader.invalidate()
                     }
                 }
             )
