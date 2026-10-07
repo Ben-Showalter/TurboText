@@ -39,6 +39,11 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.CALL_PHONE" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- mmslib holds a wake lock while saving a downloaded MMS
+         (DownloadManager.MmsDownloadReceiver). Without this the app
+         crashed right as each incoming MMS finished downloading, leaving
+         only the carrier's notice behind as an "Unknown" conversation. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.GET_TASKS" />
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
 

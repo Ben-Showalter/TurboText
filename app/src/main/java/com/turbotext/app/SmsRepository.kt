@@ -14,6 +14,60 @@ import android.telephony.SmsManager
  */
 class SmsRepository(private val context: Context) {
 
+    companion object {
+        /** Thread id mmslib gives the carrier's "you have an MMS" notice
+         *  while the real message downloads (PduPersister.DUMMY_THREAD_ID).
+         *  It has no contact, so anything left there showed as "Unknown". */
+        const val PLACEHOLDER_THREAD_ID = Long.MAX_VALUE
+    }
+
+    /** Moves MMS notices stuck on [PLACEHOLDER_THREAD_ID] (a download
+     *  that failed or was interrupted) into their sender's own
+     *  conversation, where they show as "press OK to download". Normally
+     *  finds nothing — one indexed query. */
+    fun rehomeOrphanedMmsNotifications() {
+        try {
+            val orphans = context.contentResolver.query(
+                Telephony.Mms.CONTENT_URI, arrayOf(Telephony.Mms._ID),
+                "${Telephony.Mms.THREAD_ID} = ?", arrayOf(PLACEHOLDER_THREAD_ID.toString()), null
+            )?.use { c -> generateSequence { if (c.moveToNext()) c.getLong(0) else null }.toList() } ?: return
+            for (id in orphans) {
+                val sender = context.contentResolver.query(
+                    android.net.Uri.parse("content://mms/$id/addr"), arrayOf("address"), "type = 137", null, null
+                )?.use { if (it.moveToFirst()) it.getString(0) else null }
+                    ?.takeIf { it.isNotBlank() && it != "insert-address-token" } ?: continue
+                val realThread = Telephony.Threads.getOrCreateThreadId(context, sender)
+                context.contentResolver.update(
+                    android.net.Uri.withAppendedPath(Telephony.Mms.CONTENT_URI, id.toString()),
+                    ContentValues(1).apply { put(Telephony.Mms.THREAD_ID, realThread) },
+                    null, null
+                )
+                android.util.Log.i("TurboTextMms", "moved MMS notice $id from placeholder thread to $realThread ($sender)")
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("TurboTextMms", "rehoming MMS notices failed", e)
+        }
+    }
+
+    /** What's needed to (re)download an MMS that only has its carrier
+     *  notice: the download URL, transaction id and SIM. */
+    data class MmsDownloadInfo(val location: String, val transactionId: String, val subId: Int)
+
+    fun mmsDownloadInfo(messageId: Long): MmsDownloadInfo? = try {
+        context.contentResolver.query(
+            android.net.Uri.withAppendedPath(Telephony.Mms.CONTENT_URI, messageId.toString()),
+            arrayOf(Telephony.Mms.CONTENT_LOCATION, Telephony.Mms.TRANSACTION_ID, Telephony.Mms.SUBSCRIPTION_ID),
+            null, null, null
+        )?.use { c ->
+            if (!c.moveToFirst()) return@use null
+            val location = c.getString(0) ?: return@use null
+            MmsDownloadInfo(location, c.getString(1) ?: "", if (c.isNull(2)) -1 else c.getInt(2))
+        }
+    } catch (e: Exception) {
+        android.util.Log.w("TurboTextMms", "couldn't read download info for MMS $messageId", e)
+        null
+    }
+
     /** Cheap existence check (not a full conversation load) — used by
      *  KeyButtonAccessibilityService to decide whether a hardware key
      *  press should trigger a brief outer-screen pulse.
@@ -75,6 +129,7 @@ class SmsRepository(private val context: Context) {
      *  only, no bodies or contact lookups. Shared by hasUnreadGroupMessage()
      *  and by GroupMessagesActivity's fast un-bold reconcile. */
     fun unreadThreadIds(): Set<Long> {
+        rehomeOrphanedMmsNotifications()
         val trashedKeys = TrashHelper.allTrashedKeys(context)
         val ids = mutableSetOf<Long>()
         try {
@@ -93,6 +148,7 @@ class SmsRepository(private val context: Context) {
                 "${Telephony.Mms.READ}=0", null, null
             )?.use { c ->
                 while (c.moveToNext()) {
+                    if (c.getLong(1) == PLACEHOLDER_THREAD_ID) continue
                     if ("mms:${c.getLong(0)}" !in trashedKeys) ids.add(c.getLong(1))
                 }
             }
@@ -296,6 +352,7 @@ class SmsRepository(private val context: Context) {
     }
 
     fun getConversations(limit: Int? = null): List<Conversation> {
+        rehomeOrphanedMmsNotifications()
         // threadId -> best (most recent, non-trashed) candidate seen so
         // far, across BOTH tables — previously this only ever looked at
         // Sms, so a thread whose latest activity was a picture message
@@ -359,6 +416,7 @@ class SmsRepository(private val context: Context) {
                 val id = it.getLong(it.getColumnIndexOrThrow(Telephony.Mms._ID))
                 if (trashedKeys.contains("mms:$id")) continue
                 val threadId = it.getLong(it.getColumnIndexOrThrow(Telephony.Mms.THREAD_ID))
+                if (threadId == PLACEHOLDER_THREAD_ID) continue
                 val dateSeconds = it.getLong(it.getColumnIndexOrThrow(Telephony.Mms.DATE))
                 val date = dateSeconds * 1000L
                 if ((candidates[threadId]?.date ?: -1L) >= date) continue

@@ -313,7 +313,7 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
             msg.mmsDownloadPending -> {
                 holder.imageFrame.visibility = View.GONE
                 holder.text.visibility = View.VISIBLE
-                holder.text.text = "⬇ Multimedia message — not downloaded yet"
+                holder.text.text = "⬇ Multimedia message — press OK to download"
             }
             msg.isUnretrievedMms -> {
                 holder.imageFrame.visibility = View.GONE

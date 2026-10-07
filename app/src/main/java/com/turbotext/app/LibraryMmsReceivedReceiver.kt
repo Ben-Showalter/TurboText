@@ -21,6 +21,10 @@ class LibraryMmsReceivedReceiver : com.klinker.android.send_message.MmsReceivedR
 
     override fun onError(context: Context, error: String) {
         Log.w("TurboTextMms", "MMS download error: $error")
+        // Put the carrier's notice in the sender's thread (it's parked on
+        // a contactless placeholder thread while downloading) so it shows
+        // as "press OK to download" instead of an "Unknown" conversation.
+        SmsRepository(context).rehomeOrphanedMmsNotifications()
         // Some phones save the MMS through the system service themselves
         // and report an error here anyway — look for it before giving up.
         MmsReceivePostProcessor.processRecentFallback(context.applicationContext)

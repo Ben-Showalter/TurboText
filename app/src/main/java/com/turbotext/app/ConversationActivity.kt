@@ -325,6 +325,7 @@ class ConversationActivity : AppCompatActivity() {
         if (message.videoUri != null) options.add("Play Video")
         if (message.videoUri != null || message.fileUri != null || message.audioUri != null) options.add("Save to Phone")
         if (message.fileUri != null) options.add("Open File")
+        if (message.mmsDownloadPending) options.add("Download")
         if (message.vcardUri != null) options.add("Import Contact")
         if (message.audioUri != null) options.add("Play Audio")
         options.add("View Details")
@@ -343,6 +344,7 @@ class ConversationActivity : AppCompatActivity() {
                     "Play Video" -> message.videoUri?.let { openMediaViewer(it, "video/*") }
                     "Save to Phone" -> saveAttachmentToPhone(message)
                     "Open File" -> openFile(message)
+                    "Download" -> downloadPendingMms(message)
                     "View Details" -> showMessageDetails(message)
                     "Move to Trash" -> moveMessageToTrash(message)
                 }
@@ -635,6 +637,7 @@ class ConversationActivity : AppCompatActivity() {
             message.imageUri != null -> openMediaViewer(message.imageUri, "image/*")
             message.videoUri != null -> openMediaViewer(message.videoUri, "video/*")
             message.fileUri != null -> openFile(message)
+            message.mmsDownloadPending -> downloadPendingMms(message)
             message.vcardUri != null -> importVcard(message)
             else -> showMessageOptions(message)
         }
@@ -958,6 +961,32 @@ class ConversationActivity : AppCompatActivity() {
             val ok = MediaSaver.save(this, Uri.parse(uri), mime)
             runOnUiThread {
                 Toast.makeText(this, if (ok) "Saved to phone" else "Couldn't save", Toast.LENGTH_SHORT).show()
+            }
+        }.start()
+    }
+
+    /** Asks the phone's MMS service to fetch a message we only have the
+     *  carrier's notice for (an earlier download failed). When it lands,
+     *  LibraryMmsReceivedReceiver saves it and the thread refreshes. */
+    private fun downloadPendingMms(message: Message) {
+        Thread {
+            val info = repo.mmsDownloadInfo(message.id)
+            runOnUiThread {
+                if (info == null) {
+                    Toast.makeText(this, "Can't download this one — the carrier's link is missing", Toast.LENGTH_LONG).show()
+                    return@runOnUiThread
+                }
+                try {
+                    com.android.mms.transaction.DownloadManager.getInstance().downloadMultimediaMessage(
+                        applicationContext, info.location, info.transactionId,
+                        Uri.withAppendedPath(android.provider.Telephony.Mms.CONTENT_URI, message.id.toString()),
+                        false, info.subId
+                    )
+                    Toast.makeText(this, "Downloading…", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    android.util.Log.w("TurboTextMms", "manual MMS download failed to start", e)
+                    Toast.makeText(this, "Couldn't start the download", Toast.LENGTH_LONG).show()
+                }
             }
         }.start()
     }

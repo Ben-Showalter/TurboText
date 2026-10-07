@@ -30,6 +30,10 @@ class TurboTextApplication : Application() {
                 setUseSystemSending(true)
                 setGroup(true)
             }
+        // Carrier MMS settings (mms_config.xml) — PushReceiver loads these
+        // for each incoming MMS, but a manual "download" retry doesn't go
+        // through it.
+        com.android.mms.MmsConfig.init(this)
 
         // Contact saves/edits happen in the system Contacts app, outside
         // our control — this is the only way to learn a name changed, so
