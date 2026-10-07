@@ -126,7 +126,7 @@
             android:exported="false" />
 
         <activity
-            android:name=".ImageViewerActivity"
+            android:name=".MediaViewerActivity"
             android:exported="false" />
 
         <activity

@@ -703,7 +703,7 @@ class ConversationActivity : AppCompatActivity() {
         val message = messageAdapter.currentItems().getOrNull(realIndex) ?: return
         when {
             message.audioUri != null -> toggleVoiceMessage(message)
-            message.imageUri != null -> openImageViewer(message)
+            message.imageUri != null -> openMediaViewer(message.imageUri, "image/*")
             message.vcardUri != null -> importVcard(message)
             else -> showMessageOptions(message)
         }
@@ -1070,13 +1070,13 @@ class ConversationActivity : AppCompatActivity() {
         messageAdapter.setPlayingAudioId(null)
     }
 
-    /** Center-key action on a focused picture message — opens it full
-     *  screen (zoom with OK, save with the right softkey). */
-    private fun openImageViewer(message: Message) {
-        val uri = message.imageUri ?: return
+    /** Center-key action on a focused picture/video message — opens it
+     *  full screen (zoom or play with OK, save with the right softkey). */
+    private fun openMediaViewer(uri: String, mime: String) {
         startActivity(
-            android.content.Intent(this, ImageViewerActivity::class.java)
-                .putExtra(ImageViewerActivity.EXTRA_IMAGE_URI, uri)
+            android.content.Intent(this, MediaViewerActivity::class.java)
+                .putExtra(MediaViewerActivity.EXTRA_URI, uri)
+                .putExtra(MediaViewerActivity.EXTRA_MIME, mime)
         )
     }
 }
