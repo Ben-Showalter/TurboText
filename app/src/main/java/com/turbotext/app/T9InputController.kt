@@ -644,13 +644,13 @@ class T9InputController(
      *  match instead, falling back to 0 only when the digits are the
      *  only candidate at all (nothing better to default to). */
     private fun defaultCandidateIndex(digits: String): Int {
-        val candidates = candidateProvider(digits)
+        val candidates = lookup(digits)
         return if (candidates.size > 1 && candidates[0] == digits) 1 else 0
     }
 
     private fun selectNextCandidate() {
         if (pendingDigits.isEmpty()) return
-        val candidates = candidateProvider(pendingDigits)
+        val candidates = lookup(pendingDigits)
         if (candidates.isEmpty()) return
         candidateIndex = (candidateIndex + 1) % candidates.size
         render()
@@ -658,7 +658,7 @@ class T9InputController(
 
     private fun selectPrevCandidate() {
         if (pendingDigits.isEmpty()) return
-        val candidates = candidateProvider(pendingDigits)
+        val candidates = lookup(pendingDigits)
         if (candidates.isEmpty()) return
         candidateIndex = (candidateIndex - 1 + candidates.size) % candidates.size
         render()
@@ -670,7 +670,7 @@ class T9InputController(
      *  wrapping, since there's no sensible "row below the bottom row". */
     private fun selectCandidateBelow() {
         if (pendingDigits.isEmpty()) return
-        val candidates = candidateProvider(pendingDigits)
+        val candidates = lookup(pendingDigits)
         if (candidates.isEmpty()) return
         candidateIndex = verticalCandidateTarget(candidates, 1)
         render()
@@ -680,7 +680,7 @@ class T9InputController(
      *  candidate rather than wrapping. */
     private fun selectCandidateAbove() {
         if (pendingDigits.isEmpty()) return
-        val candidates = candidateProvider(pendingDigits)
+        val candidates = lookup(pendingDigits)
         if (candidates.isEmpty()) return
         candidateIndex = verticalCandidateTarget(candidates, -1)
         render()
@@ -712,7 +712,7 @@ class T9InputController(
         }
         if (pendingDigits.isEmpty()) return
         autoPromoteCaseIfSentenceStart()
-        val candidates = candidateProvider(pendingDigits)
+        val candidates = lookup(pendingDigits)
         val baseWord = candidates.getOrNull(candidateIndex)
         val rawWord = baseWord ?: pendingDigits
         if (baseWord != null && learnsWords) {
@@ -909,8 +909,27 @@ class T9InputController(
         (outputView as? NoImeEditText)?.setCursorPosition(position)
     }
 
+    /** Every candidate lookup goes through here so the engine knows the
+     *  word before the cursor (used for TT9-style word-pair ordering). */
+    private fun lookup(digits: String): List<String> {
+        if (learnsWords) engine.setPreviousWord(previousWordBeforeCursor())
+        return candidateProvider(digits)
+    }
+
+    /** The whole word immediately before the cursor, or null when the
+     *  cursor is mid-word (a compound) or at the very start. */
+    private fun previousWordBeforeCursor(): String? {
+        if (cursor <= 0) return null
+        val before = committed.substring(0, cursor)
+        if (before.last().isLetterOrDigit()) return null
+        val trimmed = before.trimEnd()
+        var start = trimmed.length
+        while (start > 0 && (trimmed[start - 1].isLetter() || trimmed[start - 1] == '\'')) start--
+        return trimmed.substring(start).takeIf { it.isNotEmpty() }
+    }
+
     private fun render() {
-        val candidates = if (pendingDigits.isNotEmpty()) candidateProvider(pendingDigits) else emptyList()
+        val candidates = if (pendingDigits.isNotEmpty()) lookup(pendingDigits) else emptyList()
         val preview = when {
             punctuationPickerActive -> punctuationList[punctuationIndex]
             pendingDigits.isNotEmpty() && previewRawDigits -> pendingDigits

@@ -80,6 +80,15 @@ object SettingsHelper {
         prefs(context).edit().putBoolean("show_avatars", show).apply()
     }
 
+    /** Which T9 word predictor to use: T9Engine.ENGINE_TT9 (default) or
+     *  T9Engine.ENGINE_CLASSIC (TurboText's original). */
+    fun getPredictionEngine(context: Context): String =
+        prefs(context).getString("prediction_engine", T9Engine.ENGINE_TT9) ?: T9Engine.ENGINE_TT9
+
+    fun setPredictionEngine(context: Context, engine: String) {
+        prefs(context).edit().putString("prediction_engine", engine).apply()
+    }
+
     fun getThemeId(context: Context): String =
         prefs(context).getString("theme_id", "classic_dark") ?: "classic_dark"
 

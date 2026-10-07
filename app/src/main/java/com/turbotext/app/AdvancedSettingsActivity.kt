@@ -16,8 +16,9 @@ class AdvancedSettingsActivity : AppCompatActivity() {
     private lateinit var accessibilityRow: TextView
     private lateinit var usageAccessRow: TextView
     private lateinit var trustedNumberRow: TextView
+    private lateinit var predictionEngineRow: TextView
     private var currentRow = 0
-    private val lastRow = 4
+    private val lastRow = 5
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -29,6 +30,7 @@ class AdvancedSettingsActivity : AppCompatActivity() {
         accessibilityRow = findViewById(R.id.accessibilityRow)
         usageAccessRow = findViewById(R.id.usageAccessRow)
         trustedNumberRow = findViewById(R.id.trustedNumberRow)
+        predictionEngineRow = findViewById(R.id.predictionEngineRow)
 
         defaultAppRow.setOnClickListener { openDefaultAppSettings() }
         appShortcutRow.setOnClickListener {
@@ -37,8 +39,10 @@ class AdvancedSettingsActivity : AppCompatActivity() {
         accessibilityRow.setOnClickListener { openAccessibilitySettings() }
         usageAccessRow.setOnClickListener { openUsageAccessSettings() }
         trustedNumberRow.setOnClickListener { promptTrustedNumber() }
+        predictionEngineRow.setOnClickListener { showPredictionEnginePicker() }
 
         updateTrustedNumberRowLabel()
+        updatePredictionEngineRowLabel()
         updateRowHighlight()
     }
 
@@ -87,9 +91,34 @@ class AdvancedSettingsActivity : AppCompatActivity() {
         }
     }
 
+    private fun updatePredictionEngineRowLabel() {
+        val label = if (SettingsHelper.getPredictionEngine(this) == T9Engine.ENGINE_CLASSIC) "Classic" else "TT9"
+        predictionEngineRow.text = "T9 Prediction Engine: $label"
+    }
+
+    /** TT9 (Traditional T9's dictionary and learning) is the default; the
+     *  original engine stays available in case TT9 misbehaves on a phone. */
+    private fun showPredictionEnginePicker() {
+        val options = arrayOf("TT9 (recommended)", "Classic")
+        val values = arrayOf(T9Engine.ENGINE_TT9, T9Engine.ENGINE_CLASSIC)
+        val current = values.indexOf(SettingsHelper.getPredictionEngine(this)).coerceAtLeast(0)
+        AlertDialog.Builder(this)
+            .setTitle("T9 Prediction Engine")
+            .setSingleChoiceItems(options, current) { dialog, which ->
+                SettingsHelper.setPredictionEngine(this, values[which])
+                // Rebuilt in the background so the next typing screen
+                // doesn't wait on the dictionary load.
+                T9EngineHolder.reset()
+                Thread { T9EngineHolder.get(applicationContext) }.start()
+                updatePredictionEngineRowLabel()
+                dialog.dismiss()
+            }
+            .show()
+    }
+
     private fun updateRowHighlight() {
         val surface2 = ThemeHelper.getCurrentTheme(this).surface2
-        val rows = listOf(defaultAppRow, appShortcutRow, accessibilityRow, usageAccessRow, trustedNumberRow)
+        val rows = listOf(defaultAppRow, appShortcutRow, accessibilityRow, usageAccessRow, trustedNumberRow, predictionEngineRow)
         rows.forEachIndexed { index, row ->
             row.setBackgroundColor(if (currentRow == index) surface2 else android.graphics.Color.TRANSPARENT)
         }
@@ -161,6 +190,7 @@ class AdvancedSettingsActivity : AppCompatActivity() {
                     2 -> openAccessibilitySettings()
                     3 -> openUsageAccessSettings()
                     4 -> promptTrustedNumber()
+                    5 -> showPredictionEnginePicker()
                 }
                 return true
             }
