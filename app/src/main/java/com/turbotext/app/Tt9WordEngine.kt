@@ -50,6 +50,21 @@ class Tt9WordEngine(private val context: Context, private val digitCode: (String
         private const val WORD_PAIR_MAX_WORD_LENGTH = 6
 
         private const val PREFS_FREQ = "tt9_word_frequency"
+
+        /** Contractions TT9's word list leaves out (TT9 builds them with
+         *  the apostrophe on key 1; TurboText skips apostrophes, so they'd
+         *  be untypeable). Frequencies are on the dictionary's own scale
+         *  (the ≈ 222, in ≈ 210, go ≈ 164), so e.g. on 46 "I'm" sits
+         *  between "in" and "go" until learning says otherwise. */
+        private val CONTRACTIONS = mapOf(
+            "I'm" to 190, "I'll" to 175, "I've" to 160, "I'd" to 140,
+            "it's" to 175, "that's" to 170, "what's" to 150, "there's" to 145, "here's" to 130,
+            "he's" to 140, "she's" to 140, "let's" to 150,
+            "you're" to 165, "we're" to 150, "they're" to 150,
+            "you'll" to 140, "we'll" to 140, "they'll" to 130,
+            "you've" to 135, "we've" to 135, "they've" to 130,
+            "he'd" to 120, "she'd" to 120, "you'd" to 125, "we'd" to 120, "they'd" to 120
+        )
         private const val PREFS_PAIRS = "tt9_word_pairs"
 
         // Parsed once per process — rebuilding on every screen open was
@@ -89,6 +104,12 @@ class Tt9WordEngine(private val context: Context, private val digitCode: (String
                 k.startsWith("c:") -> customFreq[k.substring(2)] = f
                 k.startsWith("w:") -> indexOf(k.substring(2))?.let { learned[it] = f }
             }
+        }
+        for ((word, freq) in CONTRACTIONS) {
+            val seq = digitCode(word)
+            customBySeq.getOrPut(seq) { mutableListOf() }.add(word)
+            // A learned frequency (loaded above) wins over the default.
+            if (!customFreq.containsKey(word)) customFreq[word] = freq
         }
         pairPrefs.getString("pairs", null)?.split('\n')?.forEach { line ->
             val parts = line.split('\t')
@@ -207,7 +228,8 @@ class Tt9WordEngine(private val context: Context, private val digitCode: (String
     }
 
     private fun letters(digit: Char): List<String> = when (digit) {
-        '2' -> listOf("a", "b", "c"); '3' -> listOf("d", "e", "f"); '4' -> listOf("g", "h", "i")
+        // Single-letter words lead their key: "a" on 2, "I" on 4.
+        '2' -> listOf("a", "b", "c"); '3' -> listOf("d", "e", "f"); '4' -> listOf("I", "g", "h")
         '5' -> listOf("j", "k", "l"); '6' -> listOf("m", "n", "o"); '7' -> listOf("p", "q", "r", "s")
         '8' -> listOf("t", "u", "v"); '9' -> listOf("w", "x", "y", "z")
         else -> emptyList()

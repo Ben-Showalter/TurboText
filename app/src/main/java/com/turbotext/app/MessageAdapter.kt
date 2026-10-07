@@ -12,7 +12,6 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
-import java.text.DateFormat
 
 /**
  * Message bubbles for a conversation.
@@ -42,8 +41,15 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
     private var playingAudioId: Long? = null
 
     private var theme: AppTheme? = null
+    private var attachedTo: RecyclerView? = null
+
+    override fun onAttachedToRecyclerView(rv: RecyclerView) { attachedTo = rv }
+    override fun onDetachedFromRecyclerView(rv: RecyclerView) { attachedTo = null }
+
+    /** Adapter position the scroll bar should mark: the selected message
+     *  while browsing, otherwise the newest one. */
+    fun scrollbarPosition(): Int? = selectedPosition ?: (itemCount - 1).takeIf { it >= 0 }
     private var showAvatars = true
-    private val timeFormat: DateFormat = DateFormat.getTimeInstance(DateFormat.SHORT)
 
     /** Bubble background prototypes, one per (kind, side, selected)
      *  combination. Each view gets its own instance via newDrawable() —
@@ -175,7 +181,7 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
     /** Sender name (incoming messages in a group thread) goes in accent
      *  color right next to the timestamp, e.g. "Sarah · 3:45 PM". */
     private fun buildTimeLabel(msg: Message, theme: AppTheme): CharSequence {
-        val timeText = timeFormat.format(msg.date)
+        val timeText = DateLabels.forMessage(msg.date)
         val statusWord = when (msg.sendStatus) {
             "sending" -> "Sending"
             "sent" -> "Sent"
@@ -402,6 +408,8 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
         val old = selectedPosition
         if (old == position) return
         selectedPosition = position
+        // The scroll bar's thumb follows the selection.
+        attachedTo?.invalidate()
         if (old != null && old < itemCount) notifyItemChanged(old, PAYLOAD_SELECTION)
         if (position != null && position < itemCount) notifyItemChanged(position, PAYLOAD_SELECTION)
     }

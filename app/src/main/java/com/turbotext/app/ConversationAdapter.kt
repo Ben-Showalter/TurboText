@@ -9,7 +9,6 @@ import android.widget.ImageView
 import android.widget.TextView
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
-import java.text.DateFormat
 
 /**
  * Conversation list rows (main list and Group Messages).
@@ -38,15 +37,14 @@ class ConversationAdapter(
     override fun onAttachedToRecyclerView(rv: RecyclerView) { recyclerView = rv }
     override fun onDetachedFromRecyclerView(rv: RecyclerView) { recyclerView = null }
     private var showAvatars = true
-    private val timeFormat: DateFormat = DateFormat.getTimeInstance(DateFormat.SHORT)
-    private val dateFormat: DateFormat = DateFormat.getDateInstance(DateFormat.SHORT)
+    /** Focused-row background (tint + accent strip), built once per theme. */
+    private var focusProto: android.graphics.drawable.Drawable? = null
 
     inner class VH(view: View) : RecyclerView.ViewHolder(view) {
         val avatar: ImageView = view.findViewById(R.id.avatar)
         val name: TextView = view.findViewById(R.id.name)
         val time: TextView = view.findViewById(R.id.time)
         val snippet: TextView = view.findViewById(R.id.snippet)
-        val selectionBar: View = view.findViewById(R.id.selectionBar)
         var appliedTheme: AppTheme? = null
 
         private fun current(): Conversation? =
@@ -65,12 +63,14 @@ class ConversationAdapter(
                     true
                 } else false
             }
-            // Accent bar on the right edge plus a row tint — the bar
+            // Accent strip on the right edge plus a row tint — the strip
             // alone was hard to see on light themes. Scrolling the row
             // into view is RowSnapLayoutManager's job, not this
-            // listener's.
+            // listener's; the list's scroll bar follows focus, so it's
+            // redrawn here.
             view.setOnFocusChangeListener { _, hasFocus ->
                 applyFocus(this, hasFocus)
+                recyclerView?.invalidate()
                 if (hasFocus) {
                     val c = current()
                     focusedThreadId = c?.threadId
@@ -92,10 +92,26 @@ class ConversationAdapter(
             showAvatars = SettingsHelper.isShowAvatars(context)
         }
 
+    /** MatChat-style focus: the row tinted, with a 6dp accent strip
+     *  down its right edge — drawn as one background, so it can't
+     *  collapse to nothing the way a separate strip View did. */
     private fun applyFocus(holder: VH, hasFocus: Boolean) {
-        val t = themeFor(holder.itemView.context)
-        holder.selectionBar.setBackgroundColor(if (hasFocus) t.accent else android.graphics.Color.TRANSPARENT)
-        holder.itemView.setBackgroundColor(if (hasFocus) t.surface2 else android.graphics.Color.TRANSPARENT)
+        if (!hasFocus) {
+            holder.itemView.background = null
+            return
+        }
+        val context = holder.itemView.context
+        val t = themeFor(context)
+        val proto = focusProto ?: android.graphics.drawable.LayerDrawable(
+            arrayOf(
+                android.graphics.drawable.ColorDrawable(t.surface2),
+                android.graphics.drawable.ColorDrawable(t.accent)
+            )
+        ).apply {
+            setLayerGravity(1, android.view.Gravity.END)
+            setLayerWidth(1, (6 * context.resources.displayMetrics.density).toInt())
+        }.also { focusProto = it }
+        holder.itemView.background = proto.constantState?.newDrawable(context.resources) ?: proto
     }
 
     override fun onBindViewHolder(holder: VH, position: Int) {
@@ -140,10 +156,7 @@ class ConversationAdapter(
         }
     }
 
-    private fun formatTime(date: Long): String {
-        if (date <= 0) return ""
-        return if (android.text.format.DateUtils.isToday(date)) timeFormat.format(date) else dateFormat.format(date)
-    }
+    private fun formatTime(date: Long): String = DateLabels.forList(date)
 
     override fun getItemCount() = items.size
 
@@ -159,6 +172,7 @@ class ConversationAdapter(
             val newTheme = ThemeHelper.getCurrentTheme(ctx)
             val newAvatars = SettingsHelper.isShowAvatars(ctx)
             if (newTheme != theme || newAvatars != showAvatars) {
+                focusProto = null
                 theme = newTheme
                 showAvatars = newAvatars
                 notifyDataSetChanged()

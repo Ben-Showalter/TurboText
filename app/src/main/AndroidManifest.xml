@@ -27,16 +27,6 @@
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.BLUETOOTH" />
-    <!-- Needed on API 31+ to route voice-to-text recording through a
-         connected Bluetooth headset's mic (see BluetoothMicHelper). No-op
-         on the API 29 target device, but declared for forward compat. -->
-    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-    <!-- Without this, AudioManager silently denies setMode()/
-         startBluetoothSco()/setBluetoothScoOn() — no exception, they just
-         no-op — so Bluetooth-mic routing in BluetoothMicHelper never
-         actually connects and every recording falls back to the phone mic. -->
-    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.CALL_PHONE" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- mmslib holds a wake lock while saving a downloaded MMS
@@ -44,8 +34,6 @@
          crashed right as each incoming MMS finished downloading, leaving
          only the carrier's notice behind as an "Unknown" conversation. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <uses-permission android:name="android.permission.GET_TASKS" />
-    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
 
     <uses-feature
         android:name="android.hardware.camera"

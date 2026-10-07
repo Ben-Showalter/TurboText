@@ -125,11 +125,10 @@ class T9InputController(
     // most likely to actually render on this phone's system font (not
     // verified on real hardware — if some show as blank boxes, that's
     // this device's font support, not a bug in this list).
-    private val emojiList = listOf(
-        "😀", "😂", "😍", "😉", "😢", "😡",
-        "👍", "👎", "👏", "🙏",
-        "❤️", "🔥", "🎉", "✅"
-    )
+    // Most-used first (see EmojiUsage) — re-sorted each time Emoji mode
+    // is entered, never while browsing, so the list doesn't shift under
+    // the cursor.
+    private var emojiList = EmojiUsage.ordered(outputView.context)
     private var emojiIndex = 0
 
     // Punctuation picker — entered via '1' (outside Number mode), not a
@@ -344,7 +343,7 @@ class T9InputController(
                 // shouldn't require re-entering Emoji mode via '*' each
                 // time. '*' (cycleCase) is still the way out, back to
                 // emojiHomeMode.
-                insertAtCursor(emojiList[emojiIndex])
+                insertEmoji(emojiList[emojiIndex])
                 render()
                 return true
             }
@@ -629,7 +628,7 @@ class T9InputController(
             mode == InputMode.MULTITAP && multiTapKey != null -> commitMultiTapChar()
             // Stays in Emoji mode rather than reverting to emojiHomeMode
             // — same reasoning as the Center-key insert branch above.
-            mode == InputMode.EMOJI -> insertAtCursor(emojiList[emojiIndex])
+            mode == InputMode.EMOJI -> insertEmoji(emojiList[emojiIndex])
         }
         insertAtCursor(" ")
         render()
@@ -865,6 +864,8 @@ class T9InputController(
                     confirmWord()
                     emojiHomeMode = mode
                     mode = InputMode.EMOJI
+                    emojiList = EmojiUsage.ordered(outputView.context)
+                    emojiIndex = 0
                 }
             }
             InputMode.EMOJI -> {
@@ -907,6 +908,11 @@ class T9InputController(
         // (see the layout XML), setSelection above is kept for anything else
         // in the framework that might still read it.
         (outputView as? NoImeEditText)?.setCursorPosition(position)
+    }
+
+    private fun insertEmoji(emoji: String) {
+        insertAtCursor(emoji)
+        EmojiUsage.recordUse(outputView.context, emoji)
     }
 
     /** Every candidate lookup goes through here so the engine knows the

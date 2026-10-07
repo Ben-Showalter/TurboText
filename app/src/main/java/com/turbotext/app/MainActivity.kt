@@ -61,13 +61,6 @@ class MainActivity : AppCompatActivity() {
         arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.READ_EXTERNAL_STORAGE)
     } else {
         emptyArray()
-    } + if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-        // Needed to route voice-to-text through a Bluetooth headset mic
-        // (see BluetoothMicHelper) — below API 31 the legacy BLUETOOTH
-        // permission already declared in the manifest is enough.
-        arrayOf(Manifest.permission.BLUETOOTH_CONNECT)
-    } else {
-        emptyArray()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

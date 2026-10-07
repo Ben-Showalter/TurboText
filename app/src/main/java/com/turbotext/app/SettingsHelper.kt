@@ -7,11 +7,12 @@ object SettingsHelper {
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    /** Keys left behind by the removed read-aloud feature. Cleared once
-     *  at startup so they don't linger in the prefs file forever. */
+    /** Keys left behind by removed features (read-aloud, Bluetooth mic).
+     *  Cleared once at startup so they don't linger in the prefs file. */
     private val REMOVED_KEYS = listOf(
         "read_aloud_mode", "read_aloud_voice", "tts_engine",
-        "native_tts_voice", "native_tts_rate", "native_tts_engine_package"
+        "native_tts_voice", "native_tts_rate", "native_tts_engine_package",
+        "voice_input_bluetooth_mic"
     )
 
     fun clearRemovedSettings(context: Context) {
@@ -118,16 +119,5 @@ object SettingsHelper {
 
     fun setTrustedProvisioningNumber(context: Context, number: String?) {
         prefs(context).edit().putString("trusted_provisioning_number", number).apply()
-    }
-
-    /** When true, GroqVoiceInputHelper routes voice-to-text recording
-     *  through a connected Bluetooth headset's mic instead of the phone's
-     *  built-in one. Defaults to false (phone mic) — off unless the user
-     *  opts in from Advanced settings. */
-    fun isBluetoothMicEnabled(context: Context): Boolean =
-        prefs(context).getBoolean("voice_input_bluetooth_mic", false)
-
-    fun setBluetoothMicEnabled(context: Context, enabled: Boolean) {
-        prefs(context).edit().putBoolean("voice_input_bluetooth_mic", enabled).apply()
     }
 }

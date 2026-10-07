@@ -33,7 +33,6 @@ class ComposeActivity : AppCompatActivity() {
     private lateinit var inputController: T9InputController
     private lateinit var recipientController: T9InputController
     private lateinit var voiceHelper: GroqVoiceInputHelper
-    private lateinit var btMicWarmup: BluetoothMicWarmup
     private lateinit var toText: EditText
     private lateinit var composeText: EditText
     private lateinit var softLeftLabel: TextView
@@ -116,8 +115,6 @@ class ComposeActivity : AppCompatActivity() {
         // still needs to be chosen, so this doesn't touch editingRecipient.
         intent?.getStringExtra("prefillText")?.let { inputController.setText(it) }
         voiceHelper = GroqVoiceInputHelper(this)
-        voiceHelper.keepBluetoothRouteWarm = true
-        btMicWarmup = BluetoothMicWarmup(this)
         audioMemoRecorder = AudioMemoRecorder(this)
         picker = AttachmentPicker(this) { setAttachment(it) }
 
@@ -507,29 +504,8 @@ class ComposeActivity : AppCompatActivity() {
         }.start()
     }
 
-    override fun onResume() {
-        super.onResume()
-        // Start warming the Bluetooth mic route up as soon as this screen
-        // is visible, same as ConversationActivity.
-        btMicWarmup.poke()
-    }
-
-    override fun onPause() {
-        super.onPause()
-        // No point keeping the headset in call-mode for a screen that's no
-        // longer on screen.
-        btMicWarmup.coolDown()
-    }
-
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action == KeyEvent.ACTION_DOWN) {
-            // Any key press counts as screen activity — pushes the
-            // Bluetooth mic idle-teardown deadline back out. The mic button
-            // itself uses extendIdle() rather than poke() — startVoiceRecording()
-            // below makes its own Bluetooth-connect request for this exact
-            // press, and a second concurrent one from poke() would race it
-            // (see BluetoothMicWarmup.extendIdle's doc).
-            if (event.keyCode in MicButtonKeyCodes.CODES) btMicWarmup.extendIdle() else btMicWarmup.poke()
             if (isRecordingMemo) {
                 if (event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
                     finishAudioMemoRecording()

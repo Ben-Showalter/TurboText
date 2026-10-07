@@ -34,12 +34,22 @@ class RowSnapLayoutManager(context: Context) : LinearLayoutManager(context) {
     )
 }
 
+/** Adds the MatChat-style right-edge scroll bar, in the current theme's
+ *  colors, following whatever [selected] returns. */
+fun RecyclerView.addFocusScrollbar(selected: (RecyclerView) -> Int?) {
+    val theme = ThemeHelper.getCurrentTheme(context)
+    addItemDecoration(
+        FocusScrollbarDecoration(theme.accent, theme.surface2, resources.displayMetrics.density, selected)
+    )
+}
+
 /** Shared setup for the D-pad lists: fixed-size container, no change
  *  animations (each one is a cross-fade the slow GPU has to draw), and
  *  a few extra rows kept bound off-screen so a held key doesn't wait
  *  on a fresh bind for every new row. */
 fun RecyclerView.setUpForDpad() {
     layoutManager = RowSnapLayoutManager(context)
+    addFocusScrollbar { FocusScrollbarDecoration.focusedRow(it) }
     setHasFixedSize(true)
     itemAnimator = null
     setItemViewCacheSize(6)

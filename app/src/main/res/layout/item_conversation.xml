@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- One flat RelativeLayout (was nested weighted LinearLayouts, which
-     measure twice). Avatar on the left, focus bar on the right edge. -->
+     measure twice). Avatar on the left; the focus strip is part of the row background
+     (ConversationAdapter.applyFocus). -->
 <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
@@ -17,23 +18,15 @@
         android:layout_marginStart="8dp"
         android:importantForAccessibility="no" />
 
-    <View
-        android:id="@+id/selectionBar"
-        android:layout_width="5dp"
-        android:layout_height="match_parent"
-        android:layout_alignParentEnd="true"
-        android:layout_alignParentTop="true"
-        android:layout_alignParentBottom="true"
-        android:background="@android:color/transparent" />
 
     <TextView
         android:id="@+id/time"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_alignParentTop="true"
-        android:layout_toStartOf="@id/selectionBar"
+        android:layout_alignParentEnd="true"
         android:paddingTop="10dp"
-        android:paddingEnd="8dp"
+        android:paddingEnd="12dp"
         android:textColor="#AAAAAA"
         android:textSize="13sp" />
 
@@ -58,9 +51,9 @@
         android:layout_height="wrap_content"
         android:layout_below="@id/name"
         android:layout_toEndOf="@id/avatar"
-        android:layout_toStartOf="@id/selectionBar"
+        android:layout_alignParentEnd="true"
         android:paddingStart="10dp"
-        android:paddingEnd="8dp"
+        android:paddingEnd="12dp"
         android:paddingBottom="8dp"
         android:maxLines="1"
         android:ellipsize="end"

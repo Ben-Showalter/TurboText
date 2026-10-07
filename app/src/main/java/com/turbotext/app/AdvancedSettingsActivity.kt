@@ -14,11 +14,10 @@ class AdvancedSettingsActivity : AppCompatActivity() {
     private lateinit var defaultAppRow: TextView
     private lateinit var appShortcutRow: TextView
     private lateinit var accessibilityRow: TextView
-    private lateinit var usageAccessRow: TextView
     private lateinit var trustedNumberRow: TextView
     private lateinit var predictionEngineRow: TextView
     private var currentRow = 0
-    private val lastRow = 5
+    private val lastRow = 4
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -28,7 +27,6 @@ class AdvancedSettingsActivity : AppCompatActivity() {
         defaultAppRow = findViewById(R.id.defaultAppRow)
         appShortcutRow = findViewById(R.id.appShortcutRow)
         accessibilityRow = findViewById(R.id.accessibilityRow)
-        usageAccessRow = findViewById(R.id.usageAccessRow)
         trustedNumberRow = findViewById(R.id.trustedNumberRow)
         predictionEngineRow = findViewById(R.id.predictionEngineRow)
 
@@ -37,7 +35,6 @@ class AdvancedSettingsActivity : AppCompatActivity() {
             startActivity(Intent(this, AppShortcutActivity::class.java))
         }
         accessibilityRow.setOnClickListener { openAccessibilitySettings() }
-        usageAccessRow.setOnClickListener { openUsageAccessSettings() }
         trustedNumberRow.setOnClickListener { promptTrustedNumber() }
         predictionEngineRow.setOnClickListener { showPredictionEnginePicker() }
 
@@ -118,7 +115,7 @@ class AdvancedSettingsActivity : AppCompatActivity() {
 
     private fun updateRowHighlight() {
         val surface2 = ThemeHelper.getCurrentTheme(this).surface2
-        val rows = listOf(defaultAppRow, appShortcutRow, accessibilityRow, usageAccessRow, trustedNumberRow, predictionEngineRow)
+        val rows = listOf(defaultAppRow, appShortcutRow, accessibilityRow, trustedNumberRow, predictionEngineRow)
         rows.forEachIndexed { index, row ->
             row.setBackgroundColor(if (currentRow == index) surface2 else android.graphics.Color.TRANSPARENT)
         }
@@ -143,26 +140,14 @@ class AdvancedSettingsActivity : AppCompatActivity() {
     /** Deep-links to the system's own Accessibility settings list — there's
      *  no reliable cross-OEM way to jump straight to TurboText's specific
      *  toggle within it, so the fallback Toast tells the user what to look
-     *  for. This is the one-time manual step KeyButtonAccessibilityService's
-     *  right-soft-key shortcut and outer-screen pulse both depend on. */
+     *  for. This is the one-time manual step the outer-screen unread pulse
+     *  (KeyButtonAccessibilityService) depends on. */
     private fun openAccessibilitySettings() {
         try {
             startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
             Toast.makeText(this, "Find and enable \"TurboText\" in the list", Toast.LENGTH_LONG).show()
         } catch (e: Exception) {
             Toast.makeText(this, "Open Settings > Accessibility > TurboText", Toast.LENGTH_LONG).show()
-        }
-    }
-
-    /** Deep-links to the system's "Apps with usage access" list — needed
-     *  for the UsageStatsManager checks KeyButtonAccessibilityService
-     *  makes (see its currentForeground()). */
-    private fun openUsageAccessSettings() {
-        try {
-            startActivity(Intent(android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS))
-            Toast.makeText(this, "Find and enable \"TurboText\" in the list", Toast.LENGTH_LONG).show()
-        } catch (e: Exception) {
-            Toast.makeText(this, "Open Settings > Apps > Special access > Usage access > TurboText", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -188,9 +173,8 @@ class AdvancedSettingsActivity : AppCompatActivity() {
                     0 -> openDefaultAppSettings()
                     1 -> startActivity(Intent(this, AppShortcutActivity::class.java))
                     2 -> openAccessibilitySettings()
-                    3 -> openUsageAccessSettings()
-                    4 -> promptTrustedNumber()
-                    5 -> showPredictionEnginePicker()
+                    3 -> promptTrustedNumber()
+                    4 -> showPredictionEnginePicker()
                 }
                 return true
             }

@@ -14,10 +14,9 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var addWordRow: TextView
     private lateinit var themeRow: TextView
     private lateinit var avatarsRow: TextView
-    private lateinit var micSourceRow: TextView
     private lateinit var advancedRow: TextView
     private var currentRow = 0
-    private val lastRow = 6
+    private val lastRow = 5
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -29,7 +28,6 @@ class SettingsActivity : AppCompatActivity() {
         addWordRow = findViewById(R.id.addWordRow)
         themeRow = findViewById(R.id.themeRow)
         avatarsRow = findViewById(R.id.avatarsRow)
-        micSourceRow = findViewById(R.id.micSourceRow)
         advancedRow = findViewById(R.id.advancedRow)
 
         notificationSettingsRow.setOnClickListener {
@@ -43,21 +41,18 @@ class SettingsActivity : AppCompatActivity() {
         }
         themeRow.setOnClickListener { showThemePicker() }
         avatarsRow.setOnClickListener { toggleAvatars() }
-        micSourceRow.setOnClickListener { showMicSourcePicker() }
         advancedRow.setOnClickListener {
             startActivity(Intent(this, AdvancedSettingsActivity::class.java))
         }
 
         updateThemeRowLabel()
         updateAvatarsRowLabel()
-        updateMicSourceRowLabel()
         updateRowHighlight()
     }
 
     override fun onResume() {
         super.onResume()
         updateThemeRowLabel()
-        updateMicSourceRowLabel()
         updateRowHighlight()
     }
 
@@ -88,31 +83,9 @@ class SettingsActivity : AppCompatActivity() {
         updateAvatarsRowLabel()
     }
 
-    private fun updateMicSourceRowLabel() {
-        val label = if (SettingsHelper.isBluetoothMicEnabled(this)) "Bluetooth Headset" else "Phone"
-        micSourceRow.text = "Voice Input Mic: $label"
-    }
-
-    /** Voice-to-text (push-to-talk) only — the higher-fidelity voice-memo
-     *  recorder for MMS attachments is unaffected by this setting. When
-     *  turned on but no headset is paired/connected at record time,
-     *  GroqVoiceInputHelper falls back to the phone mic automatically. */
-    private fun showMicSourcePicker() {
-        val options = arrayOf("Phone (default)", "Bluetooth Headset")
-        val current = if (SettingsHelper.isBluetoothMicEnabled(this)) 1 else 0
-        AlertDialog.Builder(this)
-            .setTitle("Voice Input Mic")
-            .setSingleChoiceItems(options, current) { dialog, which ->
-                SettingsHelper.setBluetoothMicEnabled(this, which == 1)
-                updateMicSourceRowLabel()
-                dialog.dismiss()
-            }
-            .show()
-    }
-
     private fun updateRowHighlight() {
         val surface2 = ThemeHelper.getCurrentTheme(this).surface2
-        val rows = listOf(notificationSettingsRow, signatureSettingsRow, addWordRow, themeRow, avatarsRow, micSourceRow, advancedRow)
+        val rows = listOf(notificationSettingsRow, signatureSettingsRow, addWordRow, themeRow, avatarsRow, advancedRow)
         rows.forEachIndexed { index, row ->
             row.setBackgroundColor(if (currentRow == index) surface2 else android.graphics.Color.TRANSPARENT)
         }
@@ -145,8 +118,7 @@ class SettingsActivity : AppCompatActivity() {
                     2 -> startActivity(Intent(this, MyWordsActivity::class.java))
                     3 -> showThemePicker()
                     4 -> toggleAvatars()
-                    5 -> showMicSourcePicker()
-                    6 -> startActivity(Intent(this, AdvancedSettingsActivity::class.java))
+                    5 -> startActivity(Intent(this, AdvancedSettingsActivity::class.java))
                 }
                 return true
             }

@@ -22,7 +22,6 @@ class ConversationActivity : AppCompatActivity() {
     private lateinit var engine: T9Engine
     private lateinit var inputController: T9InputController
     private lateinit var voiceHelper: GroqVoiceInputHelper
-    private lateinit var btMicWarmup: BluetoothMicWarmup
     private lateinit var messageAdapter: MessageAdapter
     private lateinit var messageList: RecyclerView
     private lateinit var composeText: EditText
@@ -73,6 +72,7 @@ class ConversationActivity : AppCompatActivity() {
         messageList.setItemViewCacheSize(6)
         messageAdapter = MessageAdapter(emptyList())
         messageList.adapter = messageAdapter
+        messageList.addFocusScrollbar { messageAdapter.scrollbarPosition() }
 
         composeText = findViewById(R.id.composeText)
         composeText.movementMethod = android.text.method.ScrollingMovementMethod()
@@ -103,8 +103,6 @@ class ConversationActivity : AppCompatActivity() {
         draft?.let { inputController.setText(it) }
 
         voiceHelper = GroqVoiceInputHelper(this)
-        voiceHelper.keepBluetoothRouteWarm = true
-        btMicWarmup = BluetoothMicWarmup(this)
         audioMemoRecorder = AudioMemoRecorder(this)
         picker = AttachmentPicker(this) { setAttachment(it) }
 
@@ -714,17 +712,6 @@ class ConversationActivity : AppCompatActivity() {
     // typing/scrolling works no matter what view happens to have focus.
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action == KeyEvent.ACTION_DOWN) {
-            // Any key press counts as screen activity — pushes the
-            // Bluetooth mic idle-teardown deadline back out. This also
-            // covers a long hold of the mic button itself: key-repeat
-            // events keep arriving while it's held (see the repeatCount
-            // handling below), so a recording longer than the idle timeout
-            // won't get the route pulled out from under it. The mic button
-            // itself uses extendIdle() rather than poke() — startVoiceRecording()
-            // below makes its own Bluetooth-connect request for this exact
-            // press, and a second concurrent one from poke() would race it
-            // (see BluetoothMicWarmup.extendIdle's doc).
-            if (event.keyCode in MicButtonKeyCodes.CODES) btMicWarmup.extendIdle() else btMicWarmup.poke()
             if (isRecordingMemo) {
                 if (event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
                     finishAudioMemoRecording()
@@ -827,10 +814,6 @@ class ConversationActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Start warming the Bluetooth mic route up as soon as the thread is
-        // visible — covers both the initial open and returning to an
-        // already-open conversation from the background.
-        btMicWarmup.poke()
         // Covers both the initial open (onResume always follows onCreate)
         // and returning to an already-open conversation from the
         // background — the ContentObserver below only catches changes
@@ -875,10 +858,7 @@ class ConversationActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
-        // No point keeping the headset in call-mode for a thread that's no
-        // longer on screen.
         stopVoiceMessagePlayback()
-        btMicWarmup.coolDown()
         NotificationHelper.cancelForAddress(this, address)
         messageObserver?.let { contentResolver.unregisterContentObserver(it) }
         reloadHandler.removeCallbacks(reloadRunnable)
