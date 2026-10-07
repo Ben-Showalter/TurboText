@@ -61,41 +61,8 @@
         android:focusableInTouchMode="true"
         android:background="?android:attr/selectableItemBackground" />
 
-    <TextView
-        android:id="@+id/readAloudRow"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Read Aloud: Never"
-        android:textColor="@android:color/white"
-        android:textSize="18sp"
-        android:padding="14dp"
-        android:focusable="true"
-        android:focusableInTouchMode="true"
-        android:background="?android:attr/selectableItemBackground" />
 
-    <TextView
-        android:id="@+id/nativeVoiceRow"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Voice: Default"
-        android:textColor="@android:color/white"
-        android:textSize="18sp"
-        android:padding="14dp"
-        android:focusable="true"
-        android:focusableInTouchMode="true"
-        android:background="?android:attr/selectableItemBackground" />
 
-    <TextView
-        android:id="@+id/speechRateRow"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Speech Rate: Normal"
-        android:textColor="@android:color/white"
-        android:textSize="18sp"
-        android:padding="14dp"
-        android:focusable="true"
-        android:focusableInTouchMode="true"
-        android:background="?android:attr/selectableItemBackground" />
 
     </LinearLayout>
     </ScrollView>

@@ -10,8 +10,6 @@ Key features:
 
 •	Translation to English of incoming texts to most languages.
 
-•	Text-to-speech with Bluetooth only option.
-
 •	Self-launches in place of the default App, by pressing the standard Right soft key from the home screen.
 
 •	Archives all conversations with a click of a button. 

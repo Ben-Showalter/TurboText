@@ -20,6 +20,7 @@ private const val PREWARM_THREAD_LIMIT = 25
 class TurboTextApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        SettingsHelper.clearRemovedSettings(this)
 
         // Contact saves/edits happen in the system Contacts app, outside
         // our control — this is the only way to learn a name changed, so

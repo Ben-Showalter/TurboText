@@ -90,7 +90,6 @@ class MmsDownloadReceiver : BroadcastReceiver() {
             // later cancels the wrong id and the rich card/alarm never
             // clears for group MMS threads.
             SoundNotificationHelper.notifyNewMessage(context, groupAddress ?: resolvedAddress, displayName)
-            ReadAloudHelper.maybeReadAloud(context, displayName, extracted.text)
         } catch (e: Exception) {
             Log.e(TAG, "error handling downloaded MMS", e)
         } finally {

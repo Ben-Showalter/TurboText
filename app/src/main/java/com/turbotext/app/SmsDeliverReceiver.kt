@@ -54,13 +54,12 @@ class SmsDeliverReceiver : BroadcastReceiver() {
         // vCard sent as plain SMS (rather than an MMS attachment) is raw
         // vCard syntax in `body` — that's what SmsRepository.getSmsMessages()
         // detects and turns into a contact-card bubble for the thread
-        // view, but the notification/read-aloud preview here isn't
+        // view, but the notification preview here isn't
         // routed through that, so it needs its own friendly text instead
-        // of speaking/showing "N:Doe;John;;;" etc.
+        // of showing "N:Doe;John;;;" etc.
         val displayName = ContactHelper.lookupName(context, address) ?: address
         val notifyBody = if (VcardTextExtractor.extract(body) != null) "Contact card" else body
         NotificationHelper.showIncoming(context, address, displayName, notifyBody)
         SoundNotificationHelper.notifyNewMessage(context, address, displayName)
-        ReadAloudHelper.maybeReadAloud(context, displayName, notifyBody)
     }
 }

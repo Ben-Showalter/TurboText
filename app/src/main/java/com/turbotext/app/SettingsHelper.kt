@@ -7,6 +7,21 @@ object SettingsHelper {
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
+    /** Keys left behind by the removed read-aloud feature. Cleared once
+     *  at startup so they don't linger in the prefs file forever. */
+    private val REMOVED_KEYS = listOf(
+        "read_aloud_mode", "read_aloud_voice", "tts_engine",
+        "native_tts_voice", "native_tts_rate", "native_tts_engine_package"
+    )
+
+    fun clearRemovedSettings(context: Context) {
+        val p = prefs(context)
+        if (REMOVED_KEYS.none { p.contains(it) }) return
+        val e = p.edit()
+        REMOVED_KEYS.forEach { e.remove(it) }
+        e.apply()
+    }
+
     fun isSignatureEnabled(context: Context): Boolean =
         prefs(context).getBoolean("signature_enabled", false)
 
@@ -56,62 +71,11 @@ object SettingsHelper {
         prefs(context).edit().putString("notif_vibrate_pattern", patternId).apply()
     }
 
-    /** "always", "bluetooth", or "never" — defaults to never. */
-    fun getReadAloudMode(context: Context): String =
-        prefs(context).getString("read_aloud_mode", "never") ?: "never"
-
-    fun setReadAloudMode(context: Context, mode: String) {
-        prefs(context).edit().putString("read_aloud_mode", mode).apply()
-    }
-
-    /** One of Groq's Orpheus English voices: autumn, diana, hannah,
-     *  austin, daniel, troy. Defaults to "austin" — used in Groq's own
-     *  documentation examples as a fairly neutral-sounding default. */
-    fun getReadAloudVoice(context: Context): String =
-        prefs(context).getString("read_aloud_voice", "austin") ?: "austin"
-
-    fun setReadAloudVoice(context: Context, voice: String) {
-        prefs(context).edit().putString("read_aloud_voice", voice).apply()
-    }
-
     fun getThemeId(context: Context): String =
         prefs(context).getString("theme_id", "classic_dark") ?: "classic_dark"
 
     fun setThemeId(context: Context, id: String) {
         prefs(context).edit().putString("theme_id", id).apply()
-    }
-
-    /** "cloud" (Groq) or "native" (on-device Android TTS). Defaults to
-     *  cloud, since it's the proven-working option on this device. */
-    fun getTtsEngine(context: Context): String =
-        prefs(context).getString("tts_engine", "cloud") ?: "cloud"
-
-    fun setTtsEngine(context: Context, engine: String) {
-        prefs(context).edit().putString("tts_engine", engine).apply()
-    }
-
-    fun getNativeVoiceName(context: Context): String? =
-        prefs(context).getString("native_tts_voice", null)
-
-    fun setNativeVoiceName(context: Context, name: String?) {
-        prefs(context).edit().putString("native_tts_voice", name).apply()
-    }
-
-    fun getNativeSpeechRate(context: Context): Float =
-        prefs(context).getFloat("native_tts_rate", 1.0f)
-
-    fun setNativeSpeechRate(context: Context, rate: Float) {
-        prefs(context).edit().putFloat("native_tts_rate", rate).apply()
-    }
-
-    /** Package name of a specific TTS engine to use (e.g. eSpeak-NG,
-     *  RHVoice), overriding whatever the phone's system-wide default is.
-     *  Null means "use the system default". */
-    fun getNativeTtsEnginePackage(context: Context): String? =
-        prefs(context).getString("native_tts_engine_package", null)
-
-    fun setNativeTtsEnginePackage(context: Context, packageName: String?) {
-        prefs(context).edit().putString("native_tts_engine_package", packageName).apply()
     }
 
     /** A runtime-set Groq API key, overriding the hardcoded fallback in
