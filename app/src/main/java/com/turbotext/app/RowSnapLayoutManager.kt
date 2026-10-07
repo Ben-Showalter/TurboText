@@ -18,12 +18,20 @@ import androidx.recyclerview.widget.RecyclerView
  *
  * Scrolling the focused row fully into view immediately instead keeps
  * every step aligned to whole rows, with no animation to interrupt.
+ *
+ * Except mid-layout: RecyclerView also asks for this while it's laying
+ * out (e.g. handing focus back to a row after a list update moves it).
+ * Scrolling synchronously there places new rows before the old ones have
+ * moved, and two rows end up drawn on top of each other — so in that case
+ * the stock behaviour (scroll after layout) is kept.
  */
 class RowSnapLayoutManager(context: Context) : LinearLayoutManager(context) {
 
     override fun requestChildRectangleOnScreen(
         parent: RecyclerView, child: View, rect: Rect, immediate: Boolean, focusedChildVisible: Boolean
-    ): Boolean = super.requestChildRectangleOnScreen(parent, child, rect, true, focusedChildVisible)
+    ): Boolean = super.requestChildRectangleOnScreen(
+        parent, child, rect, immediate || !parent.isComputingLayout, focusedChildVisible
+    )
 }
 
 /** Shared setup for the D-pad lists: fixed-size container, no change

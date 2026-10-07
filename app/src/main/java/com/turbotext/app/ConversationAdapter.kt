@@ -30,6 +30,13 @@ class ConversationAdapter(
     }
 
     private var theme: AppTheme? = null
+    private var recyclerView: RecyclerView? = null
+    /** Conversation that had focus, so a refresh that moves it can hand
+     *  focus back to the same conversation. */
+    private var focusedThreadId: Long? = null
+
+    override fun onAttachedToRecyclerView(rv: RecyclerView) { recyclerView = rv }
+    override fun onDetachedFromRecyclerView(rv: RecyclerView) { recyclerView = null }
     private var showAvatars = true
     private val timeFormat: DateFormat = DateFormat.getTimeInstance(DateFormat.SHORT)
     private val dateFormat: DateFormat = DateFormat.getDateInstance(DateFormat.SHORT)
@@ -64,7 +71,11 @@ class ConversationAdapter(
             // listener's.
             view.setOnFocusChangeListener { _, hasFocus ->
                 applyFocus(this, hasFocus)
-                if (hasFocus) onFocusChanged(current())
+                if (hasFocus) {
+                    val c = current()
+                    focusedThreadId = c?.threadId
+                    onFocusChanged(c)
+                }
             }
         }
     }
@@ -118,10 +129,14 @@ class ConversationAdapter(
         applyFocus(holder, holder.itemView.hasFocus())
 
         // Only grabs focus if nothing in the list already has it — so a
-        // refresh never yanks focus back to row 0 mid-scroll.
+        // refresh never yanks focus back to row 0 mid-scroll. Posted:
+        // binding happens during layout, and a focus change there scrolls
+        // the list mid-layout (rows drawn over each other).
         if (position == 0) {
-            val rv = holder.itemView.parent as? RecyclerView
-            if (rv?.findFocus() == null) holder.itemView.requestFocus()
+            holder.itemView.post {
+                val rv = recyclerView ?: return@post
+                if (holder.bindingAdapterPosition == 0 && rv.findFocus() == null) holder.itemView.requestFocus()
+            }
         }
     }
 
@@ -156,5 +171,14 @@ class ConversationAdapter(
             override fun areItemsTheSame(o: Int, n: Int) = old[o].threadId == newItems[n].threadId
             override fun areContentsTheSame(o: Int, n: Int) = old[o] == newItems[n]
         }).dispatchUpdatesTo(this)
+        // If the update cost the focused conversation its focus (e.g. it
+        // moved to the top), give it back once layout is done.
+        val keep = focusedThreadId
+        val rv = recyclerView
+        if (keep != null && rv != null) {
+            rv.post {
+                if (rv.findFocus() == null) rv.findViewHolderForItemId(keep)?.itemView?.requestFocus()
+            }
+        }
     }
 }
