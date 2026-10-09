@@ -31,6 +31,7 @@ private enum class CaseState { LOWER, CAP_NEXT, ALL_CAPS }
  *                up to 3 wrapped rows)
  *   D-pad Left/Right, otherwise: move the text cursor
  *   #            space (confirms current word first)
+ *   # (long)     new line, where the field allows one
  *   * (tap)      in Word/Multitap mode, cycles casing: lower -> Cap (next
  *                word/letter only, also promoted automatically at a
  *                sentence start) -> ALL CAPS (sticky until cycled past) ->
@@ -87,7 +88,10 @@ class T9InputController(
     // a fixed per-row count that never matches variable-width words. Purely
     // an enhancement — null, or a bar not yet measured, falls back to the
     // old fixed estimate.
-    private val suggestionsBarView: android.widget.TextView? = null
+    private val suggestionsBarView: android.widget.TextView? = null,
+    // Whether holding '#' starts a new line. Off for one-line fields
+    // (recipient, a word to add, a list name), where it just types a space.
+    private val allowNewLines: Boolean = true
 ) {
     private val committed = StringBuilder()
     private var cursor = 0
@@ -351,7 +355,22 @@ class T9InputController(
                 return true
             }
             keyCode == KeyEvent.KEYCODE_POUND -> {
-                insertSpace()
+                // Tap for a space, hold for a new line. The space goes in
+                // right away (same instant feedback as a digit's letter)
+                // and is swapped for a line break if the key is still held
+                // after longPressWindowMs — sharing the digit keys' hold
+                // timer, so onKeyUp cancels it the same way. Auto-repeats
+                // are ignored, or holding # would keep adding spaces.
+                if (event.repeatCount == 0) {
+                    digitHoldRunnable?.let { handler.removeCallbacks(it) }
+                    insertSpace()
+                    if (allowNewLines) {
+                        val runnable = Runnable { triggerPoundHold() }
+                        digitHoldRunnable = runnable
+                        digitHoldKeyCode = keyCode
+                        handler.postDelayed(runnable, longPressWindowMs)
+                    }
+                }
                 return true
             }
             keyCode == KeyEvent.KEYCODE_DPAD_DOWN && hasPendingWord() -> {
@@ -464,7 +483,25 @@ class T9InputController(
                 }
             }
         }
+        // The tap may have auto-capitalized a word that never happened
+        // (holding a digit at the start of a sentence) — without this the
+        // capital stuck around and landed on the next word, e.g. "5 In".
+        if (pendingDigits.isEmpty() && caseState == CaseState.CAP_NEXT) {
+            caseState = CaseState.LOWER
+            onModeChanged(currentLabel())
+        }
         insertAtCursor(digit.toString())
+        render()
+    }
+
+    /** '#' held past the long-press threshold: the space its tap already
+     *  added becomes a line break, to start a new paragraph. */
+    private fun triggerPoundHold() {
+        if (cursor > 0 && committed[cursor - 1] == ' ') {
+            committed.replace(cursor - 1, cursor, "\n")
+        } else {
+            insertAtCursor("\n")
+        }
         render()
     }
 
@@ -801,11 +838,13 @@ class T9InputController(
     }
 
     /** A word typed here should start with a capital letter if it's the
-     *  very first word, or immediately follows sentence-ending punctuation
-     *  (". ", "! ", "? ") — standard phone-texting auto-capitalization. */
+     *  very first word, starts a new line, or immediately follows
+     *  sentence-ending punctuation (". ", "! ", "? ") — standard
+     *  phone-texting auto-capitalization. */
     private fun shouldCapitalizeAt(position: Int): Boolean {
-        val before = committed.substring(0, position).trimEnd()
-        if (before.isEmpty()) return true
+        val line = committed.substring(0, position).trimEnd(' ')
+        if (line.isEmpty() || line.last() == '\n') return true
+        val before = line.trimEnd()
         return before.last() == '.' || before.last() == '!' || before.last() == '?'
     }
 

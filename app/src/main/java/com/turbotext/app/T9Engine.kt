@@ -105,7 +105,10 @@ class T9Engine(private val context: Context) {
     }
 
     /** First/last names from Contacts, so they're predictable while
-     *  texting. Fails silently without the permission. */
+     *  texting. Parts that are already dictionary words are skipped:
+     *  boosting them made a contact like "In Kim" or "At Home" turn
+     *  every "in" or "at" into "In"/"At". Fails silently without the
+     *  permission. */
     private fun loadContactNames() {
         try {
             context.contentResolver.query(
@@ -119,7 +122,9 @@ class T9Engine(private val context: Context) {
                     val name = it.getString(nameIndex) ?: continue
                     for (part in name.split(Regex("\\s+"))) {
                         val cleaned = part.filter { c -> c.isLetter() || c == '\'' }
-                        if (cleaned.length >= 2 && digitCodeFor(cleaned).length == cleaned.count { c -> c != '\'' }) {
+                        if (cleaned.length >= 2 && digitCodeFor(cleaned).length == cleaned.count { c -> c != '\'' } &&
+                            !predictor.isDictionaryWord(cleaned)
+                        ) {
                             predictor.addPriorityWord(cleaned)
                         }
                     }

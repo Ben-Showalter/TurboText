@@ -78,6 +78,7 @@ class ComposeActivity : AppCompatActivity() {
                 recipientMode = recipientController.currentMode()
                 if (editingRecipient) softLeftLabel.text = label
             },
+            allowNewLines = false,
             onSuggestionsChanged = { candidates, selected, windowSize ->
                 if (editingRecipient) renderSuggestions(candidates, selected, windowSize)
             },

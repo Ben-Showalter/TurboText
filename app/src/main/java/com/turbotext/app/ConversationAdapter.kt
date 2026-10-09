@@ -132,7 +132,9 @@ class ConversationAdapter(
             holder.name.setTypeface(null, android.graphics.Typeface.NORMAL)
             holder.name.setTextColor(t.textPrimary)
         }
-        holder.snippet.text = convo.snippet
+        // One line in the list, so a multi-line message reads as a sentence
+        // rather than stopping at its first line break.
+        holder.snippet.text = convo.snippet.replace('\n', ' ')
         holder.time.text = formatTime(convo.date)
 
         if (showAvatars) {

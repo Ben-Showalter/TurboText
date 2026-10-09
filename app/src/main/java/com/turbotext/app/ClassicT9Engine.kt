@@ -99,6 +99,11 @@ class ClassicT9Engine(context: Context, private val digitCode: (String) -> Strin
         node.words.add(0, lower)
     }
 
+    override fun isDictionaryWord(word: String): Boolean {
+        val lower = word.trim().lowercase()
+        return nodeFor(root, digitCode(lower), create = false)?.words?.contains(lower) == true
+    }
+
     override fun removeWord(word: String) {
         val lower = word.trim().lowercase()
         nodeFor(root, digitCode(lower), create = false)?.words?.remove(lower)

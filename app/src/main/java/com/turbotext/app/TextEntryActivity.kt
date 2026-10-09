@@ -60,7 +60,9 @@ class TextEntryActivity : AppCompatActivity() {
             outputView = fieldText,
             onModeChanged = { label -> softLeftLabel.text = label },
             onSuggestionsChanged = { candidates, selected, windowSize -> renderSuggestions(candidates, selected, windowSize) },
-            suggestionsBarView = suggestionsBar
+            suggestionsBarView = suggestionsBar,
+            // Only a message has paragraphs; names and renames are one line.
+            allowNewLines = sendMode
         )
         intent.getStringExtra(EXTRA_INITIAL_TEXT)?.let { inputController.setText(it) }
         // onModeChanged only fires on a change — without this the softkey

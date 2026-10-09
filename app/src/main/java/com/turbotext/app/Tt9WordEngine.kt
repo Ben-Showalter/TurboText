@@ -328,6 +328,8 @@ class Tt9WordEngine(private val context: Context, private val digitCode: (String
         lastKey = null
     }
 
+    override fun isDictionaryWord(word: String): Boolean = indexOf(word) != null
+
     override fun removeWord(word: String) {
         val seq = digitCode(word)
         customBySeq[seq]?.removeAll { it.equals(word, ignoreCase = true) }

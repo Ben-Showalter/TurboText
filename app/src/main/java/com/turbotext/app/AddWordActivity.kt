@@ -33,7 +33,8 @@ class AddWordActivity : AppCompatActivity() {
             outputView = wordText,
             onModeChanged = { label -> modeIndicator.text = label },
             onSuggestionsChanged = { candidates, selected, windowSize -> renderSuggestions(candidates, selected, windowSize) },
-            suggestionsBarView = findViewById<TextView>(R.id.suggestionsBar)
+            suggestionsBarView = findViewById<TextView>(R.id.suggestionsBar),
+            allowNewLines = false
         )
         modeIndicator.text = inputController.currentLabel()
         inputController.startCursorBlink()

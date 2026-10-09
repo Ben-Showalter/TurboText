@@ -16,4 +16,7 @@ interface WordPredictor {
     fun addPriorityWord(word: String)
 
     fun removeWord(word: String)
+
+    /** True if [word] is in the built-in dictionary, ignoring case. */
+    fun isDictionaryWord(word: String): Boolean
 }

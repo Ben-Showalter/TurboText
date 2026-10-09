@@ -10,6 +10,9 @@
 - New T9 engine built on the Traditional T9 dictionary. It learns your words and common word pairs.
 - "I" comes first on the 4 key, and contractions (I'm, it's, you're…) work.
 - 50 emojis, with your most-used first.
+- Hold # to start a new line. A tap still adds a space, and holding # no longer adds a row of spaces.
+- Fixed "in", "at" and other short words coming out capitalized when a contact's name contained them.
+- Fixed the next word being capitalized after holding a number key at the start of a sentence.
 
 ## Look & Feel
 - Contact pictures or colored initials in lists and group chats.
