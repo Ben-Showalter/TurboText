@@ -25,7 +25,7 @@ class SmsRepository(private val context: Context) {
          *  as messages of their own. */
         private const val M_TYPE_DELIVERY_IND = 134
         private const val M_TYPE_READ_ORIG_IND = 136
-        private const val NOT_A_REPORT =
+        private val NOT_A_REPORT =
             "${Telephony.Mms.MESSAGE_TYPE} NOT IN ($M_TYPE_DELIVERY_IND, $M_TYPE_READ_ORIG_IND)"
 
         /** Delivery-report statuses (PduHeaders.STATUS_*). Retrieved and
@@ -787,14 +787,17 @@ class SmsRepository(private val context: Context) {
     }
 
     /** How many people a sent MMS went to (its To addresses), at least 1. */
-    private fun mmsRecipientCount(messageId: Long): Int = try {
-        context.contentResolver.query(
-            android.net.Uri.parse("content://mms/$messageId/addr"),
-            arrayOf("address"), "type = 151", null, null
-        )?.use { it.count } ?: 1
-    } catch (e: Exception) {
-        1
-    }.coerceAtLeast(1)
+    private fun mmsRecipientCount(messageId: Long): Int {
+        val count = try {
+            context.contentResolver.query(
+                android.net.Uri.parse("content://mms/$messageId/addr"),
+                arrayOf("address"), "type = 151", null, null
+            )?.use { it.count } ?: 1
+        } catch (e: Exception) {
+            1
+        }
+        return count.coerceAtLeast(1)
+    }
 
     /** Writes a vCard found inline in a plain SMS body out to a real file
      *  so it can be handed to the same content-URI-based "Import Contact"

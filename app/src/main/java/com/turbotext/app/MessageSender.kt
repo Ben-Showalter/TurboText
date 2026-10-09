@@ -65,7 +65,7 @@ object MessageSender {
                 AttachmentPolicy.prepare(context, attachment, budget) { pct ->
                     onStatus("Compressing video… $pct%$which")
                 }
-            }.also(::makeNamesUnique)
+            }.also { makeNamesUnique(it) }
         } catch (e: AttachmentPolicy.TooLargeException) {
             return e.message ?: "Attachment too large"
         } catch (e: Exception) {

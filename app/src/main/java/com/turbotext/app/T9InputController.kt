@@ -363,6 +363,8 @@ class T9InputController(
                 // are ignored, or holding # would keep adding spaces.
                 if (event.repeatCount == 0) {
                     digitHoldRunnable?.let { handler.removeCallbacks(it) }
+                    digitHoldRunnable = null
+                    digitHoldKeyCode = null
                     insertSpace()
                     if (allowNewLines) {
                         val runnable = Runnable { triggerPoundHold() }
