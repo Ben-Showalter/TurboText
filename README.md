@@ -25,4 +25,15 @@ There are two methods for entering the API key into the app.
 3.	You can set the key remotely by sending it from a Phone number that matches what you enter in step 1.-c Above. The API key needs encoded using Base64 format (base64encode.org) then prefixed like follows: TURBOVOICE_SETUP:put your encoded api key here. Send this encoded and prefixed text to the phone that you are setting up, TurboText will read it and the Speech-to-text and translation should start working. (You should not see the text come into the phone. The app scraps it and does not let you see it.)
 4.	There are half a dozen sounds for the notifications by default, but you can add more also: Internal storage/notifications . (.mp3 and .ogg files are supported.) 
 
+Updates:
+
+TurboText checks this repo's GitHub Releases about once a week when you open the conversation list, and asks before installing a newer version (Wi-Fi is preferred for the download). You can also check any time from options/settings/advanced/Check for Updates. The first time, Android asks you to allow TurboText to install apps; allow it and the install carries on.
+
+Publishing a release (for the maintainer):
+
+1.	One time: create a release signing key and a keystore.properties file (see keystore.properties.example). Back up the key and its passwords. Android only installs an update signed with the same key as the installed app, so a lost key means every phone has to uninstall and reinstall. For the same reason, a phone running a debug build or an APK signed with a different key has to uninstall it once and install a signed release before in-app updates work.
+2.	In app/build.gradle, raise versionCode by 1 and set versionName (e.g. "1.0.4"), then commit.
+3.	Build the signed APK: ./gradlew :app:assembleRelease (output: app/build/outputs/apk/release/app-release.apk).
+4.	On GitHub, go to Releases, Draft a new release, create the tag v. plus the versionName (e.g. v.1.0.4; v1.0.4 works too), attach app-release.apk, and click Publish release. Don't mark it as a draft or pre-release, because the app skips those. The repo has to stay public, since the app reads releases without logging in.
+
 Disclaimer: I am not a programmer, I just like to make things work, and AI helps make things work. 😉

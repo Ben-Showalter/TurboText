@@ -104,6 +104,37 @@ class MainActivity : AppCompatActivity() {
             refreshConversations()
             updateGroupsLabel()
             registerMessageObserver()
+            // Not while a setup prompt is up — the two dialogs would stack.
+            if (setupDialog?.isShowing != true) maybeCheckForUpdate()
+        }
+    }
+
+    /** Checks GitHub for a newer release about once a week (this screen
+     *  resumes constantly, so no background scheduler is needed) and, if
+     *  there is one, asks whether to install it. Only runs once permissions
+     *  are granted, so it never stacks on top of the first-launch prompts.
+     *  Advanced settings has a manual "Check for Updates" too. */
+    private fun maybeCheckForUpdate() {
+        val now = System.currentTimeMillis()
+        val last = SettingsHelper.getLastUpdateCheckAt(this)
+        // A last-check time in the future means the clock was turned back; check anyway.
+        if (now - last in 0 until UpdateChecker.CHECK_INTERVAL_MS) return
+        // Recorded up front so resumes while the check is in flight don't start another.
+        SettingsHelper.setLastUpdateCheckAt(this, now)
+        UpdatePrompt.fetch(this) { result ->
+            result.onFailure {
+                // Offline or rate-limited: try again in a day rather than a week.
+                SettingsHelper.setLastUpdateCheckAt(
+                    this, now - UpdateChecker.CHECK_INTERVAL_MS + UpdateChecker.RETRY_AFTER_FAILURE_MS
+                )
+            }
+            val release = result.getOrNull() ?: return@fetch
+            if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+                UpdatePrompt.show(this, release)
+            } else {
+                // Left this screen mid-check; ask on the next resume instead.
+                SettingsHelper.setLastUpdateCheckAt(this, 0L)
+            }
         }
     }
 
@@ -214,6 +245,7 @@ class MainActivity : AppCompatActivity() {
     // missing is asked for again on the next launch.
     private var askedDefaultThisLaunch = false
     private var askedAccessibilityThisLaunch = false
+    private var setupDialog: androidx.appcompat.app.AlertDialog? = null
 
     /** Startup setup, one step at a time (each step's result calls this
      *  again): app permissions → default SMS app → accessibility. Steps
@@ -227,7 +259,7 @@ class MainActivity : AppCompatActivity() {
         }
         if (!AccessibilityHelper.isServiceEnabled(this) && !askedAccessibilityThisLaunch) {
             askedAccessibilityThisLaunch = true
-            androidx.appcompat.app.AlertDialog.Builder(this)
+            setupDialog = androidx.appcompat.app.AlertDialog.Builder(this)
                 .setTitle("Turn on Accessibility for TurboText")
                 .setMessage(
                     "Lets TurboText flash the outer-screen message icon when you press a key " +

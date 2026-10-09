@@ -120,4 +120,13 @@ object SettingsHelper {
     fun setTrustedProvisioningNumber(context: Context, number: String?) {
         prefs(context).edit().putString("trusted_provisioning_number", number).apply()
     }
+
+    /** When the conversation list last started an automatic update check
+     *  (epoch ms, 0 = never) — see MainActivity.maybeCheckForUpdate. */
+    fun getLastUpdateCheckAt(context: Context): Long =
+        prefs(context).getLong("last_update_check_at", 0L)
+
+    fun setLastUpdateCheckAt(context: Context, time: Long) {
+        prefs(context).edit().putLong("last_update_check_at", time).apply()
+    }
 }

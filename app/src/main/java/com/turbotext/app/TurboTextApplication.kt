@@ -1,6 +1,8 @@
 package com.turbotext.app
 
+import android.app.Activity
 import android.app.Application
+import android.os.Bundle
 
 /** How many conversations' full message history gets eagerly loaded into
  *  MessageCache at startup. Bounded because this runs sequentially and a
@@ -34,6 +36,22 @@ class TurboTextApplication : Application() {
         // for each incoming MMS, but a manual "download" retry doesn't go
         // through it.
         com.android.mms.MmsConfig.init(this)
+
+        // Hide the phone's white soft-key label bar (the system navigation
+        // bar) on every screen — see SystemBars. Done here rather than in
+        // each activity since there's no shared base activity.
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            override fun onActivityResumed(activity: Activity) {
+                SystemBars.hideNavigation(activity)
+                SystemBars.hideOnWindowFocus(activity)
+            }
+            override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
+            override fun onActivityStarted(activity: Activity) {}
+            override fun onActivityPaused(activity: Activity) {}
+            override fun onActivityStopped(activity: Activity) {}
+            override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
+            override fun onActivityDestroyed(activity: Activity) {}
+        })
 
         // Contact saves/edits happen in the system Contacts app, outside
         // our control — this is the only way to learn a name changed, so

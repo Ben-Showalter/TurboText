@@ -15,6 +15,10 @@
 - Contact pictures or colored initials in lists and group chats.
 - Smoother scrolling, with a grey position bar on the right.
 - "Yesterday" or the weekday for recent messages, then the date.
+- The white soft-key bar at the bottom is hidden on every screen, giving messages more room.
+
+## Updates
+- In-app updates: TurboText checks for a new version about once a week and asks before installing it. You can also check any time under Settings > Advanced > Check for Updates.
 
 ## Setup
 - On startup, asks to be the default texting app and to turn on Accessibility, if they aren't set yet.
