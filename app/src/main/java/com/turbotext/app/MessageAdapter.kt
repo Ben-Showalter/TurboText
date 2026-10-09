@@ -93,6 +93,7 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
         val imageFrame: View = view.findViewById(R.id.bubbleImageFrame)
         val image: ImageView = view.findViewById(R.id.bubbleImage)
         val playOverlay: View = view.findViewById(R.id.playOverlay)
+        val morePhotosBadge: TextView = view.findViewById(R.id.morePhotosBadge)
 
         /** Which bubble background each view currently has, so a rebind
          *  with the same look doesn't replace it. */
@@ -271,12 +272,18 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
         // branch overrides this to CENTER, so reset it for recycled rows.
         holder.text.gravity = Gravity.START
         holder.playOverlay.visibility = View.GONE
+        holder.morePhotosBadge.visibility = View.GONE
 
         when {
             msg.imageUri != null -> {
                 holder.imageFrame.visibility = View.VISIBLE
                 val px = (180 * context.resources.displayMetrics.density).toInt()
                 ThumbnailLoader.load(holder.image, msg.imageUri, px)
+                // The rest open in the viewer (OK, then Left/Right).
+                if (msg.imageUris.size > 1) {
+                    holder.morePhotosBadge.text = "+${msg.imageUris.size - 1}"
+                    holder.morePhotosBadge.visibility = View.VISIBLE
+                }
                 holder.text.visibility = if (msg.body.isNotEmpty()) View.VISIBLE else View.GONE
                 holder.text.text = msg.body
             }

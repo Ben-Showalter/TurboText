@@ -32,7 +32,7 @@ class ConversationActivity : AppCompatActivity() {
 
     private var threadId: Long = -1
     private var address: String = ""
-    private var pendingAttachment: OutgoingAttachment? = null
+    private lateinit var attachments: PendingAttachments
     private lateinit var picker: AttachmentPicker
     private lateinit var audioMemoRecorder: AudioMemoRecorder
     private var isRecordingMemo = false
@@ -108,7 +108,8 @@ class ConversationActivity : AppCompatActivity() {
 
         voiceHelper = GroqVoiceInputHelper(this)
         audioMemoRecorder = AudioMemoRecorder(this)
-        picker = AttachmentPicker(this) { setAttachment(it) }
+        attachments = PendingAttachments(this, attachmentIndicator)
+        picker = AttachmentPicker(this) { attachments.add(it) }
 
         // Not loaded here — onResume() always fires immediately after
         // onCreate() and handles the initial load itself, since it also
@@ -272,7 +273,7 @@ class ConversationActivity : AppCompatActivity() {
             showMessageOptions(message)
             return
         }
-        val options = if (pendingAttachment != null) {
+        val options = if (!attachments.isEmpty()) {
             arrayOf("Take Photo", "Record Video", "Attach", "Remove Attachment", "Paste")
         } else {
             arrayOf("Take Photo", "Record Video", "Attach", "Paste")
@@ -285,7 +286,7 @@ class ConversationActivity : AppCompatActivity() {
                     "Record Video" -> picker.recordVideo()
                     "Attach" -> picker.showAttachMenu { startAudioMemoRecording() }
                     "Remove Attachment" -> {
-                        setAttachment(null)
+                        attachments.clear()
                         Toast.makeText(this, "Attachment removed", Toast.LENGTH_SHORT).show()
                     }
                     "Paste" -> pasteFromClipboard()
@@ -315,7 +316,7 @@ class ConversationActivity : AppCompatActivity() {
         isRecordingMemo = false
         listeningIndicator.visibility = View.GONE
         if (uri != null) {
-            setAttachment(OutgoingAttachment("audio/mp4", "audio_${System.currentTimeMillis()}.m4a", uri = uri))
+            attachments.add(listOf(OutgoingAttachment("audio/mp4", "audio_${System.currentTimeMillis()}.m4a", uri = uri)))
         } else {
             Toast.makeText(this, "Recording failed", Toast.LENGTH_SHORT).show()
         }
@@ -354,14 +355,21 @@ class ConversationActivity : AppCompatActivity() {
             .show()
     }
 
-    /** Copies the original picture into Pictures/TurboText — no
-     *  decode/re-encode, so full quality and no memory spike. */
+    /** Copies the original pictures (all of them, for a multi-photo
+     *  MMS) into Pictures/TurboText — no decode/re-encode, so full
+     *  quality and no memory spike. */
     private fun saveImageToGallery(message: Message) {
-        val uri = message.imageUri?.let { Uri.parse(it) } ?: return
+        val uris = message.imageUris.map { Uri.parse(it) }
+        if (uris.isEmpty()) return
         Thread {
-            val ok = MediaSaver.save(this, uri, contentResolver.getType(uri) ?: "image/jpeg")
+            val saved = uris.count { MediaSaver.save(this, it, contentResolver.getType(it) ?: "image/jpeg") }
             runOnUiThread {
-                Toast.makeText(this, if (ok) "Saved to Gallery" else "Couldn't save image", Toast.LENGTH_SHORT).show()
+                val text = when {
+                    saved == 0 -> "Couldn't save image"
+                    uris.size == 1 -> "Saved to Gallery"
+                    else -> "Saved $saved of ${uris.size} pictures to Gallery"
+                }
+                Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
             }
         }.start()
     }
@@ -636,7 +644,7 @@ class ConversationActivity : AppCompatActivity() {
         val message = messageAdapter.currentItems().getOrNull(realIndex) ?: return
         when {
             message.audioUri != null -> toggleVoiceMessage(message)
-            message.imageUri != null -> openMediaViewer(message.imageUri, "image/*")
+            message.imageUri != null -> openImages(message.imageUris)
             message.videoUri != null -> openMediaViewer(message.videoUri, "video/*")
             message.fileUri != null -> openFile(message)
             message.mmsDownloadPending -> downloadPendingMms(message)
@@ -650,42 +658,29 @@ class ConversationActivity : AppCompatActivity() {
         picker.handleResult(requestCode, resultCode, data)
     }
 
-    /** Sets (or with null, clears) what will go out with the next Send. */
-    private fun setAttachment(attachment: OutgoingAttachment?) {
-        pendingAttachment = attachment
-        if (attachment == null) {
-            attachmentIndicator.visibility = View.GONE
-        } else {
-            attachmentIndicator.text = attachment.label
-            attachmentIndicator.visibility = View.VISIBLE
-            Toast.makeText(this, "${attachment.label} — press Send", Toast.LENGTH_SHORT).show()
-        }
-    }
-
     private fun sendCurrentMessage() {
         val typed = inputController.currentText().trim()
         val body = SettingsHelper.applySignature(this, typed)
-        val attachment = pendingAttachment
+        val toSend = attachments.items
 
-        if (body.isEmpty() && attachment == null) {
+        if (body.isEmpty() && toSend.isEmpty()) {
             Toast.makeText(this, "Nothing to send", Toast.LENGTH_SHORT).show()
             return
         }
 
         inputController.setText("")
-        pendingAttachment = null
-        attachmentIndicator.visibility = View.GONE
+        attachments.clear()
         DraftHelper.clearDraft(this, address)
 
         // A group thread's address is every member, comma-joined — the
         // reply goes to all of them as one group MMS.
         val recipients = address.split(",")
-        if (attachment != null) {
-            listeningIndicator.text = if (attachment.isVideo) "Compressing video…" else "Preparing attachment…"
+        if (toSend.isNotEmpty()) {
+            listeningIndicator.text = if (toSend.any { it.isVideo }) "Compressing video…" else "Preparing attachment…"
             listeningIndicator.visibility = View.VISIBLE
         }
         Thread {
-            val error = MessageSender.send(this, recipients, body, attachment) { status ->
+            val error = MessageSender.send(this, recipients, body, toSend) { status ->
                 runOnUiThread {
                     if (!isFinishing && !isDestroyed) {
                         listeningIndicator.text = status
@@ -695,16 +690,12 @@ class ConversationActivity : AppCompatActivity() {
             }
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
-                if (attachment != null) listeningIndicator.visibility = View.GONE
+                if (toSend.isNotEmpty()) listeningIndicator.visibility = View.GONE
                 if (error != null) {
                     // Nothing went out — put the message back so it isn't lost.
                     Toast.makeText(this, error, Toast.LENGTH_LONG).show()
                     if (inputController.currentText().isEmpty()) inputController.setText(typed)
-                    if (pendingAttachment == null && attachment != null) {
-                        pendingAttachment = attachment
-                        attachmentIndicator.text = attachment.label
-                        attachmentIndicator.visibility = View.VISIBLE
-                    }
+                    attachments.restore(toSend)
                 }
                 loadMessages()
             }
@@ -1015,6 +1006,17 @@ class ConversationActivity : AppCompatActivity() {
             android.content.Intent(this, MediaViewerActivity::class.java)
                 .putExtra(MediaViewerActivity.EXTRA_URI, uri)
                 .putExtra(MediaViewerActivity.EXTRA_MIME, mime)
+        )
+    }
+
+    /** A message's pictures, full screen — Left/Right steps through them
+     *  when there's more than one. */
+    private fun openImages(uris: List<String>) {
+        startActivity(
+            android.content.Intent(this, MediaViewerActivity::class.java)
+                .putExtra(MediaViewerActivity.EXTRA_URI, uris.first())
+                .putExtra(MediaViewerActivity.EXTRA_MIME, "image/*")
+                .putExtra(MediaViewerActivity.EXTRA_IMAGE_URIS, uris.toTypedArray())
         )
     }
 }

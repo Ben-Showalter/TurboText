@@ -17,6 +17,10 @@ data class Message(
     val isOutgoing: Boolean,
     val isMms: Boolean = false,
     val imageUri: String? = null,
+    /** Every picture in an MMS, in order — [imageUri] is the first. The
+     *  bubble shows the first with a "+N" badge; the viewer pages
+     *  through them all. */
+    val imageUris: List<String> = listOfNotNull(imageUri),
     val vcardUri: String? = null,
     /** content:// URI of an audio (voice message) MMS part, when present. */
     val audioUri: String? = null,

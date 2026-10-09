@@ -219,7 +219,7 @@ class GroupMessagesActivity : AppCompatActivity() {
         Toast.makeText(this, "Sending group message…", Toast.LENGTH_SHORT).show()
         Thread {
             val error = try {
-                MessageSender.send(this, addresses, body, null)
+                MessageSender.send(this, addresses, body, emptyList())
             } catch (e: Exception) {
                 android.util.Log.e("TurboTextGroup", "group send failed", e)
                 e.message ?: "Group send failed"

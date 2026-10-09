@@ -42,7 +42,7 @@ class ComposeActivity : AppCompatActivity() {
 
     private var editingRecipient = true
     private var recipientMode = InputMode.WORD
-    private var pendingAttachment: OutgoingAttachment? = null
+    private lateinit var attachments: PendingAttachments
     private lateinit var picker: AttachmentPicker
     private var sending = false
     private lateinit var audioMemoRecorder: AudioMemoRecorder
@@ -117,14 +117,23 @@ class ComposeActivity : AppCompatActivity() {
         intent?.getStringExtra("prefillText")?.let { inputController.setText(it) }
         voiceHelper = GroqVoiceInputHelper(this)
         audioMemoRecorder = AudioMemoRecorder(this)
-        picker = AttachmentPicker(this) { setAttachment(it) }
+        attachments = PendingAttachments(this, attachmentIndicator)
+        picker = AttachmentPicker(this) { attachments.add(it) }
 
         // Shared in from another app ("Share → TurboText").
         if (intent?.action == android.content.Intent.ACTION_SEND) {
             intent.getStringExtra(android.content.Intent.EXTRA_TEXT)?.let { inputController.setText(it) }
             @Suppress("DEPRECATION")
             (intent.getParcelableExtra<Uri>(android.content.Intent.EXTRA_STREAM))?.let {
-                setAttachment(OutgoingAttachment.fromUri(this, it, intent.type ?: "application/octet-stream"))
+                attachments.add(listOf(OutgoingAttachment.fromUri(this, it, intent.type ?: "application/octet-stream")))
+            }
+        }
+        // Several photos shared at once.
+        if (intent?.action == android.content.Intent.ACTION_SEND_MULTIPLE) {
+            intent.getStringExtra(android.content.Intent.EXTRA_TEXT)?.let { inputController.setText(it) }
+            @Suppress("DEPRECATION")
+            intent.getParcelableArrayListExtra<Uri>(android.content.Intent.EXTRA_STREAM)?.let { uris ->
+                attachments.add(uris.map { OutgoingAttachment.fromUri(this, it, intent.type ?: "application/octet-stream") })
             }
         }
 
@@ -133,7 +142,7 @@ class ComposeActivity : AppCompatActivity() {
         if (prefillUri != null) {
             val mime = intent?.getStringExtra(EXTRA_PREFILL_ATTACHMENT_MIME) ?: "image/jpeg"
             val ext = android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(mime) ?: "bin"
-            setAttachment(OutgoingAttachment(mime, "forwarded_${System.currentTimeMillis()}.$ext", uri = Uri.parse(prefillUri)))
+            attachments.add(listOf(OutgoingAttachment(mime, "forwarded_${System.currentTimeMillis()}.$ext", uri = Uri.parse(prefillUri))))
         }
 
         Thread {
@@ -378,7 +387,7 @@ class ComposeActivity : AppCompatActivity() {
 
     private fun showOptions() {
         if (editingRecipient) return
-        val options = if (pendingAttachment != null) {
+        val options = if (!attachments.isEmpty()) {
             arrayOf("Take Photo", "Record Video", "Attach", "Remove Attachment", "Paste")
         } else {
             arrayOf("Take Photo", "Record Video", "Attach", "Paste")
@@ -391,7 +400,7 @@ class ComposeActivity : AppCompatActivity() {
                     "Record Video" -> picker.recordVideo()
                     "Attach" -> picker.showAttachMenu { startAudioMemoRecording() }
                     "Remove Attachment" -> {
-                        setAttachment(null)
+                        attachments.clear()
                         Toast.makeText(this, "Attachment removed", Toast.LENGTH_SHORT).show()
                     }
                     "Paste" -> pasteFromClipboard()
@@ -421,7 +430,7 @@ class ComposeActivity : AppCompatActivity() {
         isRecordingMemo = false
         listeningIndicator.visibility = View.GONE
         if (uri != null) {
-            setAttachment(OutgoingAttachment("audio/mp4", "audio_${System.currentTimeMillis()}.m4a", uri = uri))
+            attachments.add(listOf(OutgoingAttachment("audio/mp4", "audio_${System.currentTimeMillis()}.m4a", uri = uri)))
         } else {
             Toast.makeText(this, "Recording failed", Toast.LENGTH_SHORT).show()
         }
@@ -447,43 +456,31 @@ class ComposeActivity : AppCompatActivity() {
         picker.handleResult(requestCode, resultCode, data)
     }
 
-    /** Sets (or with null, clears) what will go out with the message. */
-    private fun setAttachment(attachment: OutgoingAttachment?) {
-        pendingAttachment = attachment
-        if (attachment == null) {
-            attachmentIndicator.visibility = View.GONE
-        } else {
-            attachmentIndicator.text = attachment.label
-            attachmentIndicator.visibility = View.VISIBLE
-            Toast.makeText(this, "${attachment.label} — press Send", Toast.LENGTH_SHORT).show()
-        }
-    }
-
     private fun sendMessage() {
         if (sending) return
         recipientController.confirmPending()
         val address = recipientController.currentText().trim()
         val body = SettingsHelper.applySignature(this, inputController.currentText().trim())
-        val attachment = pendingAttachment
+        val toSend = attachments.items
 
         if (address.isEmpty()) {
             Toast.makeText(this, "Enter a recipient first", Toast.LENGTH_SHORT).show()
             return
         }
-        if (body.isEmpty() && attachment == null) {
+        if (body.isEmpty() && toSend.isEmpty()) {
             Toast.makeText(this, "Nothing to send", Toast.LENGTH_SHORT).show()
             return
         }
 
         sending = true
-        if (attachment != null) {
-            listeningIndicator.text = if (attachment.isVideo) "Compressing video…" else "Preparing attachment…"
+        if (toSend.isNotEmpty()) {
+            listeningIndicator.text = if (toSend.any { it.isVideo }) "Compressing video…" else "Preparing attachment…"
             listeningIndicator.visibility = View.VISIBLE
         }
         Thread {
             // MessageSender picks SMS or MMS (attachments and email
             // addresses go out as MMS).
-            val error = MessageSender.send(this, listOf(address), body, attachment) { status ->
+            val error = MessageSender.send(this, listOf(address), body, toSend) { status ->
                 runOnUiThread {
                     if (!isFinishing && !isDestroyed) {
                         listeningIndicator.text = status

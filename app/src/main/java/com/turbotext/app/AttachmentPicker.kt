@@ -22,11 +22,12 @@ import java.io.File
  * recording UI.)
  *
  * The owning activity forwards onActivityResult to [handleResult]; the
- * finished attachment arrives through [onAttached].
+ * finished attachments arrive through [onAttached] — several at once when
+ * more than one photo/video is chosen from the gallery.
  */
 class AttachmentPicker(
     private val activity: AppCompatActivity,
-    private val onAttached: (OutgoingAttachment) -> Unit
+    private val onAttached: (List<OutgoingAttachment>) -> Unit
 ) {
     companion object {
         const val REQ_PHOTO = 400
@@ -117,9 +118,12 @@ class AttachmentPicker(
         val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
             type = "*/*"
             putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*"))
+            // Pickers that support it let you choose several; the rest
+            // still return one, and Attach can be used again to add more.
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
             addCategory(Intent.CATEGORY_OPENABLE)
         }
-        activity.startActivityForResult(Intent.createChooser(intent, "Choose Photo or Video"), REQ_GALLERY)
+        activity.startActivityForResult(Intent.createChooser(intent, "Choose Photos or Videos"), REQ_GALLERY)
     }
 
     fun pickFile() {
@@ -147,11 +151,18 @@ class AttachmentPicker(
                 val uri = data?.data ?: target ?: return true
                 val name = "${if (requestCode == REQ_VIDEO) "video" else "photo"}_${System.currentTimeMillis()}." +
                     (if (requestCode == REQ_VIDEO) "mp4" else "jpg")
-                onAttached(OutgoingAttachment(captureMime, name, uri = uri))
+                onAttached(listOf(OutgoingAttachment(captureMime, name, uri = uri)))
             }
             REQ_GALLERY, REQ_FILE -> {
-                val uri = data?.data
-                if (ok && uri != null) onAttached(OutgoingAttachment.fromUri(activity, uri))
+                if (!ok) return true
+                // A multiple choice comes back in clipData; a single one
+                // in data (some pickers fill both for one item).
+                val uris = ArrayList<Uri>()
+                data?.clipData?.let { clip ->
+                    for (i in 0 until clip.itemCount) clip.getItemAt(i).uri?.let { uris.add(it) }
+                }
+                if (uris.isEmpty()) data?.data?.let { uris.add(it) }
+                if (uris.isNotEmpty()) onAttached(uris.map { OutgoingAttachment.fromUri(activity, it) })
             }
             REQ_CONTACT -> {
                 val contactUri = data?.data
@@ -160,7 +171,7 @@ class AttachmentPicker(
                         val vcard = loadVcard(contactUri)
                         activity.runOnUiThread {
                             if (activity.isFinishing || activity.isDestroyed) return@runOnUiThread
-                            if (vcard != null) onAttached(vcard)
+                            if (vcard != null) onAttached(listOf(vcard))
                             else Toast.makeText(activity, "Couldn't read that contact", Toast.LENGTH_SHORT).show()
                         }
                     }.start()

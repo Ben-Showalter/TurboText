@@ -695,6 +695,7 @@ class SmsRepository(private val context: Context) {
                         isOutgoing = isOutgoing,
                         isMms = true,
                         imageUri = parts.imageUri,
+                        imageUris = parts.imageUris,
                         vcardUri = parts.vcardUri,
                         audioUri = parts.audioUri,
                         videoUri = parts.videoUri,
@@ -733,7 +734,7 @@ class SmsRepository(private val context: Context) {
 
     private data class MmsParts(
         val text: String,
-        val imageUri: String?,
+        val imageUris: List<String>,
         val vcardUri: String? = null,
         val audioUri: String? = null,
         val senderAddress: String? = null,
@@ -742,13 +743,14 @@ class SmsRepository(private val context: Context) {
         val fileMime: String? = null,
         val fileName: String? = null
     ) {
+        val imageUri get() = imageUris.firstOrNull()
         val hasMedia get() = imageUri != null || vcardUri != null || audioUri != null ||
             videoUri != null || fileUri != null
     }
 
     private fun readMmsParts(messageId: Long): MmsParts {
         val textParts = mutableListOf<String>()
-        var imageUri: String? = null
+        val imageUris = mutableListOf<String>()
         var vcardUri: String? = null
         var audioUri: String? = null
         var videoUri: String? = null
@@ -784,7 +786,9 @@ class SmsRepository(private val context: Context) {
                             else if (hasDataFile) readMmsPartText(partId) else null
                         if (!body.isNullOrEmpty()) textParts.add(body)
                     }
-                    contentType.startsWith("image/") -> imageUri = "content://mms/part/$partId"
+                    // Every picture, not just the last one seen — a
+                    // multi-photo MMS used to show only one of them.
+                    contentType.startsWith("image/") -> imageUris.add("content://mms/part/$partId")
                     contentType == "text/x-vcard" || contentType == "text/vcard" ->
                         vcardUri = "content://mms/part/$partId"
                     contentType.startsWith("audio/") -> audioUri = "content://mms/part/$partId"
@@ -815,7 +819,7 @@ class SmsRepository(private val context: Context) {
             // Non-critical — the message still displays fine without a sender label.
         }
 
-        return MmsParts(text, imageUri, vcardUri, audioUri, senderAddress, videoUri, fileUri, fileMime, fileName)
+        return MmsParts(text, imageUris, vcardUri, audioUri, senderAddress, videoUri, fileUri, fileMime, fileName)
     }
 
     /** Notification preview for a received MMS — its text, or a short
@@ -915,6 +919,7 @@ class SmsRepository(private val context: Context) {
                         Message(
                             id = id, address = "", body = parts.text, date = dateSeconds * 1000L,
                             isOutgoing = isOutgoing, isMms = true, imageUri = parts.imageUri,
+                            imageUris = parts.imageUris,
                             vcardUri = parts.vcardUri, audioUri = parts.audioUri,
                             isUnretrievedMms = parts.text.isEmpty() && parts.imageUri == null &&
                                 parts.vcardUri == null && parts.audioUri == null

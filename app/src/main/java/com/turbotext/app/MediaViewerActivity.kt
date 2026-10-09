@@ -25,7 +25,8 @@ import androidx.appcompat.app.AppCompatActivity
  * Full-screen viewer for a picture or video attachment.
  *
  * Keys: Center zooms a picture (fit ↔ fill) or plays/pauses a video,
- * Right softkey saves the file to the phone, Back/Clear closes.
+ * Left/Right step through a message's pictures when it has several,
+ * Right softkey saves the one showing, Back/Clear closes.
  * The layout is built in code — it's two views and a softkey bar, not
  * worth a separate XML file.
  */
@@ -34,7 +35,13 @@ class MediaViewerActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_URI = "uri"
         const val EXTRA_MIME = "mime"
+        /** All of a message's pictures (String array), to page through. */
+        const val EXTRA_IMAGE_URIS = "image_uris"
     }
+
+    private var pages: List<Uri> = emptyList()
+    private var page = 0
+    private var pageLabel: TextView? = null
 
     private lateinit var uri: Uri
     private var mime: String = "image/*"
@@ -77,6 +84,22 @@ class MediaViewerActivity : AppCompatActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
             ))
             imageView = iv
+            pages = intent.getStringArrayExtra(EXTRA_IMAGE_URIS)?.map { Uri.parse(it) }.orEmpty()
+            page = pages.indexOf(uri).coerceAtLeast(0)
+            if (pages.size > 1) {
+                // "2 of 3", top center over the picture.
+                pageLabel = TextView(this).apply {
+                    setTextColor(Color.WHITE)
+                    setBackgroundColor(0xB3000000.toInt())
+                    textSize = 16f
+                    setPadding(dp(10), dp(2), dp(10), dp(2))
+                }
+                content.addView(pageLabel, FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                    Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                ))
+                updatePageLabel()
+            }
             loadImage(iv)
         }
 
@@ -107,13 +130,16 @@ class MediaViewerActivity : AppCompatActivity() {
      *  allocate tens of MB on a 2 GB phone. */
     private fun loadImage(target: ImageView) {
         val maxSide = maxOf(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels) * 2
+        val source = uri
         Thread {
             val bmp = try {
-                decodeSampled(uri, maxSide)
+                decodeSampled(source, maxSide)
             } catch (e: Exception) {
                 null
             }
             runOnUiThread {
+                // Paged on while this was decoding — a newer load owns the view.
+                if (source != uri) return@runOnUiThread
                 if (bmp != null) target.setImageBitmap(bmp)
                 else Toast.makeText(this, "Couldn't open picture", Toast.LENGTH_SHORT).show()
             }
@@ -127,6 +153,21 @@ class MediaViewerActivity : AppCompatActivity() {
         while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= maxSide) sample *= 2
         val opts = BitmapFactory.Options().apply { inSampleSize = sample }
         return contentResolver.openInputStream(source)?.use { BitmapFactory.decodeStream(it, null, opts) }
+    }
+
+    private fun updatePageLabel() {
+        pageLabel?.text = "${page + 1} of ${pages.size}"
+    }
+
+    /** Shows the next (+1) or previous (-1) picture, wrapping around. */
+    private fun turnPage(step: Int) {
+        val iv = imageView ?: return
+        if (pages.size < 2) return
+        page = (page + step + pages.size) % pages.size
+        uri = pages[page]
+        iv.setImageDrawable(null)
+        updatePageLabel()
+        loadImage(iv)
     }
 
     private fun updateCenterLabel() {
@@ -153,6 +194,8 @@ class MediaViewerActivity : AppCompatActivity() {
         return when (event.keyCode) {
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> { onCenter(); true }
             KeyEvent.KEYCODE_SOFT_RIGHT -> { saveToPhone(); true }
+            KeyEvent.KEYCODE_DPAD_RIGHT -> { turnPage(1); true }
+            KeyEvent.KEYCODE_DPAD_LEFT -> { turnPage(-1); true }
             KeyEvent.KEYCODE_SOFT_LEFT, KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_DEL -> { finish(); true }
             else -> super.dispatchKeyEvent(event)
         }

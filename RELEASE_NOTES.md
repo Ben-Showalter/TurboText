@@ -3,6 +3,8 @@
 ## Messaging
 - Send and receive pictures, video, voice messages, contact cards and files. Videos shrink automatically to fit MMS size limits.
 - New **Record Video** and **File** attach options, and you can share to TurboText from other apps.
+- Send up to 5 photos in one message. Pick several at once in the gallery, or use Attach again to add more. Sharing several photos from another app works too.
+- Received messages with several photos now keep them all. The bubble shows "+2" and so on, and opening it lets you step through them with Left/Right. Save to Gallery saves every one.
 - Fixed incoming picture messages showing as "Unknown". Press OK on an undownloaded message to fetch it.
 - Failed sends keep your text and attachment.
 - Message notifications now clear when you open the conversation, including picture and group messages, and tapping an older notification opens the right conversation.
