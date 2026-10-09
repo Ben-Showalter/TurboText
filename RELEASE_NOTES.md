@@ -7,6 +7,8 @@
 - Received messages with several photos now keep them all. The bubble shows "+2" and so on, and opening it lets you step through them with Left/Right. Save to Gallery saves every one.
 - Fixed incoming picture messages showing as "Unknown". Press OK on an undownloaded message to fetch it.
 - Failed sends keep your text and attachment.
+- Picture messages now show "Delivered" when the other phone gets them, "Delivered to 2 of 3" in a group, or "Not delivered". This depends on your carrier sending delivery reports, as with texts.
+- Failed picture messages show on your side of the conversation instead of looking like incoming messages.
 - Message notifications now clear when you open the conversation, including picture and group messages, and tapping an older notification opens the right conversation.
 
 ## Typing

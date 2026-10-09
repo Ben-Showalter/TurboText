@@ -183,6 +183,8 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
             "sending" -> "Sending"
             "sent" -> "Sent"
             "delivered" -> "Delivered"
+            "partially_delivered" -> "Delivered to ${msg.deliveredTo} of ${msg.recipientCount}"
+            "not_delivered" -> "Not delivered"
             "failed" -> "Failed"
             else -> null
         }
@@ -216,7 +218,8 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
             )
         }
         statusRange?.let {
-            val color = if (msg.sendStatus == "failed") 0xFFCC3333.toInt() else theme.textSecondary
+            val failed = msg.sendStatus == "failed" || msg.sendStatus == "not_delivered"
+            val color = if (failed) 0xFFCC3333.toInt() else theme.textSecondary
             spannable.setSpan(
                 android.text.style.ForegroundColorSpan(color),
                 it.first, it.last + 1, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE

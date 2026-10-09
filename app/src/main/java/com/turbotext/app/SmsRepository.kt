@@ -19,6 +19,21 @@ class SmsRepository(private val context: Context) {
          *  while the real message downloads (PduPersister.DUMMY_THREAD_ID).
          *  It has no contact, so anything left there showed as "Unknown". */
         const val PLACEHOLDER_THREAD_ID = Long.MAX_VALUE
+
+        /** m-delivery-ind and m-read-orig-ind (PduHeaders): reports about a
+         *  sent message, saved by mmslib as rows in its thread. Never shown
+         *  as messages of their own. */
+        private const val M_TYPE_DELIVERY_IND = 134
+        private const val M_TYPE_READ_ORIG_IND = 136
+        private const val NOT_A_REPORT =
+            "${Telephony.Mms.MESSAGE_TYPE} NOT IN ($M_TYPE_DELIVERY_IND, $M_TYPE_READ_ORIG_IND)"
+
+        /** Delivery-report statuses (PduHeaders.STATUS_*). Retrieved and
+         *  forwarded count as delivered; expired, rejected, unrecognized
+         *  and unreachable as not delivered. Deferred and indeterminate
+         *  leave it at "Sent". */
+        private val DELIVERED_STATUSES = setOf(0x81, 0x86)
+        private val UNDELIVERED_STATUSES = setOf(0x80, 0x82, 0x84, 0x87)
     }
 
     /** Moves MMS notices stuck on [PLACEHOLDER_THREAD_ID] (a download
@@ -458,7 +473,7 @@ class SmsRepository(private val context: Context) {
         val mmsCursor = context.contentResolver.query(
             Telephony.Mms.CONTENT_URI,
             arrayOf(Telephony.Mms._ID, Telephony.Mms.THREAD_ID, Telephony.Mms.DATE, Telephony.Mms.READ),
-            null, null, mmsSortOrder
+            NOT_A_REPORT, null, mmsSortOrder
         )
         mmsCursor?.use {
             while (it.moveToNext()) {
@@ -657,14 +672,18 @@ class SmsRepository(private val context: Context) {
         val result = mutableListOf<Message>()
         val isGroup = isGroupThread(threadId)
         val uri = Telephony.Mms.CONTENT_URI
-        val projection = arrayOf(Telephony.Mms._ID, Telephony.Mms.DATE, Telephony.Mms.MESSAGE_BOX, Telephony.Mms.MESSAGE_TYPE)
+        val projection = arrayOf(
+            Telephony.Mms._ID, Telephony.Mms.DATE, Telephony.Mms.MESSAGE_BOX, Telephony.Mms.MESSAGE_TYPE,
+            Telephony.Mms.MESSAGE_ID
+        )
         val sortOrder = if (limit != null) "${Telephony.Mms.DATE} DESC LIMIT $limit" else "${Telephony.Mms.DATE} ASC"
         val cursor = context.contentResolver.query(
             uri, projection,
-            "${Telephony.Mms.THREAD_ID} = ?",
+            "${Telephony.Mms.THREAD_ID} = ? AND $NOT_A_REPORT",
             arrayOf(threadId.toString()),
             sortOrder
         ) ?: return result
+        val reports = deliveryReports(threadId)
 
         cursor.use {
             while (it.moveToNext()) {
@@ -672,9 +691,30 @@ class SmsRepository(private val context: Context) {
                 // MMS dates are stored in seconds, unlike SMS (milliseconds).
                 val dateSeconds = it.getLong(it.getColumnIndexOrThrow(Telephony.Mms.DATE))
                 val box = it.getInt(it.getColumnIndexOrThrow(Telephony.Mms.MESSAGE_BOX))
-                val isOutgoing = box == Telephony.Mms.MESSAGE_BOX_SENT || box == Telephony.Mms.MESSAGE_BOX_OUTBOX
+                // A failed send is still ours — it used to show as an
+                // incoming bubble.
+                val isOutgoing = box == Telephony.Mms.MESSAGE_BOX_SENT || box == Telephony.Mms.MESSAGE_BOX_OUTBOX ||
+                    box == Telephony.Mms.MESSAGE_BOX_FAILED
+                var deliveredTo = 0
+                var recipientCount = 0
                 val sendStatus = when (box) {
-                    Telephony.Mms.MESSAGE_BOX_SENT -> "sent"
+                    Telephony.Mms.MESSAGE_BOX_SENT -> {
+                        val mId = it.getString(it.getColumnIndexOrThrow(Telephony.Mms.MESSAGE_ID))
+                        val byRecipient = mId?.let { m -> reports[m] }
+                        if (byRecipient == null) {
+                            "sent"
+                        } else {
+                            recipientCount = maxOf(mmsRecipientCount(id), byRecipient.size)
+                            deliveredTo = byRecipient.values.count { s -> s in DELIVERED_STATUSES }
+                            val failed = byRecipient.values.count { s -> s in UNDELIVERED_STATUSES }
+                            when {
+                                deliveredTo >= recipientCount -> "delivered"
+                                deliveredTo > 0 -> "partially_delivered"
+                                failed >= recipientCount -> "not_delivered"
+                                else -> "sent"
+                            }
+                        }
+                    }
                     Telephony.Mms.MESSAGE_BOX_OUTBOX -> "sending"
                     Telephony.Mms.MESSAGE_BOX_FAILED -> "failed"
                     Telephony.Mms.MESSAGE_BOX_INBOX -> "received"
@@ -705,13 +745,56 @@ class SmsRepository(private val context: Context) {
                         senderName = senderName,
                         mmsDownloadPending = isNotificationInd,
                         isUnretrievedMms = !isNotificationInd && parts.text.isEmpty() && !parts.hasMedia,
-                        sendStatus = sendStatus
+                        sendStatus = sendStatus,
+                        deliveredTo = deliveredTo,
+                        recipientCount = recipientCount
                     )
                 )
             }
         }
         return result
     }
+
+    /** Delivery reports (m-delivery-ind) saved in [threadId], as
+     *  sent message's Message-ID → (recipient → latest status). mmslib's
+     *  PushReceiver stores each report as its own row in the thread. */
+    private fun deliveryReports(threadId: Long): Map<String, Map<String, Int>> {
+        val result = HashMap<String, HashMap<String, Int>>()
+        try {
+            context.contentResolver.query(
+                Telephony.Mms.CONTENT_URI,
+                arrayOf(Telephony.Mms._ID, Telephony.Mms.MESSAGE_ID, Telephony.Mms.STATUS),
+                "${Telephony.Mms.THREAD_ID} = ? AND ${Telephony.Mms.MESSAGE_TYPE} = $M_TYPE_DELIVERY_IND",
+                arrayOf(threadId.toString()),
+                "${Telephony.Mms.DATE} ASC" // later reports win
+            )?.use { c ->
+                while (c.moveToNext()) {
+                    val mId = c.getString(1) ?: continue
+                    val status = c.getInt(2)
+                    // The recipient this report is about (its To address).
+                    val recipient = context.contentResolver.query(
+                        android.net.Uri.parse("content://mms/${c.getLong(0)}/addr"),
+                        arrayOf("address"), "type = 151", null, null
+                    )?.use { a -> if (a.moveToFirst()) a.getString(0) else null }
+                    val key = recipient?.filter { ch -> ch.isDigit() }?.takeLast(10)?.ifEmpty { null } ?: "?"
+                    result.getOrPut(mId) { HashMap() }[key] = status
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("TurboTextMms", "couldn't read delivery reports for thread $threadId", e)
+        }
+        return result
+    }
+
+    /** How many people a sent MMS went to (its To addresses), at least 1. */
+    private fun mmsRecipientCount(messageId: Long): Int = try {
+        context.contentResolver.query(
+            android.net.Uri.parse("content://mms/$messageId/addr"),
+            arrayOf("address"), "type = 151", null, null
+        )?.use { it.count } ?: 1
+    } catch (e: Exception) {
+        1
+    }.coerceAtLeast(1)
 
     /** Writes a vCard found inline in a plain SMS body out to a real file
      *  so it can be handed to the same content-URI-based "Import Contact"
@@ -906,14 +989,15 @@ class SmsRepository(private val context: Context) {
             val projection = arrayOf(Telephony.Mms._ID, Telephony.Mms.DATE, Telephony.Mms.MESSAGE_BOX, Telephony.Mms.MESSAGE_TYPE)
             context.contentResolver.query(
                 Telephony.Mms.CONTENT_URI, projection,
-                "${Telephony.Mms._ID} IN ($placeholders)",
+                "${Telephony.Mms._ID} IN ($placeholders) AND $NOT_A_REPORT",
                 mmsIds.map { it.toString() }.toTypedArray(), null
             )?.use { cursor ->
                 while (cursor.moveToNext()) {
                     val id = cursor.getLong(cursor.getColumnIndexOrThrow(Telephony.Mms._ID))
                     val dateSeconds = cursor.getLong(cursor.getColumnIndexOrThrow(Telephony.Mms.DATE))
                     val box = cursor.getInt(cursor.getColumnIndexOrThrow(Telephony.Mms.MESSAGE_BOX))
-                    val isOutgoing = box == Telephony.Mms.MESSAGE_BOX_SENT || box == Telephony.Mms.MESSAGE_BOX_OUTBOX
+                    val isOutgoing = box == Telephony.Mms.MESSAGE_BOX_SENT || box == Telephony.Mms.MESSAGE_BOX_OUTBOX ||
+                        box == Telephony.Mms.MESSAGE_BOX_FAILED
                     val parts = readMmsParts(id)
                     result.add(
                         Message(

@@ -249,7 +249,9 @@ object MmsTransmitter {
 
         try {
             req.setPriority(PduHeaders.PRIORITY_NORMAL)
-            req.setDeliveryReport(PduHeaders.VALUE_NO)
+            // The carrier sends an m-delivery-ind back per recipient; mmslib's
+            // PushReceiver saves it, and SmsRepository shows "Delivered".
+            req.setDeliveryReport(PduHeaders.VALUE_YES)
             req.setReadReport(PduHeaders.VALUE_NO)
         } catch (e: InvalidHeaderValueException) {
             Log.w(TAG, "MmsTransmitter: invalid header value while building PDU", e)

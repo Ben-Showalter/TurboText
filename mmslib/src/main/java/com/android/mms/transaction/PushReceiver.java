@@ -139,8 +139,13 @@ public class PushReceiver extends BroadcastReceiver {
                         Uri uri = p.persist(pdu, Inbox.CONTENT_URI, true,
                                 group, null, subId);
                         // Update thread ID for ReadOrigInd & DeliveryInd.
-                        ContentValues values = new ContentValues(1);
+                        // TurboText: also mark it read and seen — it's a
+                        // report about a sent message, not a new message,
+                        // and must not count as unread.
+                        ContentValues values = new ContentValues(3);
                         values.put(Mms.THREAD_ID, threadId);
+                        values.put(Mms.READ, 1);
+                        values.put(Mms.SEEN, 1);
                         SqliteWrapper.update(mContext, cr, uri, values, null, null);
                         break;
                     }
