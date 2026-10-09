@@ -60,13 +60,12 @@ object SoundNotificationHelper {
      *  address.
      *
      *  [address] must be the same conversation key ConversationActivity
-     *  will later call acknowledge() with — for a group MMS thread that's
-     *  the joined participant list, not any single sender's address, or
-     *  the id used here to post the rich card/alarm never matches the id
-     *  used to cancel them and both get stuck. [displayName], if given,
-     *  is used as-is instead of re-deriving it from [address] via
-     *  ContactHelper — necessary for that same group case, where address
-     *  is a comma-joined string no contact lookup will ever match. */
+     *  will later call acknowledge() with — NotificationHelper.conversationKey,
+     *  i.e. the thread id — or the id used here to post the rich card/alarm
+     *  never matches the id used to cancel them and both get stuck.
+     *  [displayName], if given, is used as-is instead of re-deriving it
+     *  from [address] via ContactHelper — always pass it when [address]
+     *  is a thread key, which no contact lookup will ever match. */
     fun notifyNewMessage(context: Context, address: String, displayName: String? = null) {
         val soundPath = SettingsHelper.getNotificationSoundPath(context)
         val vibratePattern = SettingsHelper.getVibratePattern(context)

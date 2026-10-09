@@ -59,7 +59,9 @@ class SmsDeliverReceiver : BroadcastReceiver() {
         // of showing "N:Doe;John;;;" etc.
         val displayName = ContactHelper.lookupName(context, address) ?: address
         val notifyBody = if (VcardTextExtractor.extract(body) != null) "Contact card" else body
-        NotificationHelper.showIncoming(context, address, displayName, notifyBody)
-        SoundNotificationHelper.notifyNewMessage(context, address, displayName)
+        val threadId = NotificationHelper.showIncoming(context, address, displayName, notifyBody)
+        SoundNotificationHelper.notifyNewMessage(
+            context, NotificationHelper.conversationKey(threadId, address), displayName
+        )
     }
 }

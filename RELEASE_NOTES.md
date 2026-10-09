@@ -5,6 +5,7 @@
 - New **Record Video** and **File** attach options, and you can share to TurboText from other apps.
 - Fixed incoming picture messages showing as "Unknown". Press OK on an undownloaded message to fetch it.
 - Failed sends keep your text and attachment.
+- Message notifications now clear when you open the conversation, including picture and group messages, and tapping an older notification opens the right conversation.
 
 ## Typing
 - New T9 engine built on the Traditional T9 dictionary. It learns your words and common word pairs.

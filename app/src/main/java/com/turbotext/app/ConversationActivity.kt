@@ -46,7 +46,11 @@ class ConversationActivity : AppCompatActivity() {
         threadId = intent.getLongExtra("threadId", -1)
         address = intent.getStringExtra("address") ?: ""
         val displayName = intent.getStringExtra("displayName") ?: address
-        NotificationHelper.cancelForAddress(this, address)
+        clearAlerts()
+        // Alerts posted before they were keyed by thread used the address.
+        // Clearing those once here stops one left over from the previous
+        // version from sticking around forever.
+        NotificationHelper.cancelForConversation(this, address)
         SoundNotificationHelper.acknowledge(this, address)
 
         findViewById<TextView>(R.id.contactName).text = displayName
@@ -805,11 +809,23 @@ class ConversationActivity : AppCompatActivity() {
         return super.dispatchKeyEvent(event)
     }
 
+    /** NotificationHelper.conversationKey for this thread. */
+    private fun notificationKey() = NotificationHelper.conversationKey(threadId, address)
+
+    /** Clears this conversation's notification, repeat alert and
+     *  outer-screen card. The "couldn't be downloaded" notice goes too:
+     *  opening a thread shows any "press OK to download" message there. */
+    private fun clearAlerts() {
+        NotificationHelper.cancelForConversation(this, notificationKey())
+        SoundNotificationHelper.acknowledge(this, notificationKey())
+        NotificationHelper.cancelMmsDownloadFailed(this)
+    }
+
     private var messageObserver: android.database.ContentObserver? = null
     private val reloadHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val reloadRunnable = Runnable {
         loadMessages()
-        SoundNotificationHelper.acknowledge(this, address)
+        SoundNotificationHelper.acknowledge(this, notificationKey())
     }
 
     override fun onResume() {
@@ -859,7 +875,7 @@ class ConversationActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         stopVoiceMessagePlayback()
-        NotificationHelper.cancelForAddress(this, address)
+        NotificationHelper.cancelForConversation(this, notificationKey())
         messageObserver?.let { contentResolver.unregisterContentObserver(it) }
         reloadHandler.removeCallbacks(reloadRunnable)
         val text = inputController.currentText()

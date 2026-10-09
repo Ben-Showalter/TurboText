@@ -42,10 +42,7 @@ object MmsReceivePostProcessor {
             if (id != null) {
                 handle(context, id)
             } else {
-                NotificationHelper.showIncoming(
-                    context, "Multimedia message", "Multimedia message",
-                    "A multimedia message couldn't be downloaded"
-                )
+                NotificationHelper.showMmsDownloadFailed(context)
             }
         } catch (e: Exception) {
             Log.w(TAG, "fallback scan failed", e)
@@ -89,15 +86,19 @@ object MmsReceivePostProcessor {
             } else {
                 ContactHelper.lookupName(context, sender) ?: sender
             }
-            // The conversation key has to match what NotificationHelper and
-            // SoundNotificationHelper.acknowledge() use, or the notification
-            // and repeat alarm never clear for group threads.
+            // Keyed by thread (NotificationHelper.conversationKey), the same
+            // key ConversationActivity clears with when the thread is opened.
             val groupAddress = if (isGroup) participants.joinToString(",") else null
-            NotificationHelper.showIncoming(
+            val resolvedThreadId = NotificationHelper.showIncoming(
                 context, sender, displayName, preview,
                 threadId = tid, conversationAddress = groupAddress
             )
-            SoundNotificationHelper.notifyNewMessage(context, groupAddress ?: sender, displayName)
+            SoundNotificationHelper.notifyNewMessage(
+                context, NotificationHelper.conversationKey(resolvedThreadId, groupAddress ?: sender), displayName
+            )
+            // An MMS came through, so an earlier "couldn't be downloaded"
+            // notice is out of date (it was most likely this message).
+            NotificationHelper.cancelMmsDownloadFailed(context)
             Log.i(TAG, "processed MMS id=$id thread=$tid from=$sender group=$isGroup")
         } catch (e: Exception) {
             Log.e(TAG, "error post-processing MMS id=$id", e)
