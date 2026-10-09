@@ -24,8 +24,11 @@ android {
         applicationId "com.turbotext.app"
         minSdk 24
         targetSdk 33
-        versionCode 1
-        versionName "1.0"
+        // Every published release needs a higher versionCode and must be
+        // signed with the same release key, or phones refuse the in-app
+        // update. versionName must match the release tag (v1.1 -> "1.1").
+        versionCode 2
+        versionName '.1.0.3'
     }
 
     signingConfigs {
@@ -81,4 +84,6 @@ dependencies {
     // newer 5.x line, which split into separate JVM/Android artifacts and
     // isn't worth the added Gradle-resolution risk for what we need here.
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+
+    testImplementation 'junit:junit:4.13.2'
 }

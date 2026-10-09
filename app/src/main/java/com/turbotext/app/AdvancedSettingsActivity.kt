@@ -16,8 +16,9 @@ class AdvancedSettingsActivity : AppCompatActivity() {
     private lateinit var accessibilityRow: TextView
     private lateinit var usageAccessRow: TextView
     private lateinit var trustedNumberRow: TextView
+    private lateinit var checkUpdatesRow: TextView
     private var currentRow = 0
-    private val lastRow = 4
+    private val lastRow = 5
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -29,6 +30,7 @@ class AdvancedSettingsActivity : AppCompatActivity() {
         accessibilityRow = findViewById(R.id.accessibilityRow)
         usageAccessRow = findViewById(R.id.usageAccessRow)
         trustedNumberRow = findViewById(R.id.trustedNumberRow)
+        checkUpdatesRow = findViewById(R.id.checkUpdatesRow)
 
         defaultAppRow.setOnClickListener { openDefaultAppSettings() }
         appShortcutRow.setOnClickListener {
@@ -37,6 +39,8 @@ class AdvancedSettingsActivity : AppCompatActivity() {
         accessibilityRow.setOnClickListener { openAccessibilitySettings() }
         usageAccessRow.setOnClickListener { openUsageAccessSettings() }
         trustedNumberRow.setOnClickListener { promptTrustedNumber() }
+        checkUpdatesRow.setOnClickListener { checkForUpdate() }
+        checkUpdatesRow.text = "Check for Updates (installed v${UpdateChecker.installedVersion(this)})"
 
         updateTrustedNumberRowLabel()
         updateRowHighlight()
@@ -87,9 +91,25 @@ class AdvancedSettingsActivity : AppCompatActivity() {
         }
     }
 
+    /** Manual counterpart to the conversation list's weekly automatic
+     *  check (MainActivity.maybeCheckForUpdate). */
+    private fun checkForUpdate() {
+        Toast.makeText(this, "Checking for updates…", Toast.LENGTH_SHORT).show()
+        UpdatePrompt.fetch(this) { result ->
+            val release = result.getOrNull()
+            when {
+                result.isFailure ->
+                    Toast.makeText(this, "Couldn't check for updates", Toast.LENGTH_LONG).show()
+                release == null ->
+                    Toast.makeText(this, "TurboText is up to date", Toast.LENGTH_SHORT).show()
+                else -> UpdatePrompt.show(this, release)
+            }
+        }
+    }
+
     private fun updateRowHighlight() {
         val surface2 = ThemeHelper.getCurrentTheme(this).surface2
-        val rows = listOf(defaultAppRow, appShortcutRow, accessibilityRow, usageAccessRow, trustedNumberRow)
+        val rows = listOf(defaultAppRow, appShortcutRow, accessibilityRow, usageAccessRow, trustedNumberRow, checkUpdatesRow)
         rows.forEachIndexed { index, row ->
             row.setBackgroundColor(if (currentRow == index) surface2 else android.graphics.Color.TRANSPARENT)
         }
@@ -161,6 +181,7 @@ class AdvancedSettingsActivity : AppCompatActivity() {
                     2 -> openAccessibilitySettings()
                     3 -> openUsageAccessSettings()
                     4 -> promptTrustedNumber()
+                    5 -> checkForUpdate()
                 }
                 return true
             }
