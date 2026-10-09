@@ -2,7 +2,6 @@ package com.turbotext.app
 
 import android.content.Context
 import android.graphics.drawable.Drawable
-import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
@@ -28,6 +27,12 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
     companion object {
         /** Payload for "only the selection highlight changed". */
         private const val PAYLOAD_SELECTION = "sel"
+
+        /** Corner radius of every bubble, text and photo alike. */
+        private const val BUBBLE_RADIUS_DP = 12f
+
+        /** The photo's margin inside its frame (item_message.xml). */
+        private const val PHOTO_INSET_DP = 3f
     }
 
     /** Position in the *adapter's own* index space (including the Load
@@ -55,7 +60,7 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
      *  combination. Each view gets its own instance via newDrawable() —
      *  a single Drawable can't be shared between views of different
      *  sizes — but that's a cheap copy of already-built state rather
-     *  than a fresh GradientDrawable/LayerDrawable per bind. */
+     *  than a fresh BubbleDrawable per bind. */
     private val bubbleProtos = HashMap<String, Drawable>()
 
     /** Bumped on a theme change so every row's cached background key
@@ -101,7 +106,9 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
             image.clipToOutline = true
             image.outlineProvider = object : android.view.ViewOutlineProvider() {
                 override fun getOutline(view: View, outline: android.graphics.Outline) {
-                    val radius = 17f * view.resources.displayMetrics.density
+                    // Inset by the frame's 3dp margin, so the photo's
+                    // corners run parallel to the frame's 12dp ones.
+                    val radius = (BUBBLE_RADIUS_DP - PHOTO_INSET_DP) * view.resources.displayMetrics.density
                     outline.setRoundRect(0, 0, view.width, view.height, radius)
                 }
             }
@@ -122,33 +129,22 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
 
     /** A rounded bubble — selection shows as a border around the
      *  bubble's own color. When [stripeOnLeft] is non-null, an accent
-     *  stripe is baked into the same shape on that side, sharp-cornered
-     *  on that side and rounded on the other. */
+     *  stripe runs down that side, inside the same rounded outline. */
     private fun buildBubble(
         context: Context, theme: AppTheme, fillColor: Int, isSelected: Boolean, stripeOnLeft: Boolean?
     ): Drawable {
         val density = context.resources.displayMetrics.density
-        val r = 20f * density
-        val base = GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            cornerRadii = when (stripeOnLeft) {
-                null -> floatArrayOf(r, r, r, r, r, r, r, r)
-                true -> floatArrayOf(0f, 0f, r, r, r, r, 0f, 0f)
-                false -> floatArrayOf(r, r, 0f, 0f, 0f, 0f, r, r)
-            }
-            setColor(fillColor)
-            if (isSelected) setStroke((2.5f * density).toInt(), theme.accent)
-        }
-        if (stripeOnLeft == null) return base
-
-        val stripe = GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            setColor(theme.accentLight)
-        }
-        return android.graphics.drawable.LayerDrawable(arrayOf(base, stripe)).apply {
-            setLayerGravity(1, if (stripeOnLeft) Gravity.START else Gravity.END)
-            setLayerWidth(1, (5f * density).toInt())
-        }
+        return BubbleDrawable(
+            BubbleDrawable.State(
+                fillColor = fillColor,
+                radius = BUBBLE_RADIUS_DP * density,
+                stripeOnLeft = stripeOnLeft,
+                stripeColor = theme.accentLight,
+                stripeWidth = 5f * density,
+                strokeColor = theme.accent,
+                strokeWidth = if (isSelected) 2.5f * density else 0f,
+            )
+        )
     }
 
     private fun bubble(context: Context, kind: String, outgoing: Boolean?, selected: Boolean): Pair<String, Drawable> {
