@@ -91,6 +91,36 @@ class MainActivity : AppCompatActivity() {
         if (hasAllPermissions()) {
             refreshConversations()
             updateGroupsLabel()
+            maybeCheckForUpdate()
+        }
+    }
+
+    /** Checks GitHub for a newer release about once a week (this screen
+     *  resumes constantly, so no background scheduler is needed) and, if
+     *  there is one, asks whether to install it. Only runs once permissions
+     *  are granted, so it never stacks on top of the first-launch prompts.
+     *  Advanced settings has a manual "Check for Updates" too. */
+    private fun maybeCheckForUpdate() {
+        val now = System.currentTimeMillis()
+        val last = SettingsHelper.getLastUpdateCheckAt(this)
+        // A last-check time in the future means the clock was turned back; check anyway.
+        if (now - last in 0 until UpdateChecker.CHECK_INTERVAL_MS) return
+        // Recorded up front so resumes while the check is in flight don't start another.
+        SettingsHelper.setLastUpdateCheckAt(this, now)
+        UpdatePrompt.fetch(this) { result ->
+            result.onFailure {
+                // Offline or rate-limited: try again in a day rather than a week.
+                SettingsHelper.setLastUpdateCheckAt(
+                    this, now - UpdateChecker.CHECK_INTERVAL_MS + UpdateChecker.RETRY_AFTER_FAILURE_MS
+                )
+            }
+            val release = result.getOrNull() ?: return@fetch
+            if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+                UpdatePrompt.show(this, release)
+            } else {
+                // Left this screen mid-check; ask on the next resume instead.
+                SettingsHelper.setLastUpdateCheckAt(this, 0L)
+            }
         }
     }
 

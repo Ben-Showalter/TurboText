@@ -148,4 +148,13 @@ object SettingsHelper {
     fun setBluetoothMicEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean("voice_input_bluetooth_mic", enabled).apply()
     }
+
+    /** When the conversation list last started an automatic update check
+     *  (epoch ms, 0 = never) — see MainActivity.maybeCheckForUpdate. */
+    fun getLastUpdateCheckAt(context: Context): Long =
+        prefs(context).getLong("last_update_check_at", 0L)
+
+    fun setLastUpdateCheckAt(context: Context, time: Long) {
+        prefs(context).edit().putLong("last_update_check_at", time).apply()
+    }
 }
