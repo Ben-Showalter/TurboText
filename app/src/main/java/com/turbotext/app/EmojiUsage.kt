@@ -3,33 +3,118 @@ package com.turbotext.app
 import android.content.Context
 
 /**
- * The Emoji mode list: 50 emojis, the ones you use most first.
+ * The emoji picker's contents: 550 emojis in categories, plus a
+ * "Recent" category of the ones you use most.
  *
- * Base order is the Unicode Consortium's published emoji-frequency
- * ranking (top 46 — the tail of that order is approximate), followed by
- * the four TurboText already offered that aren't in it. Every insert
- * bumps a per-emoji count; the list is sorted by that count, with ties
- * (including everything never used) keeping the base order.
+ * Kept to emojis from Unicode's Emoji 12 or earlier so they draw on this
+ * phone's system font; anything newer would show as an empty box. Every
+ * insert bumps a per-emoji count, which is what "Recent" is sorted by.
  */
 object EmojiUsage {
 
     private const val PREFS = "emoji_usage"
 
-    val BASE = listOf(
-        "😂", "❤️", "🤣", "👍", "😭", "🙏", "😘", "🥰", "😍", "😊",
-        "🎉", "😁", "💕", "🥺", "😅", "🔥", "☺️", "🤦", "♥️", "🤷",
-        "🙄", "😆", "🤗", "😉", "🎂", "🤔", "👏", "🙂", "😳", "🥳",
-        "😎", "👌", "💜", "😔", "💪", "✨", "💖", "👀", "😋", "😏",
-        "😢", "👉", "💗", "😩", "💯", "🌹",
-        "😀", "😡", "👎", "✅"
+    /** Most emojis "Recent" shows — five full rows of the grid. */
+    private const val RECENT_MAX = 25
+
+    class Category(val name: String, val emojis: List<String>)
+
+    private fun split(s: String): List<String> = s.trim().split(Regex("\\s+"))
+
+    val CATEGORIES = listOf(
+        Category(
+            "Smileys", split(
+                """
+                😀 😃 😄 😁 😆 😅 🤣 😂 🙂 🙃 😉 😊 😇 🥰 😍 🤩 😘 😗 ☺️ 😚
+                😙 😋 😛 😜 🤪 😝 🤑 🤗 🤭 🤫 🤔 🤐 🤨 😐 😑 😶 😏 😒 🙄 😬
+                🤥 😌 😔 😪 🤤 😴 😷 🤒 🤕 🤢 🤮 🤧 🥵 🥶 🥴 😵 🤯 🤠 🥳 😎
+                🤓 🧐 😕 😟 🙁 ☹️ 😮 😯 😲 😳 🥺 😦 😧 😨 😰 😥 😢 😭 😱 😖
+                😣 😞 😓 😩 😫 🥱 😤 😡 😠 🤬 😈 👿 💀 💩 🤡 👻 👽 🤖 😺 😸
+                """
+            )
+        ),
+        Category(
+            "Gestures & people", split(
+                """
+                👍 👎 👌 ✌️ 🤞 🤟 🤘 🤙 👈 👉 👆 👇 ☝️ ✋ 🤚 🖐️ 🖖 👋 🤏 ✍️
+                👏 🙌 👐 🤲 🤝 🙏 💪 🦵 🦶 👂 👃 🧠 👀 👁️ 👅 👄 💅 🤳 👶 🧒
+                👦 👧 🧑 👨 👩 🧓 👴 👵 👱 🧔 🙋 🙅 🙆 🤷 🤦 🙇 💁 🙎 🙍 🧏
+                👮 👷 💂 🕵️ 👩‍⚕️ 👨‍🍳 👩‍🎓 👨‍🌾 🤴 👸 🎅 🤶 🦸 🧙 🧚 👼 🤰 🤱 💃 🕺
+                👫 👬 👭 💏 💑 👪 🏃 🚶 🧍 🧎
+                """
+            )
+        ),
+        Category(
+            "Hearts & feelings", split(
+                """
+                ❤️ 🧡 💛 💚 💙 💜 🖤 🤍 🤎 💔 ❣️ 💕 💞 💓 💗 💖 💘 💝 💟 ♥️
+                💋 💌 💯 💢 💥 💫 💦 💨 💬 💭 💤 🌹 🥀 🎁 🍫 🧸 💐 💍 👑 😻
+                """
+            )
+        ),
+        Category(
+            "Animals & nature", split(
+                """
+                🐶 🐱 🐭 🐹 🐰 🦊 🐻 🐼 🐨 🐯 🦁 🐮 🐷 🐸 🐵 🙈 🙉 🙊 🐔 🐧
+                🐦 🐤 🦆 🦅 🦉 🐴 🦄 🐝 🦋 🐌 🐞 🐢 🐍 🐙 🐠 🐟 🐬 🐳 🦈 🐊
+                🐘 🦒 🐄 🐖 🐑 🐕 🐈 🐿️ 🦌 🐾 🌵 🎄 🌲 🌳 🌴 🌱 🌿 🍀 🍁 🍂
+                🌷 🌹 🌺 🌸 🌼 🌻 🌞 🌝 🌛 ⭐ 🌟 ✨ ⚡ 🔥 🌈 ☀️ ⛅ ☁️ 🌧️ ⛈️
+                ❄️ ☃️ ⛄ 💧 🌊 🌍 🌙 🌋 🌪️ 🌫️
+                """
+            )
+        ),
+        Category(
+            "Food & drink", split(
+                """
+                🍏 🍎 🍐 🍊 🍋 🍌 🍉 🍇 🍓 🍈 🍒 🍑 🥭 🍍 🥥 🥝 🍅 🥑 🥦 🥕
+                🌽 🌶️ 🥔 🍞 🥐 🥯 🧀 🥚 🍳 🥓 🥩 🍗 🍖 🌭 🍔 🍟 🍕 🥪 🌮 🌯
+                🥗 🍝 🍜 🍲 🍣 🍤 🍦 🍩 🍪 🎂 🍰 🧁 🍫 🍬 🍭 🍿 ☕ 🍵 🥤 🍺
+                🍻 🥂 🍷 🥃 🍸 🍹 🧃 🥛 🍼 🧊
+                """
+            )
+        ),
+        Category(
+            "Activities & things", split(
+                """
+                ⚽ 🏀 🏈 ⚾ 🎾 🏐 🏉 🎱 🏓 🏸 🏒 ⛳ 🎣 🎿 ⛸️ 🏆 🥇 🥈 🥉 🏅
+                🎭 🎨 🎬 🎤 🎧 🎹 🥁 🎷 🎺 🎸 🎻 🎲 🎯 🎳 🎮 🧩 🎉 🎊 🎈 🎁
+                🎀 🚗 🚕 🚙 🚌 🚓 🚑 🚒 🚚 🚜 🚲 🛵 🏍️ ✈️ 🚀 ⛵ 🚤 🏠 🏡 🏫
+                🏥 ⛪ 🏖️ 🏕️ 📱 💻 ⌚ 📷 📺 ⏰ 💡 💰 💵 💳 ✉️ 📦 📝 📌 📎 ✂️
+                🔑 🔒 🛒 📚 💊 🩹 🧹 🛏️ 🚿 🧸
+                """
+            )
+        ),
+        Category(
+            "Symbols", split(
+                """
+                ✅ ☑️ ✔️ ❌ ❎ ➕ ➖ ➗ ✖️ ❓ ❗ ‼️ ⁉️ 💲 ♻️ ⚠️ 🚫 ⛔ 🔞 🆗
+                🆕 🆒 🆓 🔝 🔜 🔙 ➡️ ⬅️ ⬆️ ⬇️ ↩️ 🔄 ▶️ ⏸️ ⏹️ ⏭️ 🔀 🔁 🔔 🔕
+                🎵 🎶 🔊 🔇 📣 🔴 🟠 🟡 🟢 🔵 🟣 ⚫ ⚪ 🟥 🟩 🟦 ⬛ ⬜ 🔶 🔷
+                🏁 🚩 🏳️ 🏴 🇺🇸 ☮️ ✝️ ☯️ ♾️ 🆘
+                """
+            )
+        ),
     )
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    /** [BASE], most-used first. Stable sort, so unused ones keep their order. */
-    fun ordered(context: Context): List<String> {
+    /** The emojis used so far, most-used first (ties in the order they
+     *  appear in [CATEGORIES]). Empty until the first one is used. */
+    fun recent(context: Context): List<String> {
         val p = prefs(context)
-        return BASE.sortedByDescending { p.getInt(it, 0) }
+        val all = CATEGORIES.flatMap { it.emojis }.distinct()
+        // Anything used before the list was reorganised still counts.
+        val extra = p.all.keys.filter { it !in all }
+        return (all + extra)
+            .filter { p.getInt(it, 0) > 0 }
+            .sortedByDescending { p.getInt(it, 0) }
+            .take(RECENT_MAX)
+    }
+
+    /** "Recent" (when there is anything), then every category. */
+    fun categories(context: Context): List<Category> {
+        val recent = recent(context)
+        return if (recent.isEmpty()) CATEGORIES else listOf(Category("Recent", recent)) + CATEGORIES
     }
 
     fun recordUse(context: Context, emoji: String) {

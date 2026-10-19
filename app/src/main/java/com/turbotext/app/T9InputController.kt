@@ -8,11 +8,11 @@ import android.widget.EditText
 
 private const val TAG = "T9InputControllerDebug"
 
-enum class InputMode { WORD, MULTITAP, NUMBER, EMOJI }
+enum class InputMode { WORD, MULTITAP, NUMBER }
 
 /** Casing state for whichever of WORD/MULTITAP is active — cycled by '*'
- *  (LOWER -> CAP_NEXT -> ALL_CAPS -> Emoji -> LOWER). No casing concept
- *  applies to NUMBER (no letters) or while actually in EMOJI. */
+ *  (LOWER -> CAP_NEXT -> ALL_CAPS -> emoji picker -> LOWER). No casing
+ *  concept applies to NUMBER (no letters). */
 private enum class CaseState { LOWER, CAP_NEXT, ALL_CAPS }
 
 /**
@@ -35,7 +35,7 @@ private enum class CaseState { LOWER, CAP_NEXT, ALL_CAPS }
  *   * (tap)      in Word/Multitap mode, cycles casing: lower -> Cap (next
  *                word/letter only, also promoted automatically at a
  *                sentence start) -> ALL CAPS (sticky until cycled past) ->
- *                Emoji -> lower. No effect in Number mode. The top-level
+ *                the emoji picker (EmojiPickerDialog) -> lower. No effect in Number mode. The top-level
  *                mode (Word/ABC/123) itself is switched with selectMode(),
  *                meant to be wired to a menu — see the host Activity's
  *                left-softkey handling — not this key.
@@ -119,26 +119,12 @@ class T9InputController(
     // see which state is active without typing anything yet.
     private var caseState = CaseState.LOWER
 
-    // Remembers which of WORD/MULTITAP Emoji mode was entered from, so
-    // inserting an emoji (or cycling '*' past Emoji) returns to the right
-    // place instead of always landing back in Word mode.
-    private var emojiHomeMode = InputMode.WORD
-
-    // A curated set rather than the full Unicode emoji range — keeps
-    // browsing with Left/Right reasonably short, and stays within what's
-    // most likely to actually render on this phone's system font (not
-    // verified on real hardware — if some show as blank boxes, that's
-    // this device's font support, not a bug in this list).
-    // Most-used first (see EmojiUsage) — re-sorted each time Emoji mode
-    // is entered, never while browsing, so the list doesn't shift under
-    // the cursor.
-    private var emojiList = EmojiUsage.ordered(outputView.context)
-    private var emojiIndex = 0
+    /** The emoji picker, while it's open — '*' past ALL_CAPS opens it. */
+    private var emojiPicker: EmojiPickerDialog? = null
 
     // Punctuation picker — entered via '1' (outside Number mode), not a
-    // persistent mode like EMOJI is, just a temporary overlay: confirms
-    // whatever word is pending first, then lets you browse marks with
-    // Left/Right the same way emoji browsing works.
+    // persistent mode, just a temporary overlay: confirms whatever word is
+    // pending first, then lets you browse marks with Left/Right.
     private val punctuationList = listOf(
         ".", ",", "'", "?", "!", "-", ":", ";", "@", "(", ")", "\"", "/",
         "#", "$", "%", "&", "*", "+", "=", "_", "~", "<", ">"
@@ -185,8 +171,8 @@ class T9InputController(
 
     /** The mode indicator's text — its own capitalization mirrors
      *  [caseState] (t9word/T9Word/T9WORD, abc/Abc/ABC) so the indicator
-     *  doubles as the casing-state display. NUMBER and EMOJI have no
-     *  casing concept, so they're just "123"/"Emoji". */
+     *  doubles as the casing-state display. NUMBER has no casing
+     *  concept, so it's just "123". */
     fun currentLabel(): String = when (mode) {
         InputMode.WORD -> when (caseState) {
             CaseState.LOWER -> "t9word"
@@ -199,7 +185,6 @@ class T9InputController(
             CaseState.ALL_CAPS -> "ABC"
         }
         InputMode.NUMBER -> "123"
-        InputMode.EMOJI -> "Emoji"
     }
 
     /** Switches the top-level mode (Word/Multitap/Number) — called from
@@ -335,26 +320,6 @@ class T9InputController(
             punctuationPickerActive -> {
                 // Swallow everything else while the picker is up, same
                 // reasoning as emoji mode — avoids accidentally typing.
-                return true
-            }
-            mode == InputMode.EMOJI && keyCode == KeyEvent.KEYCODE_DPAD_LEFT -> {
-                emojiIndex = (emojiIndex - 1 + emojiList.size) % emojiList.size
-                render()
-                return true
-            }
-            mode == InputMode.EMOJI && keyCode == KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                emojiIndex = (emojiIndex + 1) % emojiList.size
-                render()
-                return true
-            }
-            mode == InputMode.EMOJI && isCenterKey(keyCode) -> {
-                // Stays in Emoji mode rather than reverting to
-                // emojiHomeMode — inserting several emoji in a row
-                // shouldn't require re-entering Emoji mode via '*' each
-                // time. '*' (cycleCase) is still the way out, back to
-                // emojiHomeMode.
-                insertEmoji(emojiList[emojiIndex])
-                render()
                 return true
             }
             keyCode == KeyEvent.KEYCODE_STAR -> {
@@ -583,7 +548,6 @@ class T9InputController(
                     render()
                 }
             }
-            InputMode.EMOJI -> { /* digit keys don't do anything here — Left/Right/Center browse and insert instead */ }
         }
     }
 
@@ -671,9 +635,6 @@ class T9InputController(
         when {
             mode == InputMode.WORD && pendingDigits.isNotEmpty() -> confirmWord()
             mode == InputMode.MULTITAP && multiTapKey != null -> commitMultiTapChar()
-            // Stays in Emoji mode rather than reverting to emojiHomeMode
-            // — same reasoning as the Center-key insert branch above.
-            mode == InputMode.EMOJI -> insertEmoji(emojiList[emojiIndex])
         }
         insertAtCursor(" ")
         render()
@@ -903,29 +864,23 @@ class T9InputController(
                 CaseState.LOWER -> caseState = CaseState.CAP_NEXT
                 CaseState.CAP_NEXT -> caseState = CaseState.ALL_CAPS
                 CaseState.ALL_CAPS -> {
-                    // Any in-progress word/character is flushed before
-                    // leaving Word/Multitap for Emoji — otherwise it'd be
-                    // left stranded mid-pendingDigits with nothing able to
-                    // confirm it (Emoji mode's own key handling doesn't
-                    // know about pendingDigits at all).
+                    // Past ALL CAPS comes the emoji picker; casing starts
+                    // over at lower case either way. Any in-progress
+                    // word/character is flushed first, so the emoji goes
+                    // in after it.
                     confirmWord()
-                    emojiHomeMode = mode
-                    mode = InputMode.EMOJI
-                    emojiList = EmojiUsage.ordered(outputView.context)
-                    emojiIndex = 0
+                    caseState = CaseState.LOWER
+                    render()
+                    openEmojiPicker()
+                    return
                 }
-            }
-            InputMode.EMOJI -> {
-                mode = emojiHomeMode
-                caseState = CaseState.LOWER
             }
             InputMode.NUMBER -> return
         }
         onModeChanged(currentLabel())
-        // Without this, the suggestions bar keeps showing whatever it last
-        // had until the next key press calls render() — so switching into
-        // Emoji left the picker not showing at all until some other key
-        // was pressed first.
+        // Without this, the suggestions bar and the word's casing on
+        // screen keep showing whatever they last had until the next key
+        // press calls render().
         render()
     }
 
@@ -962,6 +917,27 @@ class T9InputController(
         EmojiUsage.recordUse(outputView.context, emoji)
     }
 
+    /** Shows the emoji grid (EmojiPickerDialog). Each pick goes in at the
+     *  cursor; the mode indicator reads "Emoji" until it closes. */
+    private fun openEmojiPicker() {
+        if (emojiPicker != null) return
+        val picker = EmojiPickerDialog(
+            outputView.context,
+            onPicked = { emoji ->
+                insertEmoji(emoji)
+                render()
+            },
+            onClosed = {
+                emojiPicker = null
+                onModeChanged(currentLabel())
+                render()
+            }
+        )
+        emojiPicker = picker
+        picker.show()
+        onModeChanged("Emoji")
+    }
+
     /** Every candidate lookup goes through here so the engine knows the
      *  word before the cursor (used for TT9-style word-pair ordering). */
     private fun lookup(digits: String): List<String> {
@@ -990,7 +966,6 @@ class T9InputController(
                 val best = candidates.getOrNull(candidateIndex) ?: pendingDigits
                 if (candidates.isNotEmpty()) applyCaseTransform(best) else best
             }
-            mode == InputMode.EMOJI -> emojiList[emojiIndex]
             else -> ""
         }
         val before = committed.substring(0, cursor) + preview
@@ -998,7 +973,6 @@ class T9InputController(
         applyDisplay(before, after)
         when {
             punctuationPickerActive -> onSuggestionsChanged(punctuationList, punctuationIndex, 12)
-            mode == InputMode.EMOJI -> onSuggestionsChanged(emojiList, emojiIndex, 8)
             // Wider than the old 5 — the raw-digits fallback candidate
             // (added in candidatesFor) sits at the end of the list, and a
             // narrow window centered on the top word match could leave it
