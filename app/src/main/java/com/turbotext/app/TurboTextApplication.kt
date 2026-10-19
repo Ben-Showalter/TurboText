@@ -37,6 +37,18 @@ class TurboTextApplication : Application() {
         // through it.
         com.android.mms.MmsConfig.init(this)
 
+        // Our own number(s), so received group messages leave us out of
+        // their thread (see OwnNumber), and a one-off fix for any group
+        // conversation that was split in two before.
+        OwnNumber.publish(this)
+        Thread {
+            try {
+                OwnNumber.repairOnce(this)
+            } catch (e: Exception) {
+                android.util.Log.w("TurboTextOwnNumber", "startup repair failed", e)
+            }
+        }.start()
+
         // Hide the phone's white soft-key label bar (the system navigation
         // bar) on every screen — see SystemBars. Done here rather than in
         // each activity since there's no shared base activity.

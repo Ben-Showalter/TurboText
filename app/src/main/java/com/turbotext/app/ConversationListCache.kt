@@ -20,6 +20,10 @@ object ConversationListCache {
         cached = list
     }
 
+    fun clear() {
+        cached = null
+    }
+
     /** Optimistically clears the unread flag for one thread in the cache,
      *  without waiting for a live re-query. Called right when a
      *  conversation is opened so that backing out to the list shows it

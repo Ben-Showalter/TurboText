@@ -28,20 +28,23 @@ object MmsReceivePostProcessor {
         handle(context, id)
     }
 
-    /** Picks the newest downloaded inbox MMS from the last 3 minutes. */
+    /** Handles every downloaded inbox MMS from the last 3 minutes that
+     *  hasn't been yet. Only the newest used to be picked, so in a burst
+     *  (a busy group chat) the others never notified. */
     fun processRecentFallback(context: Context) {
         try {
             val since = System.currentTimeMillis() / 1000 - 180
-            val id = context.contentResolver.query(
+            val ids = context.contentResolver.query(
                 Telephony.Mms.Inbox.CONTENT_URI,
                 arrayOf(Telephony.Mms._ID),
                 "${Telephony.Mms.MESSAGE_TYPE} = ? AND ${Telephony.Mms.DATE} >= ?",
                 arrayOf(M_TYPE_RETRIEVE_CONF.toString(), since.toString()),
-                "${Telephony.Mms.DATE} DESC LIMIT 1"
-            )?.use { if (it.moveToFirst()) it.getLong(0) else null }
-            if (id != null) {
-                handle(context, id)
-            } else {
+                "${Telephony.Mms.DATE} ASC"
+            )?.use { c -> generateSequence { if (c.moveToNext()) c.getLong(0) else null }.toList() }.orEmpty()
+            val fresh = ids.filter { it !in handled }
+            if (fresh.isNotEmpty()) {
+                fresh.forEach { handle(context, it) }
+            } else if (ids.isEmpty()) {
                 NotificationHelper.showMmsDownloadFailed(context)
             }
         } catch (e: Exception) {
@@ -52,6 +55,9 @@ object MmsReceivePostProcessor {
     private fun handle(context: Context, id: Long) {
         if (!handled.add(id)) return
         try {
+            // A group message may tell us our own number at last, and fix
+            // which thread this (and earlier) messages belong in.
+            OwnNumber.learnFrom(context, id)
             // The provider can lag a moment behind the library's insert
             // before the row has its thread id — retry briefly.
             var threadId: Long? = null

@@ -71,28 +71,36 @@ class SmsRepository(private val context: Context) {
      *  download; they showed up as a second "press OK to download" bubble. */
     fun removeStaleMmsNotices() {
         try {
-            data class Notice(val id: Long, val trId: String?, val location: String?)
+            data class Notice(val id: Long, val trId: String?, val location: String?, val date: Long)
             val notices = context.contentResolver.query(
                 Telephony.Mms.CONTENT_URI,
-                arrayOf(Telephony.Mms._ID, Telephony.Mms.TRANSACTION_ID, Telephony.Mms.CONTENT_LOCATION),
+                arrayOf(Telephony.Mms._ID, Telephony.Mms.TRANSACTION_ID, Telephony.Mms.CONTENT_LOCATION, Telephony.Mms.DATE),
                 "${Telephony.Mms.MESSAGE_TYPE} = 130", null, null
-            )?.use { c -> generateSequence { if (c.moveToNext()) Notice(c.getLong(0), c.getString(1), c.getString(2)) else null }.toList() }
+            )?.use { c -> generateSequence { if (c.moveToNext()) Notice(c.getLong(0), c.getString(1), c.getString(2), c.getLong(3)) else null }.toList() }
                 ?: return
             if (notices.isEmpty()) return
-            val downloadedKeys = HashSet<String>()
+            val downloadedTrIds = HashSet<String>()
+            // Download URL -> when each message fetched from it arrived
+            // (seconds). Some carriers reuse URLs, so a URL match only
+            // counts for a download from around the notice's own time —
+            // otherwise a new message's notice was deleted before it was
+            // ever downloaded, and the message was lost.
+            val downloadedAt = HashMap<String, MutableList<Long>>()
             context.contentResolver.query(
                 Telephony.Mms.CONTENT_URI,
-                arrayOf(Telephony.Mms.TRANSACTION_ID, Telephony.Mms.CONTENT_LOCATION),
+                arrayOf(Telephony.Mms.TRANSACTION_ID, Telephony.Mms.CONTENT_LOCATION, Telephony.Mms.DATE),
                 "${Telephony.Mms.MESSAGE_TYPE} = 132", null, null
             )?.use { c ->
                 while (c.moveToNext()) {
-                    c.getString(0)?.takeIf { it.isNotEmpty() }?.let { downloadedKeys.add("t:$it") }
-                    c.getString(1)?.takeIf { it.isNotEmpty() }?.let { downloadedKeys.add("l:$it") }
+                    c.getString(0)?.takeIf { it.isNotEmpty() }?.let { downloadedTrIds.add(it) }
+                    c.getString(1)?.takeIf { it.isNotEmpty() }?.let { downloadedAt.getOrPut(it) { ArrayList() }.add(c.getLong(2)) }
                 }
             }
             for (n in notices) {
-                val done = (n.trId != null && "t:${n.trId}" in downloadedKeys) ||
-                    (n.location != null && "l:${n.location}" in downloadedKeys)
+                val done = (n.trId != null && n.trId in downloadedTrIds) ||
+                    (n.location != null && downloadedAt[n.location].orEmpty().any { d ->
+                        d >= n.date - 60 && d <= n.date + 2 * 24 * 60 * 60
+                    })
                 if (!done) continue
                 context.contentResolver.delete(
                     android.net.Uri.withAppendedPath(Telephony.Mms.CONTENT_URI, n.id.toString()), null, null
@@ -290,17 +298,45 @@ class SmsRepository(private val context: Context) {
         return try {
             context.contentResolver.query(
                 android.net.Uri.parse("content://mms-sms/conversations?simple=true"),
-                arrayOf("recipient_ids"),
+                null,
                 "_id = ?", arrayOf(threadId.toString()), null
             )?.use {
                 if (it.moveToFirst()) {
-                    val ids = (it.getString(0) ?: "").trim().split(" ").filter { s -> s.isNotEmpty() }
-                    ids.mapNotNull { id -> lookupCanonicalAddress(id) }
+                    recipientIds(it).mapNotNull { id -> lookupCanonicalAddress(id) }
                 } else emptyList()
             } ?: emptyList()
         } catch (e: Exception) {
             emptyList()
         }
+    }
+
+    /** Every thread's participants (thread id → addresses), for
+     *  GroupThreadRepair. */
+    fun allThreadParticipants(): Map<Long, List<String>> {
+        val result = LinkedHashMap<Long, List<String>>()
+        context.contentResolver.query(
+            android.net.Uri.parse("content://mms-sms/conversations?simple=true"),
+            null, null, null, null
+        )?.use { c ->
+            val idCol = c.getColumnIndex("_id")
+            if (idCol < 0) return result
+            while (c.moveToNext()) {
+                result[c.getLong(idCol)] = recipientIds(c).mapNotNull { id -> lookupCanonicalAddress(id) }
+            }
+        }
+        return result
+    }
+
+    /** A conversations-view row's recipient_ids, read by column name:
+     *  this view ignores the projection and returns its own fixed set of
+     *  columns, so reading by position (as three lookups here used to)
+     *  could read the wrong column and misjudge which threads are
+     *  groups — a group then vanished from the Groups list or showed in
+     *  the main one. */
+    private fun recipientIds(c: android.database.Cursor): List<String> {
+        val col = c.getColumnIndex("recipient_ids")
+        if (col < 0) return emptyList()
+        return (c.getString(col) ?: "").trim().split(" ").filter { it.isNotEmpty() }
     }
 
     fun getGroupThreads(): List<Conversation> {
@@ -516,13 +552,11 @@ class SmsRepository(private val context: Context) {
             val ids = mutableSetOf<Long>()
             context.contentResolver.query(
                 android.net.Uri.parse("content://mms-sms/conversations?simple=true"),
-                arrayOf("_id", "recipient_ids"),
-                null, null, null
+                null, null, null, null
             )?.use {
+                val idCol = it.getColumnIndexOrThrow("_id")
                 while (it.moveToNext()) {
-                    val tid = it.getLong(0)
-                    val recipientIds = (it.getString(1) ?: "").trim().split(" ").filter { s -> s.isNotEmpty() }
-                    if (recipientIds.size > 1) ids.add(tid)
+                    if (recipientIds(it).size > 1) ids.add(it.getLong(idCol))
                 }
             }
             ids
@@ -639,13 +673,10 @@ class SmsRepository(private val context: Context) {
         return try {
             context.contentResolver.query(
                 android.net.Uri.parse("content://mms-sms/conversations?simple=true"),
-                arrayOf("recipient_ids"),
+                null,
                 "_id = ?", arrayOf(threadId.toString()), null
             )?.use {
-                if (it.moveToFirst()) {
-                    val ids = (it.getString(0) ?: "").trim().split(" ").filter { s -> s.isNotEmpty() }
-                    ids.size > 1
-                } else false
+                if (it.moveToFirst()) recipientIds(it).size > 1 else false
             } ?: false
         } catch (e: Exception) {
             false

@@ -1532,15 +1532,50 @@ public class PduPersister {
         if (excludeMyNumber && array.length == 1 && addressType == PduHeaders.TO) {
             return;
         }
-        String myNumber = excludeMyNumber ? mTelephonyManager.getLine1Number() : null;
+        // TurboText: getLine1Number() is often empty on these phones, which
+        // left our own number in the group and split one conversation into
+        // two threads (ours, and everyone's incl. us). The app also supplies
+        // the numbers it knows are ours (setOwnNumbers).
+        java.util.List<String> myNumbers = new java.util.ArrayList<String>();
+        if (excludeMyNumber) {
+            String line1 = null;
+            try {
+                line1 = mTelephonyManager.getLine1Number();
+            } catch (SecurityException e) {
+                // No phone-state permission: rely on the app's numbers.
+            }
+            if (line1 != null && !line1.isEmpty()) myNumbers.add(line1);
+            synchronized (sOwnNumbers) {
+                myNumbers.addAll(sOwnNumbers);
+            }
+        }
         for (EncodedStringValue v : array) {
             if (v != null) {
                 String number = v.getString();
-                if ((myNumber == null || !PhoneNumberUtils.compare(number, myNumber)) &&
-                        !recipients.contains(number)) {
+                boolean mine = false;
+                for (String myNumber : myNumbers) {
+                    if (PhoneNumberUtils.compare(number, myNumber)) {
+                        mine = true;
+                        break;
+                    }
+                }
+                if (!mine && !recipients.contains(number)) {
                     // Only add numbers which aren't my own number.
                     recipients.add(number);
                 }
+            }
+        }
+    }
+
+    /** TurboText: this phone's own numbers, as far as the app knows them,
+     *  left out of a received group message's thread (see loadRecipients). */
+    private static final java.util.Set<String> sOwnNumbers = new java.util.HashSet<String>();
+
+    public static void setOwnNumbers(java.util.Collection<String> numbers) {
+        synchronized (sOwnNumbers) {
+            sOwnNumbers.clear();
+            for (String n : numbers) {
+                if (n != null && !n.trim().isEmpty()) sOwnNumbers.add(n.trim());
             }
         }
     }
