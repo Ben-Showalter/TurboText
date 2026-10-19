@@ -43,6 +43,10 @@ class EmojiPickerDialog(
     private val grid = LinearLayout(context)
     private val cells = ArrayList<TextView>()
 
+    /** Keys pressed while this was showing — a release only counts if its
+     *  press came here too (see DigitEntryDialog). */
+    private val pressed = HashSet<Int>()
+
     private fun dp(v: Int) = (v * context.resources.displayMetrics.density).toInt()
 
     init {
@@ -95,8 +99,11 @@ class EmojiPickerDialog(
 
         setOnKeyListener { _, keyCode, event ->
             when (event.action) {
-                KeyEvent.ACTION_DOWN -> handleKeyDown(keyCode)
-                KeyEvent.ACTION_UP -> handleKeyUp(keyCode)
+                KeyEvent.ACTION_DOWN -> {
+                    pressed.add(keyCode)
+                    handleKeyDown(keyCode)
+                }
+                KeyEvent.ACTION_UP -> if (pressed.remove(keyCode)) handleKeyUp(keyCode) else true
                 else -> true
             }
         }

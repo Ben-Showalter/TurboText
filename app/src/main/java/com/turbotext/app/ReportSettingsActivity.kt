@@ -42,7 +42,7 @@ class ReportSettingsActivity : AppCompatActivity() {
     private fun askPin() {
         DigitEntryDialog(
             this, "Report PIN", "Enter the PIN, then press OK.", masked = true, maxLength = 8,
-            onCancelled = { finish() }
+            confirmLabel = "OK", onCancelled = { finish() }
         ) { pin ->
             if (ReportSettings.checkPin(this, pin)) {
                 unlock()
