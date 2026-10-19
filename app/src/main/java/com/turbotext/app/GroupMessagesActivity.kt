@@ -50,6 +50,10 @@ class GroupMessagesActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        loadGroups()
+    }
+
+    private fun loadGroups() {
         val cached = GroupThreadsCache.get()
         if (cached != null) {
             adapter.update(cached, this)
@@ -255,9 +259,9 @@ class GroupMessagesActivity : AppCompatActivity() {
     private fun showOptions() {
         val group = focusedGroup
         val options = if (group != null) {
-            arrayOf("Nickname Group", "Add Person to Group", "Archive All Groups", "Move to Trash")
+            arrayOf("Nickname Group", "Add Person to Group", "Mark All as Read", "Archive All Groups", "Move to Trash")
         } else {
-            arrayOf("New Group Message", "Archive All Groups")
+            arrayOf("New Group Message", "Mark All as Read", "Archive All Groups")
         }
         AlertDialog.Builder(this)
             .setTitle("Options")
@@ -265,6 +269,7 @@ class GroupMessagesActivity : AppCompatActivity() {
                 when (options[which]) {
                     "Nickname Group" -> group?.let { promptNickname(it) }
                     "Add Person to Group" -> group?.let { addPersonToGroup(it) }
+                    "Mark All as Read" -> ReadAll.run(this) { loadGroups() }
                     "Archive All Groups" -> archiveAllGroups()
                     "Move to Trash" -> group?.let { trashGroup(it) }
                     "New Group Message" -> startNewGroup()

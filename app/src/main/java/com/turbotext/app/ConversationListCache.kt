@@ -29,4 +29,10 @@ object ConversationListCache {
         val list = cached ?: return
         cached = list.map { if (it.threadId == threadId && it.unread) it.copy(unread = false) else it }
     }
+
+    /** Same as [markThreadRead], for every thread at once. */
+    fun markAllRead() {
+        val list = cached ?: return
+        cached = list.map { if (it.unread) it.copy(unread = false) else it }
+    }
 }

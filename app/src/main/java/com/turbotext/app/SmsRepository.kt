@@ -1096,6 +1096,28 @@ class SmsRepository(private val context: Context) {
         }
     }
 
+    /** Marks every unread text and picture message read, in one update
+     *  per table. Returns the threads that had something unread, so the
+     *  caller can clear their alerts. */
+    fun markAllRead(): Set<Long> {
+        val threads = unreadThreadIds()
+        try {
+            context.contentResolver.update(
+                Telephony.Sms.CONTENT_URI,
+                ContentValues().apply { put(Telephony.Sms.READ, 1); put(Telephony.Sms.SEEN, 1) },
+                "${Telephony.Sms.READ} = 0", null
+            )
+            context.contentResolver.update(
+                Telephony.Mms.CONTENT_URI,
+                ContentValues().apply { put(Telephony.Mms.READ, 1); put(Telephony.Mms.SEEN, 1) },
+                "${Telephony.Mms.READ} = 0", null
+            )
+        } catch (e: Exception) {
+            android.util.Log.w("TurboTextRead", "mark all read failed", e)
+        }
+        return threads
+    }
+
     /** Only touches rows still unread: rewriting every row each time the
      *  thread opened set off change notifications for nothing, and each
      *  one reloaded the open thread. */
