@@ -154,7 +154,7 @@ public class PushReceiver extends BroadcastReceiver {
                         if (type == MESSAGE_TYPE_DELIVERY_IND) {
                             DeliveryInd ind = (DeliveryInd) pdu;
                             android.util.Log.i(REPORT_TAG, "delivery report: id=" + idForLog(ind.getMessageId())
-                                    + " status=" + ind.getStatus()
+                                    + " status=" + ind.getStatus() + " date=" + ind.getDate()
                                     + (threadId == -1 ? " -> no sent message yet, kept" : " -> thread " + threadId));
                         }
                         if (threadId == -1) {
@@ -504,11 +504,18 @@ public class PushReceiver extends BroadcastReceiver {
         return -1;
     }
 
-    /** A Message-ID for the log: its length and first few characters. */
+    /** A Message-ID for the log, in full: Message-IDs are the carrier's
+     *  reference codes, not message content. Any byte that isn't plain
+     *  printable text is shown as \\xNN, so nothing hidden is lost. */
     public static String idForLog(byte[] id) {
         if (id == null) return "none";
-        String s = new String(id);
-        return s.length() + ":" + (s.length() > 6 ? s.substring(0, 6) + "…" : s);
+        StringBuilder sb = new StringBuilder();
+        for (byte b : id) {
+            int c = b & 0xFF;
+            if (c >= 0x21 && c <= 0x7E && c != '\\') sb.append((char) c);
+            else sb.append(String.format("\\x%02X", c));
+        }
+        return id.length + ":" + sb;
     }
 
     /** TurboText: keeps an unmatched delivery report for [retryPendingReports]. */

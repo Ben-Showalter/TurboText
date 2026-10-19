@@ -811,6 +811,7 @@ class SmsRepository(private val context: Context) {
                     // carrier may quote or bracket the ID in one place only.
                     val mId = com.android.mms.transaction.PushReceiver.normalizeMessageId(c.getString(1) ?: continue)
                     val status = c.getInt(2)
+                    logReportRow(threadId, c.getLong(0), c.getString(1), status)
                     // The recipient this report is about (its To address).
                     val recipient = context.contentResolver.query(
                         android.net.Uri.parse("content://mms/${c.getLong(0)}/addr"),
@@ -835,13 +836,41 @@ class SmsRepository(private val context: Context) {
         return address.filter { it.isDigit() }.takeLast(10).ifEmpty { "?" }
     }
 
+    /** Logs each saved delivery report once: its full ID, status and
+     *  date, so they can be lined up with the sent messages' IDs. */
+    private fun logReportRow(threadId: Long, rowId: Long, mId: String?, status: Int) {
+        synchronized(loggedDeliveryLines) {
+            if (loggedDeliveryLines.containsKey(-rowId - 1)) return
+            loggedDeliveryLines[-rowId - 1] = ""
+        }
+        val date = try {
+            context.contentResolver.query(
+                android.net.Uri.parse("content://mms/$rowId"), arrayOf(Telephony.Mms.DATE), null, null, null
+            )?.use { if (it.moveToFirst()) it.getLong(0) else null }
+        } catch (e: Exception) {
+            null
+        }
+        android.util.Log.i(
+            "TurboTextMmsReport",
+            "thread $threadId saved report $rowId id=${com.android.mms.transaction.PushReceiver.idForLog(mId?.toByteArray())} " +
+                "status=$status date=$date"
+        )
+    }
+
     /** Logs, once per change, how a sent picture message matched its
      *  delivery reports (TurboTextMmsReport; IDs shortened, no content). */
     private fun logDeliveryMatch(
         threadId: Long, id: Long, mId: String?, reports: Map<String, Map<String, Int>>, matched: Map<String, Int>?
     ) {
         val idLog = com.android.mms.transaction.PushReceiver.idForLog(mId?.toByteArray())
-        val line = "thread $threadId sent message $id id=$idLog: " +
+        val sentDate = try {
+            context.contentResolver.query(
+                android.net.Uri.parse("content://mms/$id"), arrayOf(Telephony.Mms.DATE), null, null, null
+            )?.use { if (it.moveToFirst()) it.getLong(0) else null }
+        } catch (e: Exception) {
+            null
+        }
+        val line = "thread $threadId sent message $id date=$sentDate id=$idLog: " +
             if (matched != null) "reports ${matched.values}" else
                 "no report matched (thread has reports for: " +
                     reports.keys.joinToString { com.android.mms.transaction.PushReceiver.idForLog(it.toByteArray()) } + ")"
