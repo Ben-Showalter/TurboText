@@ -220,8 +220,14 @@ class T9InputController(
      *  only in preview, or a multitap character mid-cycle) to actually
      *  commit into the text — needed before reading currentText(), which
      *  only reflects committed text and would otherwise silently drop
-     *  something still shown on screen but not yet confirmed. */
+     *  something still shown on screen but not yet confirmed. An open
+     *  punctuation picker counts too: its highlighted mark goes in. */
     fun confirmPending() {
+        if (punctuationPickerActive) {
+            insertAtCursor(punctuationList[punctuationIndex])
+            punctuationPickerActive = false
+            render()
+        }
         if (pendingDigits.isNotEmpty() || multiTapKey != null) confirmWord()
     }
 

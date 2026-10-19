@@ -459,6 +459,9 @@ class ComposeActivity : AppCompatActivity() {
     private fun sendMessage() {
         if (sending) return
         recipientController.confirmPending()
+        // A word still showing as a T9 suggestion goes out as shown, as if
+        // OK had been pressed first.
+        inputController.confirmPending()
         val address = recipientController.currentText().trim()
         val body = SettingsHelper.applySignature(this, inputController.currentText().trim())
         val toSend = attachments.items

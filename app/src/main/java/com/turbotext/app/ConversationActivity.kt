@@ -659,6 +659,9 @@ class ConversationActivity : AppCompatActivity() {
     }
 
     private fun sendCurrentMessage() {
+        // A word still showing as a T9 suggestion goes out as shown, as if
+        // OK had been pressed first.
+        inputController.confirmPending()
         val typed = inputController.currentText().trim()
         val body = SettingsHelper.applySignature(this, typed)
         val toSend = attachments.items
@@ -869,6 +872,7 @@ class ConversationActivity : AppCompatActivity() {
         NotificationHelper.cancelForConversation(this, notificationKey())
         messageObserver?.let { contentResolver.unregisterContentObserver(it) }
         reloadHandler.removeCallbacks(reloadRunnable)
+        inputController.confirmPending()
         val text = inputController.currentText()
         android.util.Log.i("TurboTextDraft", "onPause save: address=\"$address\" text=\"$text\"")
         DraftHelper.saveDraft(this, address, text)
