@@ -794,7 +794,8 @@ class SmsRepository(private val context: Context) {
     }
 
     /** Delivery reports (m-delivery-ind) saved in [threadId], as
-     *  sent message's Message-ID → (recipient → latest status). mmslib's
+     *  sent message's Message-ID → (recipient → latest status, but a
+     *  delivered status is never replaced). mmslib's
      *  PushReceiver stores each report as its own row in the thread. */
     private fun deliveryReports(threadId: Long): Map<String, Map<String, Int>> {
         val result = HashMap<String, HashMap<String, Int>>()
@@ -811,7 +812,7 @@ class SmsRepository(private val context: Context) {
                 "${Telephony.Mms.MESSAGE_TYPE} = $M_TYPE_DELIVERY_IND AND " +
                     "(${Telephony.Mms.THREAD_ID} = ? OR ${Telephony.Mms.DATE} > $since)",
                 arrayOf(threadId.toString()),
-                "${Telephony.Mms.DATE} ASC" // later reports win
+                "${Telephony.Mms.DATE} ASC" // later reports win, except over "delivered"
             )?.use { c ->
                 while (c.moveToNext()) {
                     // Compared loosely, as PushReceiver matches them: the
@@ -825,7 +826,11 @@ class SmsRepository(private val context: Context) {
                         arrayOf("address"), "type = 151", null, null
                     )?.use { a -> if (a.moveToFirst()) a.getString(0) else null }
                     val key = recipientKey(recipient)
-                    result.getOrPut(mId) { HashMap() }[key] = status
+                    val forMessage = result.getOrPut(mId) { HashMap() }
+                    // Once a recipient's phone has downloaded the message,
+                    // it stays delivered: carriers still send "Expired"
+                    // days later when that phone never confirmed it.
+                    if (forMessage[key] !in DELIVERED_STATUSES) forMessage[key] = status
                 }
             }
         } catch (e: Exception) {
