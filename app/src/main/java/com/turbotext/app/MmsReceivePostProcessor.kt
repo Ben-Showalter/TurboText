@@ -96,7 +96,7 @@ object MmsReceivePostProcessor {
             )
             SoundNotificationHelper.notifyNewMessage(
                 context, NotificationHelper.conversationKey(resolvedThreadId, groupAddress ?: sender), displayName,
-                sender = sender
+                sender = sender, preview = preview
             )
             // An MMS came through, so an earlier "couldn't be downloaded"
             // notice is out of date (it was most likely this message).

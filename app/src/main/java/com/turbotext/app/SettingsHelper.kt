@@ -72,6 +72,16 @@ object SettingsHelper {
         prefs(context).edit().putString("notif_vibrate_pattern", patternId).apply()
     }
 
+    /** Cover screen shows "New message" instead of who it's from and what
+     *  it says, for anyone who doesn't want that readable on the outside
+     *  of a closed phone. Off by default. */
+    fun isHideMessageOnCover(context: Context): Boolean =
+        prefs(context).getBoolean("hide_message_on_cover", false)
+
+    fun setHideMessageOnCover(context: Context, hide: Boolean) {
+        prefs(context).edit().putBoolean("hide_message_on_cover", hide).apply()
+    }
+
     /** Contact photo / initials circle on conversation rows and next to
      *  group-thread senders. On by default. */
     fun isShowAvatars(context: Context): Boolean =

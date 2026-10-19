@@ -82,6 +82,10 @@ dependencies {
     // maintained fork of com.klinkerapps:android-smsmms) — see mmslib/NOTICE.
     implementation project(':mmslib')
 
+    // Kyocera's cover-screen callback interface, declared only so
+    // CoverScreenCallback can extend it; the phone supplies the real one.
+    compileOnly project(':stubs:kyocera-sublcd')
+
     // Re-encodes video attachments small enough to fit the carrier's MMS
     // size limit (see VideoCompressor).
     implementation 'androidx.media3:media3-transformer:1.4.1'

@@ -12,8 +12,9 @@ class NotificationSettingsActivity : AppCompatActivity() {
     private lateinit var notificationSoundRow: TextView
     private lateinit var vibrateRow: TextView
     private lateinit var notificationRepeatRow: TextView
+    private lateinit var hideOnCoverRow: TextView
     private var currentRow = 0
-    private val lastRow = 2
+    private val lastRow = 3
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -23,14 +24,17 @@ class NotificationSettingsActivity : AppCompatActivity() {
         notificationSoundRow = findViewById(R.id.notificationSoundRow)
         vibrateRow = findViewById(R.id.vibrateRow)
         notificationRepeatRow = findViewById(R.id.notificationRepeatRow)
+        hideOnCoverRow = findViewById(R.id.hideOnCoverRow)
 
         notificationSoundRow.setOnClickListener { showSoundPicker() }
         vibrateRow.setOnClickListener { showVibratePicker() }
         notificationRepeatRow.setOnClickListener { showRepeatPicker() }
+        hideOnCoverRow.setOnClickListener { toggleHideOnCover() }
 
         updateSoundRowLabel()
         updateVibrateRowLabel()
         updateRepeatRowLabel()
+        updateHideOnCoverRowLabel()
         updateRowHighlight()
     }
 
@@ -155,9 +159,19 @@ class NotificationSettingsActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun updateHideOnCoverRowLabel() {
+        val on = SettingsHelper.isHideMessageOnCover(this)
+        hideOnCoverRow.text = "Hide Message on Cover: ${if (on) "On" else "Off"}"
+    }
+
+    private fun toggleHideOnCover() {
+        SettingsHelper.setHideMessageOnCover(this, !SettingsHelper.isHideMessageOnCover(this))
+        updateHideOnCoverRowLabel()
+    }
+
     private fun updateRowHighlight() {
         val surface2 = ThemeHelper.getCurrentTheme(this).surface2
-        val rows = listOf(notificationSoundRow, vibrateRow, notificationRepeatRow)
+        val rows = listOf(notificationSoundRow, vibrateRow, notificationRepeatRow, hideOnCoverRow)
         for ((i, row) in rows.withIndex()) {
             row.setBackgroundColor(if (currentRow == i) surface2 else android.graphics.Color.TRANSPARENT)
         }
@@ -188,6 +202,7 @@ class NotificationSettingsActivity : AppCompatActivity() {
                     0 -> showSoundPicker()
                     1 -> showVibratePicker()
                     2 -> showRepeatPicker()
+                    3 -> toggleHideOnCover()
                 }
                 return true
             }

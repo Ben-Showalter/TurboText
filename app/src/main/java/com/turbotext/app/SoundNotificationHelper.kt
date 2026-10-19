@@ -67,8 +67,14 @@ object SoundNotificationHelper {
      *  from [address] via ContactHelper — always pass it when [address]
      *  is a thread key, which no contact lookup will ever match.
      *  [sender] is the number it came from, for Do Not Disturb's
-     *  contacts-only rule. */
-    fun notifyNewMessage(context: Context, address: String, displayName: String? = null, sender: String? = null) {
+     *  contacts-only rule; [preview] is the message text for the cover. */
+    fun notifyNewMessage(
+        context: Context,
+        address: String,
+        displayName: String? = null,
+        sender: String? = null,
+        preview: String? = null
+    ) {
         val soundPath = SettingsHelper.getNotificationSoundPath(context)
         val vibratePattern = SettingsHelper.getVibratePattern(context)
         // Do Not Disturb and the ringer switch decide whether this alert
@@ -77,7 +83,14 @@ object SoundNotificationHelper {
         val level = DndHelper.level(context, sender)
 
         val name = displayName ?: (ContactHelper.lookupName(context, address) ?: address)
-        OuterScreenNotifier.notify(context, address.hashCode(), "Msg.: $name")
+        // The cover screen (closed flip) shows who it's from and what it
+        // says, scrolling, until it's read — see CoverScreenNotifier.
+        val coverText = when {
+            SettingsHelper.isHideMessageOnCover(context) -> "New message"
+            preview.isNullOrBlank() -> name
+            else -> "$name: ${preview.replace('\n', ' ')}"
+        }
+        CoverScreenNotifier.notify(context, address.hashCode(), coverText)
 
         if (soundPath != null && level == DndHelper.Level.FULL) {
             if (File(soundPath).exists()) {
@@ -104,7 +117,7 @@ object SoundNotificationHelper {
     fun acknowledge(context: Context, address: String) {
         markPending(context, address, false)
         cancelAlarm(context, address)
-        OuterScreenNotifier.cancel(context, address.hashCode())
+        CoverScreenNotifier.cancel(context, address.hashCode())
     }
 
     fun isPending(context: Context, address: String): Boolean =

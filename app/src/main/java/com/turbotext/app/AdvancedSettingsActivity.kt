@@ -13,12 +13,11 @@ class AdvancedSettingsActivity : AppCompatActivity() {
 
     private lateinit var defaultAppRow: TextView
     private lateinit var appShortcutRow: TextView
-    private lateinit var accessibilityRow: TextView
     private lateinit var trustedNumberRow: TextView
     private lateinit var predictionEngineRow: TextView
     private lateinit var checkUpdatesRow: TextView
     private var currentRow = 0
-    private val lastRow = 5
+    private val lastRow = 4
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -27,7 +26,6 @@ class AdvancedSettingsActivity : AppCompatActivity() {
 
         defaultAppRow = findViewById(R.id.defaultAppRow)
         appShortcutRow = findViewById(R.id.appShortcutRow)
-        accessibilityRow = findViewById(R.id.accessibilityRow)
         trustedNumberRow = findViewById(R.id.trustedNumberRow)
         predictionEngineRow = findViewById(R.id.predictionEngineRow)
         checkUpdatesRow = findViewById(R.id.checkUpdatesRow)
@@ -36,7 +34,6 @@ class AdvancedSettingsActivity : AppCompatActivity() {
         appShortcutRow.setOnClickListener {
             startActivity(Intent(this, AppShortcutActivity::class.java))
         }
-        accessibilityRow.setOnClickListener { openAccessibilitySettings() }
         trustedNumberRow.setOnClickListener { promptTrustedNumber() }
         predictionEngineRow.setOnClickListener { showPredictionEnginePicker() }
         checkUpdatesRow.setOnClickListener { checkForUpdate() }
@@ -135,7 +132,7 @@ class AdvancedSettingsActivity : AppCompatActivity() {
 
     private fun updateRowHighlight() {
         val surface2 = ThemeHelper.getCurrentTheme(this).surface2
-        val rows = listOf(defaultAppRow, appShortcutRow, accessibilityRow, trustedNumberRow, predictionEngineRow, checkUpdatesRow)
+        val rows = listOf(defaultAppRow, appShortcutRow, trustedNumberRow, predictionEngineRow, checkUpdatesRow)
         rows.forEachIndexed { index, row ->
             row.setBackgroundColor(if (currentRow == index) surface2 else android.graphics.Color.TRANSPARENT)
         }
@@ -156,10 +153,6 @@ class AdvancedSettingsActivity : AppCompatActivity() {
             Toast.makeText(this, "Open Settings > Apps > Default apps > SMS app", Toast.LENGTH_LONG).show()
         }
     }
-
-    /** The one-time manual step the outer-screen unread pulse
-     *  (KeyButtonAccessibilityService) depends on. */
-    private fun openAccessibilitySettings() = AccessibilityHelper.openSettings(this)
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action != KeyEvent.ACTION_DOWN) return super.dispatchKeyEvent(event)
@@ -182,10 +175,9 @@ class AdvancedSettingsActivity : AppCompatActivity() {
                 when (currentRow) {
                     0 -> openDefaultAppSettings()
                     1 -> startActivity(Intent(this, AppShortcutActivity::class.java))
-                    2 -> openAccessibilitySettings()
-                    3 -> promptTrustedNumber()
-                    4 -> showPredictionEnginePicker()
-                    5 -> checkForUpdate()
+                    2 -> promptTrustedNumber()
+                    3 -> showPredictionEnginePicker()
+                    4 -> checkForUpdate()
                 }
                 return true
             }

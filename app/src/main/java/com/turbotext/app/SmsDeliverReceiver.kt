@@ -63,7 +63,7 @@ class SmsDeliverReceiver : BroadcastReceiver() {
         val threadId = NotificationHelper.showIncoming(context, address, displayName, notifyBody)
         SoundNotificationHelper.notifyNewMessage(
             context, NotificationHelper.conversationKey(threadId, address), displayName,
-            sender = address
+            sender = address, preview = notifyBody
         )
     }
 }

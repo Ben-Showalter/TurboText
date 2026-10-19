@@ -15,3 +15,5 @@ dependencyResolutionManagement {
 rootProject.name = "TurboText"
 include ':app'
 include ':mmslib'
+// Compile-only: Kyocera's cover-screen callback (CoverScreenCallback).
+include ':stubs:kyocera-sublcd'

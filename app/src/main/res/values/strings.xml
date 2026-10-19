@@ -9,5 +9,4 @@
     <string name="softkey_voice">Voice</string>
     <string name="softkey_mode">Mode</string>
     <string name="softkey_save">Save</string>
-    <string name="accessibility_service_description">Lets TurboText notice when a hardware button (like volume) is pressed, so it can briefly show the outer-screen message icon again for an unread text — the button still does its normal job too, this only watches for the press.</string>
 </resources>

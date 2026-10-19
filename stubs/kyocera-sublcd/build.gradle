@@ -1,0 +1,24 @@
+// Compile-only declaration of Kyocera's cover-screen callback interface
+// (see the Java file's comment). A plain Java library compiled against the
+// SDK's android.jar; :app uses it with compileOnly, so it is never packaged.
+plugins {
+    id 'java-library'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_1_8
+    targetCompatibility = JavaVersion.VERSION_1_8
+}
+
+def sdkDir = {
+    def props = new Properties()
+    def local = rootProject.file('local.properties')
+    if (local.exists()) local.withInputStream { props.load(it) }
+    def dir = props.getProperty('sdk.dir') ?: System.getenv('ANDROID_HOME') ?: System.getenv('ANDROID_SDK_ROOT')
+    if (dir == null) throw new GradleException('Android SDK not found: set sdk.dir in local.properties, or ANDROID_HOME')
+    dir
+}()
+
+dependencies {
+    compileOnly files("$sdkDir/platforms/android-34/android.jar")
+}
