@@ -226,6 +226,11 @@
             android:name=".MmsSentReceiver"
             android:exported="false" />
 
+        <!-- Result of confirming a downloaded MMS to the carrier (MmsAcknowledger). -->
+        <receiver
+            android:name=".MmsAckSentReceiver"
+            android:exported="false" />
+
         <!-- Required: lets the phone's "respond via message" (decline call with text) work -->
         <service
             android:name=".HeadlessSmsSendService"

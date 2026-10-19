@@ -86,6 +86,16 @@ public abstract class MmsReceivedReceiver extends BroadcastReceiver {
 
     public abstract void onError(Context context, String error);
 
+    /**
+     * TurboText: called once a downloaded MMS is saved, with the raw
+     * M-Retrieve.conf it came in, so the app can confirm the download to
+     * the carrier (see TurboText's MmsAcknowledger). Background thread;
+     * does nothing by default.
+     */
+    protected void onDownloaded(Context context, byte[] retrieveConf, String transactionId,
+                                String locationUrl, int subscriptionId) {
+    }
+
     public MmscInformation getMmscInfoForReceptionAck(Context context, int subscriptionId) {
         // Override this and provide the MMSC to send the ACK to.
         // some carriers will download duplicate MMS messages without this ACK. When using the
@@ -138,6 +148,13 @@ public abstract class MmsReceivedReceiver extends BroadcastReceiver {
                 messageUri = DownloadRequest.persist(context, response, mmsConfig,
                         locationUrl, transactionId, subscriptionId, null);
 
+                if (messageUri != null) {
+                    try {
+                        onDownloaded(context, response, transactionId, locationUrl, subscriptionId);
+                    } catch (RuntimeException e) {
+                        android.util.Log.e(TAG, "download confirmation failed", e);
+                    }
+                }
                 Log.v(TAG, "response saved successfully");
                 Log.v(TAG, "response length: " + response.length);
                 mDownloadFile.delete();

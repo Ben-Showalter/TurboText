@@ -14,6 +14,14 @@ import android.util.Log
  */
 class LibraryMmsReceivedReceiver : com.klinker.android.send_message.MmsReceivedReceiver() {
 
+    /** Confirms the download to the carrier, so the sender gets their
+     *  "Delivered" report (MmsAcknowledger). */
+    override fun onDownloaded(
+        context: Context, retrieveConf: ByteArray, transactionId: String?, locationUrl: String?, subscriptionId: Int
+    ) {
+        MmsAcknowledger.acknowledge(context.applicationContext, retrieveConf, transactionId, locationUrl, subscriptionId)
+    }
+
     override fun onMessageReceived(context: Context, messageUri: Uri) {
         Log.i("TurboTextMms", "MMS downloaded and saved: $messageUri")
         MmsReceivePostProcessor.process(context.applicationContext, messageUri)

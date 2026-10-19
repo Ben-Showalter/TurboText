@@ -5,6 +5,7 @@
 ### Messaging
 - After you send from New Message, TurboText opens that conversation. Your message shows "Sending", then "Sent" and "Delivered", without having to reopen it.
 - Pressing Send while a word is still a suggestion sends it as shown, the same as pressing OK first.
+- Picture messages you receive are now confirmed to the carrier, so whoever sent them sees "Delivered", and the carrier stops sending some pictures twice. For your own pictures to show "Delivered", the person you send to needs this version too (or another messaging app).
 - Picture-message delivery reports that arrive early are no longer lost. "Delivered" shows more reliably, including "Delivered to 2 of 3" in groups.
 - Text delivery reports are read correctly. A text that couldn't be delivered shows "Not delivered" instead of "Sent".
 - Group conversations no longer split in two, which made messages seem to go missing. Conversations that were already split are joined back together.

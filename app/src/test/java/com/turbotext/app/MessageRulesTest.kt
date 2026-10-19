@@ -95,4 +95,17 @@ class MessageRulesTest {
         val all = EmojiUsage.CATEGORIES.flatMap { it.emojis }
         EmojiUsage.REMOVED.forEach { assertFalse(it, it in all) }
     }
+
+    @Test
+    fun downloadsAreConfirmedWithTheRightPdu() {
+        val ack = MmsAcknowledger.buildConfirmation("T1".toByteArray(), "N1".toByteArray())
+        assertTrue(ack is com.google.android.mms.pdu_alt.AcknowledgeInd)
+        val resp = MmsAcknowledger.buildConfirmation(null, "N1".toByteArray())
+        assertTrue(resp is com.google.android.mms.pdu_alt.NotifyRespInd)
+        assertEquals(
+            com.google.android.mms.pdu_alt.PduHeaders.STATUS_RETRIEVED,
+            (resp as com.google.android.mms.pdu_alt.NotifyRespInd).status
+        )
+        assertNull(MmsAcknowledger.buildConfirmation(null, null))
+    }
 }
