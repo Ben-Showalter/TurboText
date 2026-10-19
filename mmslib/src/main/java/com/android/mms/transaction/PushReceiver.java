@@ -300,6 +300,9 @@ public class PushReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
         Log.v(TAG, intent.getAction() + " " + intent.getType());
+        // TurboText: anything the carrier pushes at all (new picture
+        // message notices and delivery reports both arrive here).
+        android.util.Log.i(REPORT_TAG, "WAP push arrived: " + intent.getAction() + " " + intent.getType());
         if ((intent.getAction().equals(WAP_PUSH_DELIVER_ACTION) || intent.getAction().equals(WAP_PUSH_RECEIVED_ACTION))
                 && ContentType.MMS_MESSAGE.equals(intent.getType())) {
             if (LOCAL_LOGV) {

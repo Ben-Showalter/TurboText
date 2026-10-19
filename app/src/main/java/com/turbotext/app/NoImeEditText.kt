@@ -222,21 +222,33 @@ class NoImeEditText @JvmOverloads constructor(
                     lineTop < scrollY + margin -> scrollTo(0, (lineTop - margin).coerceAtLeast(0))
                 }
             }
-            Log.d(
-                TAG,
-                "onDraw scroll-calc: pos=$pos line=$line/${layout.lineCount} " +
-                    "lineTop=$lineTop lineBottom=$lineBottom visibleHeight=$visibleHeight " +
-                    "scrollY $scrollYBefore->$scrollY"
-            )
+            scrolled = scrollY != scrollYBefore
+            if (scrolled) {
+                Log.d(
+                    TAG,
+                    "onDraw scroll-calc: pos=$pos line=$line/${layout.lineCount} " +
+                        "lineTop=$lineTop lineBottom=$lineBottom visibleHeight=$visibleHeight " +
+                        "scrollY $scrollYBefore->$scrollY"
+                )
+            }
         }
 
         super.onDraw(canvas)
 
         // scrollY may have just changed above — make sure the overlay
         // redraws at the corrected position rather than waiting for the
-        // next unrelated invalidate (e.g. the next blink tick).
-        cursorDrawable.invalidateSelf()
+        // next unrelated invalidate (e.g. the next blink tick). Only then:
+        // invalidating on every draw asked for another draw straight away,
+        // so the field redrew ~60 times a second for as long as it was on
+        // screen (a constant drain, and a flood of these log lines).
+        if (scrolled) {
+            scrolled = false
+            cursorDrawable.invalidateSelf()
+        }
     }
+
+    /** Set by onDraw when it moved scrollY, so the cursor is redrawn once. */
+    private var scrolled = false
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
