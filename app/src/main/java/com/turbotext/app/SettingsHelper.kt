@@ -74,6 +74,14 @@ object SettingsHelper {
         prefs(context).edit().putString("notif_vibrate_pattern", patternId).apply()
     }
 
+    /** "Don't ask again" on the startup Background Helper prompt. */
+    fun isHelperPromptDismissed(context: Context): Boolean =
+        prefs(context).getBoolean("helper_prompt_dismissed", false)
+
+    fun setHelperPromptDismissed(context: Context, dismissed: Boolean) {
+        prefs(context).edit().putBoolean("helper_prompt_dismissed", dismissed).apply()
+    }
+
     /** Cover screen shows "New message" instead of who it's from and what
      *  it says, for anyone who doesn't want that readable on the outside
      *  of a closed phone. Off by default. */

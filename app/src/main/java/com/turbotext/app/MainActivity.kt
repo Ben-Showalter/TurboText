@@ -259,16 +259,20 @@ class MainActivity : AppCompatActivity() {
             DefaultSmsRoleHelper.requestDefault(this)
             return
         }
-        if (!AccessibilityHelper.isServiceEnabled(this) && !askedHelperThisLaunch) {
+        if (!AccessibilityHelper.isServiceEnabled(this) && !askedHelperThisLaunch &&
+            !SettingsHelper.isHelperPromptDismissed(this)
+        ) {
             askedHelperThisLaunch = true
             setupDialog = androidx.appcompat.app.AlertDialog.Builder(this)
                 .setTitle("Turn on Background Helper")
                 .setMessage(
                     "Keeps TurboText running in the background without a \"running\" notification. " +
-                        "On the next screen, choose TurboText and turn it on."
+                        "On the next screen, choose TurboText and turn it on. " +
+                        "You can also turn it on later in Settings > Advanced."
                 )
                 .setPositiveButton("Open Settings") { _, _ -> AccessibilityHelper.openSettings(this) }
                 .setNegativeButton("Not now", null)
+                .setNeutralButton("Don't ask again") { _, _ -> SettingsHelper.setHelperPromptDismissed(this, true) }
                 .show()
         }
     }
