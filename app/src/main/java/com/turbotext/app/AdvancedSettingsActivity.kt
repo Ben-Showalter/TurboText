@@ -12,7 +12,7 @@ import androidx.appcompat.app.AppCompatActivity
 class AdvancedSettingsActivity : AppCompatActivity() {
 
     private lateinit var defaultAppRow: TextView
-    private lateinit var appShortcutRow: TextView
+    private lateinit var backgroundHelperRow: TextView
     private lateinit var trustedNumberRow: TextView
     private lateinit var predictionEngineRow: TextView
     private lateinit var checkUpdatesRow: TextView
@@ -25,15 +25,13 @@ class AdvancedSettingsActivity : AppCompatActivity() {
         ThemeHelper.apply(this)
 
         defaultAppRow = findViewById(R.id.defaultAppRow)
-        appShortcutRow = findViewById(R.id.appShortcutRow)
+        backgroundHelperRow = findViewById(R.id.backgroundHelperRow)
         trustedNumberRow = findViewById(R.id.trustedNumberRow)
         predictionEngineRow = findViewById(R.id.predictionEngineRow)
         checkUpdatesRow = findViewById(R.id.checkUpdatesRow)
 
         defaultAppRow.setOnClickListener { openDefaultAppSettings() }
-        appShortcutRow.setOnClickListener {
-            startActivity(Intent(this, AppShortcutActivity::class.java))
-        }
+        backgroundHelperRow.setOnClickListener { AccessibilityHelper.openSettings(this) }
         trustedNumberRow.setOnClickListener { promptTrustedNumber() }
         predictionEngineRow.setOnClickListener { showPredictionEnginePicker() }
         checkUpdatesRow.setOnClickListener { checkForUpdate() }
@@ -47,6 +45,11 @@ class AdvancedSettingsActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         updateTrustedNumberRowLabel()
+        // Back from Accessibility settings: show the new state, and swap
+        // the "running" notification in or out to match.
+        backgroundHelperRow.text =
+            "Background Helper: ${if (AccessibilityHelper.isServiceEnabled(this)) "On" else "Off"}"
+        BackgroundHost.ensureRunning(this)
     }
 
     private fun updateTrustedNumberRowLabel() {
@@ -132,7 +135,7 @@ class AdvancedSettingsActivity : AppCompatActivity() {
 
     private fun updateRowHighlight() {
         val surface2 = ThemeHelper.getCurrentTheme(this).surface2
-        val rows = listOf(defaultAppRow, appShortcutRow, trustedNumberRow, predictionEngineRow, checkUpdatesRow)
+        val rows = listOf(defaultAppRow, backgroundHelperRow, trustedNumberRow, predictionEngineRow, checkUpdatesRow)
         rows.forEachIndexed { index, row ->
             row.setBackgroundColor(if (currentRow == index) surface2 else android.graphics.Color.TRANSPARENT)
         }
@@ -174,7 +177,7 @@ class AdvancedSettingsActivity : AppCompatActivity() {
             KeyEvent.KEYCODE_DPAD_CENTER -> {
                 when (currentRow) {
                     0 -> openDefaultAppSettings()
-                    1 -> startActivity(Intent(this, AppShortcutActivity::class.java))
+                    1 -> AccessibilityHelper.openSettings(this)
                     2 -> promptTrustedNumber()
                     3 -> showPredictionEnginePicker()
                     4 -> checkForUpdate()

@@ -44,6 +44,9 @@ class TurboTextApplication : Application() {
         // The daily report's alarm (Settings > Report), in case it was lost
         // (the app was force-stopped, or updated).
         ReportSender.schedule(this)
+        // Stay running in the background: the Background Helper if it's
+        // on, otherwise a foreground service with a notification.
+        BackgroundHost.ensureRunning(this)
         Thread {
             try {
                 OwnNumber.repairOnce(this)

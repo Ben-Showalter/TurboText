@@ -1,4 +1,6 @@
 <resources>
+    <!-- Shown in the phone's Accessibility settings for the Background Helper. -->
+    <string name="accessibility_service_description">Background Helper: keeps TurboText running in the background so messages, alerts and the daily report arrive on time, without a \"running\" notification. It doesn\'t read the screen or your key presses.</string>
     <string name="app_name">TurboText</string>
     <string name="empty_inbox">No messages. Press OK to start a new one.</string>
     <string name="listening">Listening…</string>

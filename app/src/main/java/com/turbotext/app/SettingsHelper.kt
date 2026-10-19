@@ -16,6 +16,8 @@ object SettingsHelper {
     )
 
     fun clearRemovedSettings(context: Context) {
+        // Settings > Advanced's app shortcut (removed) kept its own file.
+        context.deleteSharedPreferences("message_pro_app_shortcut")
         val p = prefs(context)
         if (REMOVED_KEYS.none { p.contains(it) }) return
         val e = p.edit()

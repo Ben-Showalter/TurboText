@@ -173,13 +173,15 @@ class ReportAlarmReceiver : BroadcastReceiver() {
     }
 }
 
-/** Alarms don't survive a restart or an app update: set the report's
- *  again. */
-class ReportBootReceiver : BroadcastReceiver() {
+/** After a restart or an app update: keep running in the background, and
+ *  set the report's alarm again (alarms don't survive either). */
+class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
-            Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED ->
+            Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED -> {
+                BackgroundHost.ensureRunning(context)
                 ReportSender.schedule(context.applicationContext)
+            }
         }
     }
 }

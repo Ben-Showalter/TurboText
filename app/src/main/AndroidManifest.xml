@@ -37,7 +37,7 @@
          crashed right as each incoming MMS finished downloading, leaving
          only the carrier's notice behind as an "Unknown" conversation. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <!-- Re-arms the daily report's alarm after a restart (ReportBootReceiver). -->
+    <!-- After a restart: background keep-alive and the report's alarm (BootReceiver). -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <uses-feature
@@ -99,14 +99,6 @@
             android:exported="false" />
 
         <activity
-            android:name=".AppShortcutActivity"
-            android:exported="false" />
-
-        <activity
-            android:name=".AppPickerActivity"
-            android:exported="false" />
-
-        <activity
             android:name=".TextEntryActivity"
             android:exported="false" />
 
@@ -143,8 +135,10 @@
             android:name=".ReportAlarmReceiver"
             android:exported="false" />
 
+        <!-- After a restart or an app update: keeps TurboText running in
+             the background (BackgroundHost) and re-arms the daily report. -->
         <receiver
-            android:name=".ReportBootReceiver"
+            android:name=".BootReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
@@ -258,6 +252,27 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
+
+        <!-- The Background Helper: keeps TurboText running without a
+             notification (BackgroundHost). Turned on by the user in
+             Settings > Accessibility. -->
+        <service
+            android:name=".KeyButtonAccessibilityService"
+            android:exported="true"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+
+        <!-- The fallback while the Background Helper is off: a foreground
+             service with a "running" notification. -->
+        <service
+            android:name=".KeepAliveService"
+            android:exported="false" />
 
     </application>
 </manifest>

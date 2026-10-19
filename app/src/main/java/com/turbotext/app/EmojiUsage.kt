@@ -3,7 +3,7 @@ package com.turbotext.app
 import android.content.Context
 
 /**
- * The emoji picker's contents: 550 emojis in categories, plus a
+ * The emoji picker's contents: 516 emojis in categories, plus a
  * "Recent" category of the ones you use most.
  *
  * Kept to emojis from Unicode's Emoji 12 or earlier so they draw on this
@@ -13,6 +13,12 @@ import android.content.Context
 object EmojiUsage {
 
     private const val PREFS = "emoji_usage"
+
+    /** Left out on purpose (angry, scary, rude or body-part ones), and
+     *  kept out of "Recent" too if one was used before they were taken out. */
+    val REMOVED = setOf(
+        "💀", "👽", "👻", "🤬", "👿", "😈", "😠", "😡", "🤰", "🧚", "💃", "🦵", "💪", "💩", "🤡", "🤮", "🤢", "💋", "🦶", "👅", "👄", "🧠", "👂", "👃", "💅", "🕺", "🧙", "🦸", "🎅", "🤶", "👼", "🤱", "💏", "💑"
+    )
 
     /** Most emojis "Recent" shows — five full rows of the grid. */
     private const val RECENT_MAX = 25
@@ -27,9 +33,9 @@ object EmojiUsage {
                 """
                 😀 😃 😄 😁 😆 😅 🤣 😂 🙂 🙃 😉 😊 😇 🥰 😍 🤩 😘 😗 ☺️ 😚
                 😙 😋 😛 😜 🤪 😝 🤑 🤗 🤭 🤫 🤔 🤐 🤨 😐 😑 😶 😏 😒 🙄 😬
-                🤥 😌 😔 😪 🤤 😴 😷 🤒 🤕 🤢 🤮 🤧 🥵 🥶 🥴 😵 🤯 🤠 🥳 😎
-                🤓 🧐 😕 😟 🙁 ☹️ 😮 😯 😲 😳 🥺 😦 😧 😨 😰 😥 😢 😭 😱 😖
-                😣 😞 😓 😩 😫 🥱 😤 😡 😠 🤬 😈 👿 💀 💩 🤡 👻 👽 🤖 😺 😸
+                🤥 😌 😔 😪 🤤 😴 😷 🤒 🤕 🤧 🥵 🥶 🥴 😵 🤯 🤠 🥳 😎 🤓 🧐
+                😕 😟 🙁 ☹️ 😮 😯 😲 😳 🥺 😦 😧 😨 😰 😥 😢 😭 😱 😖 😣 😞
+                😓 😩 😫 🥱 😤 🤖 😺 😸
                 """
             )
         ),
@@ -37,10 +43,9 @@ object EmojiUsage {
             "Gestures & people", split(
                 """
                 👍 👎 👌 ✌️ 🤞 🤟 🤘 🤙 👈 👉 👆 👇 ☝️ ✋ 🤚 🖐️ 🖖 👋 🤏 ✍️
-                👏 🙌 👐 🤲 🤝 🙏 💪 🦵 🦶 👂 👃 🧠 👀 👁️ 👅 👄 💅 🤳 👶 🧒
-                👦 👧 🧑 👨 👩 🧓 👴 👵 👱 🧔 🙋 🙅 🙆 🤷 🤦 🙇 💁 🙎 🙍 🧏
-                👮 👷 💂 🕵️ 👩‍⚕️ 👨‍🍳 👩‍🎓 👨‍🌾 🤴 👸 🎅 🤶 🦸 🧙 🧚 👼 🤰 🤱 💃 🕺
-                👫 👬 👭 💏 💑 👪 🏃 🚶 🧍 🧎
+                👏 🙌 👐 🤲 🤝 🙏 👀 👁️ 🤳 👶 🧒 👦 👧 🧑 👨 👩 🧓 👴 👵 👱
+                🧔 🙋 🙅 🙆 🤷 🤦 🙇 💁 🙎 🙍 🧏 👮 👷 💂 🕵️ 👩‍⚕️ 👨‍🍳 👩‍🎓 👨‍🌾 🤴
+                👸 👫 👬 👭 👪 🏃 🚶 🧍 🧎
                 """
             )
         ),
@@ -48,7 +53,7 @@ object EmojiUsage {
             "Hearts & feelings", split(
                 """
                 ❤️ 🧡 💛 💚 💙 💜 🖤 🤍 🤎 💔 ❣️ 💕 💞 💓 💗 💖 💘 💝 💟 ♥️
-                💋 💌 💯 💢 💥 💫 💦 💨 💬 💭 💤 🌹 🥀 🎁 🍫 🧸 💐 💍 👑 😻
+                💌 💯 💢 💥 💫 💦 💨 💬 💭 💤 🌹 🥀 🎁 🍫 🧸 💐 💍 👑 😻
                 """
             )
         ),
@@ -104,7 +109,7 @@ object EmojiUsage {
         val p = prefs(context)
         val all = CATEGORIES.flatMap { it.emojis }.distinct()
         // Anything used before the list was reorganised still counts.
-        val extra = p.all.keys.filter { it !in all }
+        val extra = p.all.keys.filter { it !in all && it !in REMOVED }
         return (all + extra)
             .filter { p.getInt(it, 0) > 0 }
             .sortedByDescending { p.getInt(it, 0) }

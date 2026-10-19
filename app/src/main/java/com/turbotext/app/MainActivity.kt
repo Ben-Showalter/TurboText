@@ -100,6 +100,8 @@ class MainActivity : AppCompatActivity() {
         // file appears on external storage as soon as "All files access"
         // is granted, without needing a reinstall.
         GroqConfig.ensureKeyFileExists()
+        // The Background Helper may have just been turned on or off.
+        BackgroundHost.ensureRunning(this)
         if (hasAllPermissions()) {
             refreshConversations()
             updateGroupsLabel()
@@ -244,10 +246,11 @@ class MainActivity : AppCompatActivity() {
     // Each setup prompt is shown at most once per launch; anything still
     // missing is asked for again on the next launch.
     private var askedDefaultThisLaunch = false
+    private var askedHelperThisLaunch = false
     private var setupDialog: androidx.appcompat.app.AlertDialog? = null
 
     /** Startup setup, one step at a time (each step's result calls this
-     *  again): app permissions → default SMS app. Steps
+     *  again): app permissions → default SMS app → Background Helper. Steps
      *  already granted are skipped. */
     private fun continueSetup() {
         if (isFinishing || isDestroyed) return
@@ -255,6 +258,18 @@ class MainActivity : AppCompatActivity() {
             askedDefaultThisLaunch = true
             DefaultSmsRoleHelper.requestDefault(this)
             return
+        }
+        if (!AccessibilityHelper.isServiceEnabled(this) && !askedHelperThisLaunch) {
+            askedHelperThisLaunch = true
+            setupDialog = androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Turn on Background Helper")
+                .setMessage(
+                    "Keeps TurboText running in the background without a \"running\" notification. " +
+                        "On the next screen, choose TurboText and turn it on."
+                )
+                .setPositiveButton("Open Settings") { _, _ -> AccessibilityHelper.openSettings(this) }
+                .setNegativeButton("Not now", null)
+                .show()
         }
     }
 
