@@ -12,11 +12,15 @@ Key features:
 
 •	Archives all conversations with a click of a button. 
 
+•	Outer-screen alerts like MatChat's: who it's from and the message, scrolling across the outer screen until you read it.
+
+•	Optional daily texting report (options/settings/Report), protected by a PIN: once a day it texts a number you choose how many texts were sent to and received from each contact.
+
 Installation instructions:
 
 1.	Install the TurboText app on the phone:
 2.	 a. You can install through Android Studio, or copy the .APK to the phone, then open it in the phone.
-3.	 b. When the App opens, go to: options/settings/advanced/ , set the default texting app to TurboText, and optionally enable “Accessibility Service” (it lets TurboText flash the outer-screen message icon when you press a key while you have unread texts).
+3.	 b. When the App opens, go to: options/settings/advanced/ , set the default texting app to TurboText.
 4.	 c. Optional: you can set the “provisioning phone number” if you want to be able to set the API key remotely. (See below for more details) This app is using Groq’s API Whisper Speetch-to-text service. You will need a Groq API key to make it work.
 
 There are two methods for entering the API key into the app.

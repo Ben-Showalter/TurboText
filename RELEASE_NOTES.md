@@ -1,5 +1,35 @@
 # TurboText — What's New
 
+## New in 1.0.5
+
+### Messaging
+- After you send from New Message, TurboText opens that conversation. Your message shows "Sending", then "Sent" and "Delivered", without having to reopen it.
+- Pressing Send while a word is still a suggestion sends it as shown, the same as pressing OK first.
+- Picture-message delivery reports that arrive early are no longer lost. "Delivered" shows more reliably, including "Delivered to 2 of 3" in groups.
+- Text delivery reports are read correctly. A text that couldn't be delivered shows "Not delivered" instead of "Sent".
+- Group conversations no longer split in two, which made messages seem to go missing. Conversations that were already split are joined back together.
+- A new picture message is no longer dropped when the carrier reuses an old message's download address.
+- Reading back through a conversation no longer jumps to the bottom on its own.
+- Options > Mark All as Read, on the conversation and group lists.
+
+### Typing
+- Press * past ALL CAPS for the emoji picker: 550 emojis in a grid, by category, with your most-used under Recent. Use the D-pad to move, Left/Right at the edge to change category, and OK to insert. # inserts and keeps the picker open.
+
+### Look & Feel
+- Message bubbles have a small tail on the sender's side.
+- The picture viewer works like MatChat's: # zooms in, * zooms out, the D-pad or 2/4/6/8 moves around, and 0 resets. Options has Save to gallery and Save to files.
+
+### Outer screen
+- Works like MatChat's. A new message shows the time, who it's from and the message, scrolling across the outer screen. It comes back each time you close the flip or press an outside button, until you read it.
+- New: Settings > Notifications > Hide Message on Cover, which shows only "New message".
+- The Accessibility setting is no longer needed and TurboText no longer asks for it.
+
+### Notifications
+- Do Not Disturb and silent/vibrate mode are respected. The notification still appears, but without sound or buzz.
+
+### Report
+- New Settings > Report, protected by a PIN you choose the first time. Once a day at the time you set, it texts a number you choose how many texts this phone sent to and received from each contact, for example "Boby - 45 sent, 34 received".
+
 ## Messaging
 - Send and receive pictures, video, voice messages, contact cards and files. Videos shrink automatically to fit MMS size limits.
 - New **Record Video** and **File** attach options, and you can share to TurboText from other apps.
