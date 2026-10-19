@@ -14,9 +14,10 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var addWordRow: TextView
     private lateinit var themeRow: TextView
     private lateinit var avatarsRow: TextView
+    private lateinit var reportRow: TextView
     private lateinit var advancedRow: TextView
     private var currentRow = 0
-    private val lastRow = 5
+    private val lastRow = 6
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -28,6 +29,7 @@ class SettingsActivity : AppCompatActivity() {
         addWordRow = findViewById(R.id.addWordRow)
         themeRow = findViewById(R.id.themeRow)
         avatarsRow = findViewById(R.id.avatarsRow)
+        reportRow = findViewById(R.id.reportRow)
         advancedRow = findViewById(R.id.advancedRow)
 
         notificationSettingsRow.setOnClickListener {
@@ -41,6 +43,9 @@ class SettingsActivity : AppCompatActivity() {
         }
         themeRow.setOnClickListener { showThemePicker() }
         avatarsRow.setOnClickListener { toggleAvatars() }
+        reportRow.setOnClickListener {
+            startActivity(Intent(this, ReportSettingsActivity::class.java))
+        }
         advancedRow.setOnClickListener {
             startActivity(Intent(this, AdvancedSettingsActivity::class.java))
         }
@@ -85,7 +90,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun updateRowHighlight() {
         val surface2 = ThemeHelper.getCurrentTheme(this).surface2
-        val rows = listOf(notificationSettingsRow, signatureSettingsRow, addWordRow, themeRow, avatarsRow, advancedRow)
+        val rows = listOf(notificationSettingsRow, signatureSettingsRow, addWordRow, themeRow, avatarsRow, reportRow, advancedRow)
         rows.forEachIndexed { index, row ->
             row.setBackgroundColor(if (currentRow == index) surface2 else android.graphics.Color.TRANSPARENT)
         }
@@ -118,7 +123,8 @@ class SettingsActivity : AppCompatActivity() {
                     2 -> startActivity(Intent(this, MyWordsActivity::class.java))
                     3 -> showThemePicker()
                     4 -> toggleAvatars()
-                    5 -> startActivity(Intent(this, AdvancedSettingsActivity::class.java))
+                    5 -> startActivity(Intent(this, ReportSettingsActivity::class.java))
+                    6 -> startActivity(Intent(this, AdvancedSettingsActivity::class.java))
                 }
                 return true
             }

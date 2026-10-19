@@ -37,6 +37,8 @@
          crashed right as each incoming MMS finished downloading, leaving
          only the carrier's notice behind as an "Unknown" conversation. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Re-arms the daily report's alarm after a restart (ReportBootReceiver). -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <uses-feature
         android:name="android.hardware.camera"
@@ -131,6 +133,24 @@
         <receiver
             android:name=".SoundAlarmReceiver"
             android:exported="false" />
+
+        <!-- Settings > Report: PIN-guarded daily texting report. -->
+        <activity
+            android:name=".ReportSettingsActivity"
+            android:exported="false" />
+
+        <receiver
+            android:name=".ReportAlarmReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".ReportBootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
         <receiver
             android:name=".SmsSentReceiver"

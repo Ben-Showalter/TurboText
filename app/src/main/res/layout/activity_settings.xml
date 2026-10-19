@@ -88,6 +88,18 @@
 
 
     <TextView
+        android:id="@+id/reportRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Report"
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
+        android:padding="14dp"
+        android:focusable="true"
+        android:focusableInTouchMode="true"
+        android:background="?android:attr/selectableItemBackground" />
+
+    <TextView
         android:id="@+id/advancedRow"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

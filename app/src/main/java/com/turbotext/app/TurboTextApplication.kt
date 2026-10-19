@@ -41,6 +41,9 @@ class TurboTextApplication : Application() {
         // their thread (see OwnNumber), and a one-off fix for any group
         // conversation that was split in two before.
         OwnNumber.publish(this)
+        // The daily report's alarm (Settings > Report), in case it was lost
+        // (the app was force-stopped, or updated).
+        ReportSender.schedule(this)
         Thread {
             try {
                 OwnNumber.repairOnce(this)

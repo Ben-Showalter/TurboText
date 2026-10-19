@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@android:color/black">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Report"
+        android:textColor="@android:color/white"
+        android:textStyle="bold"
+        android:textSize="20sp"
+        android:padding="8dp"
+        android:background="#222222" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+    <!-- Hidden until the PIN has been given (ReportSettingsActivity). -->
+    <LinearLayout
+        android:id="@+id/reportRows"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+    <TextView
+        android:id="@+id/reportEnabledRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Daily Report: Off"
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
+        android:padding="14dp"
+        android:focusable="true"
+        android:focusableInTouchMode="true"
+        android:background="?android:attr/selectableItemBackground" />
+
+    <TextView
+        android:id="@+id/reportTimeRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Send At: 20:00"
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
+        android:padding="14dp"
+        android:focusable="true"
+        android:focusableInTouchMode="true"
+        android:background="?android:attr/selectableItemBackground" />
+
+    <TextView
+        android:id="@+id/reportNumberRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Send To: Not Set"
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
+        android:padding="14dp"
+        android:focusable="true"
+        android:focusableInTouchMode="true"
+        android:background="?android:attr/selectableItemBackground" />
+
+    <TextView
+        android:id="@+id/reportSendNowRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Send Report Now"
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
+        android:padding="14dp"
+        android:focusable="true"
+        android:focusableInTouchMode="true"
+        android:background="?android:attr/selectableItemBackground" />
+
+    <TextView
+        android:id="@+id/reportChangePinRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Change PIN"
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
+        android:padding="14dp"
+        android:focusable="true"
+        android:focusableInTouchMode="true"
+        android:background="?android:attr/selectableItemBackground" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Once a day, texts the number above how many texts this phone sent to and received from each contact since the last report."
+        android:textColor="#AAAAAA"
+        android:textSize="14sp"
+        android:padding="14dp" />
+
+    </LinearLayout>
+    </ScrollView>
+
+</LinearLayout>
