@@ -92,7 +92,7 @@ class ReportSettingsActivity : AppCompatActivity() {
 
     private fun updateLabels() {
         enabledRow.text = "Daily Report: ${if (ReportSettings.isEnabled(this)) "On" else "Off"}"
-        timeRow.text = "Send At: ${ReportBuilder.timeLabel(ReportSettings.getHour(this), ReportSettings.getMinute(this))}"
+        timeRow.text = "Send At: ${ReportBuilder.timeLabel12(ReportSettings.getHour(this), ReportSettings.getMinute(this))}"
         numberRow.text = "Send To: ${ReportSettings.getNumber(this) ?: "Not Set"}"
     }
 
@@ -108,14 +108,8 @@ class ReportSettingsActivity : AppCompatActivity() {
     }
 
     private fun editTime() {
-        val current = ReportBuilder.timeLabel(ReportSettings.getHour(this), ReportSettings.getMinute(this)).replace(":", "")
-        DigitEntryDialog(this, "Send At", "24-hour time as 4 digits, e.g. 2030 for 8:30 PM.", maxLength = 4, initial = current) { typed ->
-            val time = ReportBuilder.parseTime(typed)
-            if (time == null) {
-                Toast.makeText(this, "That isn't a time — e.g. 2030 for 8:30 PM", Toast.LENGTH_LONG).show()
-                return@DigitEntryDialog
-            }
-            ReportSettings.setTime(this, time.first, time.second)
+        KeypadTimeDialog(this, "Send At", ReportSettings.getHour(this), ReportSettings.getMinute(this)) { hour, minute ->
+            ReportSettings.setTime(this, hour, minute)
             ReportSender.schedule(this)
             updateLabels()
         }.show()

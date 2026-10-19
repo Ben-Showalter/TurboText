@@ -57,12 +57,16 @@ object ReportSender {
     private fun count(context: Context, since: Long, until: Long, excludeKey: String): Map<String, ReportBuilder.Counts> {
         val repo = SmsRepository(context)
         val rows = LinkedHashMap<String, ReportBuilder.Counts>()
+        val contacts = ContactIndex.load(context)
         val nameByKey = HashMap<String, String>()
 
+        // One row per person, whichever way their number is written.
         fun personLabel(address: String): String? {
             val key = OwnNumber.key(address).ifEmpty { address.lowercase() }
             if (key == excludeKey) return null
-            return nameByKey.getOrPut(key) { ContactHelper.lookupName(context, address) ?: address }
+            return nameByKey.getOrPut(key) {
+                contacts.nameFor(address) ?: ContactHelper.lookupName(context, address) ?: address
+            }
         }
 
         // Texts: inbox (1) and sent (2).

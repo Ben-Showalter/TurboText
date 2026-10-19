@@ -43,7 +43,7 @@
         android:id="@+id/reportTimeRow"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Send At: 20:00"
+        android:text="Send At: 8:00 PM"
         android:textColor="@android:color/white"
         android:textSize="18sp"
         android:padding="14dp"

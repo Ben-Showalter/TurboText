@@ -45,13 +45,21 @@ class ReportBuilderTest {
     }
 
     @Test
-    fun timesAreParsed() {
-        assertEquals(20 to 30, ReportBuilder.parseTime("2030"))
-        assertEquals(7 to 30, ReportBuilder.parseTime("730"))
-        assertEquals(0 to 5, ReportBuilder.parseTime("00:05"))
-        assertNull(ReportBuilder.parseTime("2460"))
-        assertNull(ReportBuilder.parseTime("2500"))
-        assertNull(ReportBuilder.parseTime("12"))
-        assertEquals("07:05", ReportBuilder.timeLabel(7, 5))
+    fun timesShowIn12HourForm() {
+        assertEquals("8:30 PM", ReportBuilder.timeLabel12(20, 30))
+        assertEquals("12:05 AM", ReportBuilder.timeLabel12(0, 5))
+        assertEquals("12:00 PM", ReportBuilder.timeLabel12(12, 0))
+        assertEquals(20, ReportBuilder.to24Hour(8, pm = true))
+        assertEquals(0, ReportBuilder.to24Hour(12, pm = false))
+        assertEquals(12, ReportBuilder.to24Hour(12, pm = true))
+    }
+
+    @Test
+    fun contactsMatchHoweverTheNumberIsWritten() {
+        val index = ContactIndex.from(listOf("(555) 123-4567" to "Boby", "+1 555 765 4321" to "Sam"))
+        assertEquals("Boby", index.nameFor("+15551234567"))
+        assertEquals("Boby", index.nameFor("5551234567"))
+        assertEquals("Sam", index.nameFor("15557654321"))
+        assertNull(index.nameFor("5550000000"))
     }
 }

@@ -39,17 +39,13 @@ object ReportBuilder {
         return cal.timeInMillis
     }
 
-    /** "HHMM" or "HH:MM" as typed, to (hour, minute), or null if it isn't
-     *  a time. A 3-digit "730" means 7:30. */
-    fun parseTime(typed: String): Pair<Int, Int>? {
-        val digits = typed.filter { it.isDigit() }
-        if (digits.length !in 3..4) return null
-        val hour = digits.dropLast(2).toInt()
-        val minute = digits.takeLast(2).toInt()
-        if (hour > 23 || minute > 59) return null
-        return hour to minute
+    /** "8:30 PM". */
+    fun timeLabel12(hour: Int, minute: Int): String {
+        val h = if (hour % 12 == 0) 12 else hour % 12
+        return "%d:%02d %s".format(h, minute, if (hour >= 12) "PM" else "AM")
     }
 
-    /** 24-hour "HH:MM". */
-    fun timeLabel(hour: Int, minute: Int): String = "%02d:%02d".format(hour, minute)
+    /** 1–12 plus AM/PM to 0–23. */
+    fun to24Hour(hour12: Int, pm: Boolean): Int = (hour12 % 12) + if (pm) 12 else 0
+
 }

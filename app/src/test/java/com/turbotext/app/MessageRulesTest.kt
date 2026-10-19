@@ -89,4 +89,10 @@ class MessageRulesTest {
         assertNull(OwnNumber.pick(lists.map { it + "5559999999" }, 3))
         assertEquals("5551234567", OwnNumber.key("+1 (555) 123-4567"))
     }
+
+    @Test
+    fun removedEmojisAreGone() {
+        val all = EmojiUsage.CATEGORIES.flatMap { it.emojis }
+        EmojiUsage.REMOVED.forEach { assertFalse(it, it in all) }
+    }
 }
