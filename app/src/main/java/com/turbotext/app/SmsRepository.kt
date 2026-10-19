@@ -799,10 +799,17 @@ class SmsRepository(private val context: Context) {
     private fun deliveryReports(threadId: Long): Map<String, Map<String, Int>> {
         val result = HashMap<String, HashMap<String, Int>>()
         try {
+            // Reports from the last 30 days in any thread, not only this
+            // one: a report saved by the phone itself, or before its sent
+            // message's Message-ID was known, can sit in another thread
+            // (or none). They're keyed by Message-ID, so only this thread's
+            // own sent messages can match them anyway.
+            val since = System.currentTimeMillis() / 1000 - 30L * 24 * 60 * 60
             context.contentResolver.query(
                 Telephony.Mms.CONTENT_URI,
-                arrayOf(Telephony.Mms._ID, Telephony.Mms.MESSAGE_ID, Telephony.Mms.STATUS),
-                "${Telephony.Mms.THREAD_ID} = ? AND ${Telephony.Mms.MESSAGE_TYPE} = $M_TYPE_DELIVERY_IND",
+                arrayOf(Telephony.Mms._ID, Telephony.Mms.MESSAGE_ID, Telephony.Mms.STATUS, Telephony.Mms.THREAD_ID),
+                "${Telephony.Mms.MESSAGE_TYPE} = $M_TYPE_DELIVERY_IND AND " +
+                    "(${Telephony.Mms.THREAD_ID} = ? OR ${Telephony.Mms.DATE} > $since)",
                 arrayOf(threadId.toString()),
                 "${Telephony.Mms.DATE} ASC" // later reports win
             )?.use { c ->
@@ -811,7 +818,7 @@ class SmsRepository(private val context: Context) {
                     // carrier may quote or bracket the ID in one place only.
                     val mId = com.android.mms.transaction.PushReceiver.normalizeMessageId(c.getString(1) ?: continue)
                     val status = c.getInt(2)
-                    logReportRow(threadId, c.getLong(0), c.getString(1), status)
+                    logReportRow(c.getLong(3), c.getLong(0), c.getString(1), status)
                     // The recipient this report is about (its To address).
                     val recipient = context.contentResolver.query(
                         android.net.Uri.parse("content://mms/${c.getLong(0)}/addr"),
@@ -852,7 +859,7 @@ class SmsRepository(private val context: Context) {
         }
         android.util.Log.i(
             "TurboTextMmsReport",
-            "thread $threadId saved report $rowId id=${com.android.mms.transaction.PushReceiver.idForLog(mId?.toByteArray())} " +
+            "saved report $rowId (thread $threadId) id=${com.android.mms.transaction.PushReceiver.idForLog(mId?.toByteArray())} " +
                 "status=$status date=$date"
         )
     }
@@ -872,7 +879,7 @@ class SmsRepository(private val context: Context) {
         }
         val line = "thread $threadId sent message $id date=$sentDate id=$idLog: " +
             if (matched != null) "reports ${matched.values}" else
-                "no report matched (thread has reports for: " +
+                "no report matched (reports from the last 30 days: " +
                     reports.keys.joinToString { com.android.mms.transaction.PushReceiver.idForLog(it.toByteArray()) } + ")"
         synchronized(loggedDeliveryLines) {
             if (loggedDeliveryLines[id] == line) return
