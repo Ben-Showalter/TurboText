@@ -65,33 +65,37 @@ object SoundNotificationHelper {
      *  never matches the id used to cancel them and both get stuck.
      *  [displayName], if given, is used as-is instead of re-deriving it
      *  from [address] via ContactHelper — always pass it when [address]
-     *  is a thread key, which no contact lookup will ever match. */
-    fun notifyNewMessage(context: Context, address: String, displayName: String? = null) {
+     *  is a thread key, which no contact lookup will ever match.
+     *  [sender] is the number it came from, for Do Not Disturb's
+     *  contacts-only rule. */
+    fun notifyNewMessage(context: Context, address: String, displayName: String? = null, sender: String? = null) {
         val soundPath = SettingsHelper.getNotificationSoundPath(context)
         val vibratePattern = SettingsHelper.getVibratePattern(context)
-        var didSomething = false
+        // Do Not Disturb and the ringer switch decide whether this alert
+        // may sound or buzz right now (see DndHelper). Repeats are still
+        // scheduled, and check again when they fire.
+        val level = DndHelper.level(context, sender)
 
         val name = displayName ?: (ContactHelper.lookupName(context, address) ?: address)
         OuterScreenNotifier.notify(context, address.hashCode(), "Msg.: $name")
 
-        if (soundPath != null) {
+        if (soundPath != null && level == DndHelper.Level.FULL) {
             if (File(soundPath).exists()) {
                 playSoundWithWakeup(context, soundPath)
-                didSomething = true
             } else {
                 Log.w(TAG, "configured sound file no longer exists: $soundPath")
             }
         }
-        if (vibratePattern != null) {
+        if (vibratePattern != null && level != DndHelper.Level.SILENT) {
             VibrationPatterns.play(context, vibratePattern)
-            didSomething = true
         }
-        if (!didSomething) return // both "No Sound" and vibrate "Off" — nothing to schedule either
+        // Both "No Sound" and vibrate "Off" — nothing to repeat either.
+        if (soundPath == null && vibratePattern == null) return
 
         val repeatMinutes = SettingsHelper.getRepeatMinutes(context)
         if (repeatMinutes != null) {
             markPending(context, address, true)
-            scheduleNextAlarm(context, address, repeatMinutes)
+            scheduleNextAlarm(context, address, repeatMinutes, sender)
         }
     }
 
@@ -177,9 +181,10 @@ object SoundNotificationHelper {
         }
     }
 
-    private fun alarmPendingIntent(context: Context, address: String): PendingIntent {
+    private fun alarmPendingIntent(context: Context, address: String, sender: String? = null): PendingIntent {
         val intent = Intent(context, SoundAlarmReceiver::class.java).apply {
             putExtra("address", address)
+            putExtra("sender", sender)
         }
         return PendingIntent.getBroadcast(
             context, address.hashCode(), intent,
@@ -187,12 +192,12 @@ object SoundNotificationHelper {
         )
     }
 
-    fun scheduleNextAlarm(context: Context, address: String, repeatMinutes: Int) {
+    fun scheduleNextAlarm(context: Context, address: String, repeatMinutes: Int, sender: String? = null) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val triggerAt = SystemClock.elapsedRealtime() + repeatMinutes * 60_000L
         try {
             alarmManager.setExactAndAllowWhileIdle(
-                AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, alarmPendingIntent(context, address)
+                AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, alarmPendingIntent(context, address, sender)
             )
         } catch (e: Exception) {
             Log.w(TAG, "failed to schedule persistent alert", e)
@@ -217,12 +222,15 @@ class SoundAlarmReceiver : BroadcastReceiver() {
         val address = intent.getStringExtra("address") ?: return
         if (!SoundNotificationHelper.isPending(context, address)) return
 
+        val sender = intent.getStringExtra("sender")
+        // Checked on every repeat: Do Not Disturb may have come on since.
+        val level = DndHelper.level(context, sender)
         val soundPath = SettingsHelper.getNotificationSoundPath(context)
-        if (soundPath != null) SoundNotificationHelper.playSoundWithWakeup(context, soundPath)
+        if (soundPath != null && level == DndHelper.Level.FULL) SoundNotificationHelper.playSoundWithWakeup(context, soundPath)
         val vibratePattern = SettingsHelper.getVibratePattern(context)
-        if (vibratePattern != null) VibrationPatterns.play(context, vibratePattern)
+        if (vibratePattern != null && level != DndHelper.Level.SILENT) VibrationPatterns.play(context, vibratePattern)
 
         val repeatMinutes = SettingsHelper.getRepeatMinutes(context) ?: return
-        SoundNotificationHelper.scheduleNextAlarm(context, address, repeatMinutes)
+        SoundNotificationHelper.scheduleNextAlarm(context, address, repeatMinutes, sender)
     }
 }
