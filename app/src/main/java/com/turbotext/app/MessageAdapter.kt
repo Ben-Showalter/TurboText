@@ -33,6 +33,14 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
 
         /** The photo's margin inside its frame (item_message.xml). */
         private const val PHOTO_INSET_DP = 3f
+
+        /** The tail under the bubble's sender-side corner. */
+        private const val TAIL_WIDTH_DP = 8f
+        private const val TAIL_HEIGHT_DP = 6f
+
+        /** bubbleText's padding (item_message.xml), plus the tail's height
+         *  at the bottom. */
+        private const val TEXT_PADDING_DP = 10f
     }
 
     /** Position in the *adapter's own* index space (including the Load
@@ -144,6 +152,11 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
                 stripeWidth = 5f * density,
                 strokeColor = theme.accent,
                 strokeWidth = if (isSelected) 2.5f * density else 0f,
+                // The tail sits on the same side as the stripe: the
+                // sender's side.
+                tailOnLeft = stripeOnLeft,
+                tailWidth = TAIL_WIDTH_DP * density,
+                tailHeight = TAIL_HEIGHT_DP * density,
             )
         )
     }
@@ -165,6 +178,11 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
         val key = "$themeGeneration|$kind|$outgoing|$selected"
         if (holder.textBgKey == key) return
         holder.text.background = bubble(holder.itemView.context, kind, outgoing, selected).second
+        // Room under the text for the tail (the Load More row has none).
+        val density = holder.itemView.resources.displayMetrics.density
+        val pad = (TEXT_PADDING_DP * density).toInt()
+        val tail = if (outgoing != null) (TAIL_HEIGHT_DP * density).toInt() else 0
+        holder.text.setPadding(pad, pad, pad, pad + tail)
         holder.textBgKey = key
     }
 
@@ -172,6 +190,8 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
         val key = "$themeGeneration|image|$outgoing|$selected"
         if (holder.imageBgKey == key) return
         holder.imageFrame.background = bubble(holder.itemView.context, "image", outgoing, selected).second
+        val tail = (TAIL_HEIGHT_DP * holder.itemView.resources.displayMetrics.density).toInt()
+        holder.imageFrame.setPadding(0, 0, 0, tail)
         holder.imageBgKey = key
     }
 
