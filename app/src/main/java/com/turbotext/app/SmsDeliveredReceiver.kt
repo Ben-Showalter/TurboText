@@ -27,23 +27,35 @@ class SmsDeliveredReceiver : android.content.BroadcastReceiver() {
         // success or a failure — resultCode alone (unlike the sent
         // callback) isn't the whole story, since the broadcast itself
         // succeeding just means we received *a* report, not that it was
-        // a positive one.
-        val delivered = try {
+        // a positive one. The PDU has to be read in the format it came in
+        // (GSM or CDMA), which the broadcast says.
+        val result = try {
             val pdu = intent.getByteArrayExtra("pdu")
-            if (pdu != null) {
-                val message = SmsMessage.createFromPdu(pdu)
-                message?.status == 0 // 0 = successfully delivered, per the SMS PDU status spec
+            val format = intent.getStringExtra("format")
+            val message = when {
+                pdu == null -> null
+                format != null -> SmsMessage.createFromPdu(pdu, format)
+                else -> SmsMessage.createFromPdu(pdu)
+            }
+            if (message != null) {
+                DeliveryStatus.classify(message.status, format == "3gpp2")
+            } else if (resultCode == Activity.RESULT_OK) {
+                DeliveryStatus.Result.DELIVERED
             } else {
-                resultCode == Activity.RESULT_OK
+                DeliveryStatus.Result.FAILED
             }
         } catch (e: Exception) {
-            resultCode == Activity.RESULT_OK
+            if (resultCode == Activity.RESULT_OK) DeliveryStatus.Result.DELIVERED else DeliveryStatus.Result.FAILED
         }
 
         val values = ContentValues().apply {
             put(
                 Telephony.Sms.STATUS,
-                if (delivered) Telephony.Sms.STATUS_COMPLETE else Telephony.Sms.STATUS_FAILED
+                when (result) {
+                    DeliveryStatus.Result.DELIVERED -> Telephony.Sms.STATUS_COMPLETE
+                    DeliveryStatus.Result.PENDING -> Telephony.Sms.STATUS_PENDING
+                    DeliveryStatus.Result.FAILED -> Telephony.Sms.STATUS_FAILED
+                }
             )
         }
         try {

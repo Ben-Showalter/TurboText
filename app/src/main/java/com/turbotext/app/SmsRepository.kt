@@ -606,6 +606,7 @@ class SmsRepository(private val context: Context) {
                 val isOutgoing = type == 2 || type == 4 || type == 5
                 val sendStatus = when {
                     type == 2 && status == Telephony.Sms.STATUS_COMPLETE -> "delivered"
+                    type == 2 && status == Telephony.Sms.STATUS_FAILED -> "not_delivered"
                     type == 2 -> "sent"
                     type == 4 -> "sending"
                     type == 5 -> "failed"
@@ -700,7 +701,9 @@ class SmsRepository(private val context: Context) {
                 val sendStatus = when (box) {
                     Telephony.Mms.MESSAGE_BOX_SENT -> {
                         val mId = it.getString(it.getColumnIndexOrThrow(Telephony.Mms.MESSAGE_ID))
-                        val byRecipient = mId?.let { m -> reports[m] }
+                        val byRecipient = mId?.let { m ->
+                            reports[com.android.mms.transaction.PushReceiver.normalizeMessageId(m)]
+                        }
                         if (byRecipient == null) {
                             "sent"
                         } else {
@@ -769,14 +772,16 @@ class SmsRepository(private val context: Context) {
                 "${Telephony.Mms.DATE} ASC" // later reports win
             )?.use { c ->
                 while (c.moveToNext()) {
-                    val mId = c.getString(1) ?: continue
+                    // Compared loosely, as PushReceiver matches them: the
+                    // carrier may quote or bracket the ID in one place only.
+                    val mId = com.android.mms.transaction.PushReceiver.normalizeMessageId(c.getString(1) ?: continue)
                     val status = c.getInt(2)
                     // The recipient this report is about (its To address).
                     val recipient = context.contentResolver.query(
                         android.net.Uri.parse("content://mms/${c.getLong(0)}/addr"),
                         arrayOf("address"), "type = 151", null, null
                     )?.use { a -> if (a.moveToFirst()) a.getString(0) else null }
-                    val key = recipient?.filter { ch -> ch.isDigit() }?.takeLast(10)?.ifEmpty { null } ?: "?"
+                    val key = recipientKey(recipient)
                     result.getOrPut(mId) { HashMap() }[key] = status
                 }
             }
@@ -786,12 +791,22 @@ class SmsRepository(private val context: Context) {
         return result
     }
 
-    /** How many people a sent MMS went to (its To addresses), at least 1. */
+    /** One recipient's key in [deliveryReports]: a phone number's last
+     *  10 digits, or an email address as written. Every email address
+     *  used to share one key, so two of them counted as one person. */
+    private fun recipientKey(address: String?): String {
+        if (address.isNullOrBlank()) return "?"
+        if (isEmailAddress(address.trim())) return address.trim().lowercase()
+        return address.filter { it.isDigit() }.takeLast(10).ifEmpty { "?" }
+    }
+
+    /** How many people a sent MMS went to (its To, Cc and Bcc addresses),
+     *  at least 1. */
     private fun mmsRecipientCount(messageId: Long): Int {
         val count = try {
             context.contentResolver.query(
                 android.net.Uri.parse("content://mms/$messageId/addr"),
-                arrayOf("address"), "type = 151", null, null
+                arrayOf("address"), "type IN (151, 130, 129)", null, null
             )?.use { it.count } ?: 1
         } catch (e: Exception) {
             1

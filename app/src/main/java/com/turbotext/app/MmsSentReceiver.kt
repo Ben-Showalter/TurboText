@@ -47,6 +47,10 @@ class MmsSentReceiver : BroadcastReceiver() {
                     },
                     null, null
                 )
+                // A delivery report that beat this send confirmation was
+                // kept by PushReceiver; now that the Message-ID is saved,
+                // it can be matched.
+                if (ok) com.android.mms.transaction.PushReceiver.retryPendingReports(context)
                 val threadId = context.contentResolver.query(uri, arrayOf(Telephony.Mms.THREAD_ID), null, null, null)
                     ?.use { if (it.moveToFirst()) it.getLong(0) else null }
                 if (threadId != null) {
