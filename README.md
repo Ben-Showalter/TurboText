@@ -20,7 +20,7 @@ Installation instructions:
 
 1.	Install the TurboText app on the phone:
 2.	 a. You can install through Android Studio, or copy the .APK to the phone, then open it in the phone.
-3.	 b. When the App opens, go to: options/settings/advanced/ , set the default texting app to TurboText.
+3.	 b. When the App opens, go to: options/settings/advanced/ , set the default texting app to TurboText, and turn on “Background Helper” (it keeps TurboText running in the background without a notification; while it's off, TurboText shows a small “running” notification instead).
 4.	 c. Optional: you can set the “provisioning phone number” if you want to be able to set the API key remotely. (See below for more details) This app is using Groq’s API Whisper Speetch-to-text service. You will need a Groq API key to make it work.
 
 There are two methods for entering the API key into the app.

@@ -72,6 +72,9 @@ import java.util.concurrent.Executors;
  */
 public class PushReceiver extends BroadcastReceiver {
     private static final String TAG = LogTag.TAG;
+    /** TurboText: every step of a delivery report, in logcat under one tag
+     *  (no message content), to see where a "Delivered" goes missing. */
+    static final String REPORT_TAG = "TurboTextMmsReport";
     private static final boolean DEBUG = false;
     private static final boolean LOCAL_LOGV = true;
 
@@ -140,6 +143,7 @@ public class PushReceiver extends BroadcastReceiver {
             ContentResolver cr = mContext.getContentResolver();
             int type = pdu.getMessageType();
             long threadId = -1;
+            android.util.Log.i(REPORT_TAG, "push received, type=" + type);
             int subId = intent.getIntExtra("subscription", Settings.DEFAULT_SUBSCRIPTION_ID);
 
             try {
@@ -147,6 +151,12 @@ public class PushReceiver extends BroadcastReceiver {
                     case MESSAGE_TYPE_DELIVERY_IND:
                     case MESSAGE_TYPE_READ_ORIG_IND: {
                         threadId = findThreadId(mContext, pdu, type);
+                        if (type == MESSAGE_TYPE_DELIVERY_IND) {
+                            DeliveryInd ind = (DeliveryInd) pdu;
+                            android.util.Log.i(REPORT_TAG, "delivery report: id=" + idForLog(ind.getMessageId())
+                                    + " status=" + ind.getStatus()
+                                    + (threadId == -1 ? " -> no sent message yet, kept" : " -> thread " + threadId));
+                        }
                         if (threadId == -1) {
                             // The associated SendReq isn't found (yet).
                             // TurboText: a delivery report can beat the
@@ -417,24 +427,85 @@ public class PushReceiver extends BroadcastReceiver {
         String wanted = normalizeMessageId(messageId);
         if (wanted.isEmpty()) return -1;
         long since = System.currentTimeMillis() / 1000L - REPORT_LOOKBACK_SECONDS;
-        cursor = SqliteWrapper.query(context, context.getContentResolver(),
+        Cursor loose = SqliteWrapper.query(context, context.getContentResolver(),
                 Mms.CONTENT_URI, new String[]{Mms.THREAD_ID, Mms.MESSAGE_ID},
                 Mms.MESSAGE_TYPE + "=" + PduHeaders.MESSAGE_TYPE_SEND_REQ
                         + " AND " + Mms.MESSAGE_ID + " IS NOT NULL AND " + Mms.DATE + " > " + since,
                 null, Mms.DATE + " DESC");
-        if (cursor != null) {
+        if (loose != null) {
             try {
-                while (cursor.moveToNext()) {
-                    if (wanted.equals(normalizeMessageId(cursor.getString(1)))) {
-                        return cursor.getLong(0);
+                while (loose.moveToNext()) {
+                    if (wanted.equals(normalizeMessageId(loose.getString(1)))) {
+                        return loose.getLong(0);
                     }
                 }
             } finally {
-                cursor.close();
+                loose.close();
             }
         }
 
+        if (type == MESSAGE_TYPE_DELIVERY_IND) {
+            return matchByRecipient(context, (DeliveryInd) pdu, messageId);
+        }
         return -1;
+    }
+
+    /**
+     * TurboText: when no sent message has an ID at all to match (the send
+     * confirmation came back without one), the report belongs to the
+     * newest sent picture message to its recipient that's still missing
+     * its ID. That message is given the report's ID, so it's matched from
+     * then on. Only messages from the last two days are considered.
+     */
+    private static long matchByRecipient(Context context, DeliveryInd ind, String messageId) {
+        com.google.android.mms.pdu_alt.EncodedStringValue[] to = ind.getTo();
+        if (to == null || to.length == 0 || to[0] == null) return -1;
+        String recipient = to[0].getString();
+        long since = System.currentTimeMillis() / 1000L - 2 * 24 * 60 * 60L;
+        Cursor c = SqliteWrapper.query(context, context.getContentResolver(),
+                Mms.CONTENT_URI, new String[]{Mms._ID, Mms.THREAD_ID},
+                Mms.MESSAGE_TYPE + "=" + PduHeaders.MESSAGE_TYPE_SEND_REQ
+                        + " AND " + Mms.MESSAGE_BOX + "=" + Mms.MESSAGE_BOX_SENT
+                        + " AND (" + Mms.MESSAGE_ID + " IS NULL OR " + Mms.MESSAGE_ID + "='')"
+                        + " AND " + Mms.DATE + " > " + since,
+                null, Mms.DATE + " DESC");
+        if (c == null) return -1;
+        try {
+            while (c.moveToNext()) {
+                long id = c.getLong(0);
+                Cursor addr = SqliteWrapper.query(context, context.getContentResolver(),
+                        Uri.parse("content://mms/" + id + "/addr"), new String[]{"address"},
+                        "type=" + PduHeaders.TO, null, null);
+                boolean match = false;
+                if (addr != null) {
+                    try {
+                        while (!match && addr.moveToNext()) {
+                            match = android.telephony.PhoneNumberUtils.compare(recipient, addr.getString(0));
+                        }
+                    } finally {
+                        addr.close();
+                    }
+                }
+                if (match) {
+                    ContentValues values = new ContentValues(1);
+                    values.put(Mms.MESSAGE_ID, messageId);
+                    SqliteWrapper.update(context, context.getContentResolver(),
+                            Uri.parse("content://mms/" + id), values, null, null);
+                    android.util.Log.i(REPORT_TAG, "matched by recipient to sent message " + id);
+                    return c.getLong(1);
+                }
+            }
+        } finally {
+            c.close();
+        }
+        return -1;
+    }
+
+    /** A Message-ID for the log: its length and first few characters. */
+    public static String idForLog(byte[] id) {
+        if (id == null) return "none";
+        String s = new String(id);
+        return s.length() + ":" + (s.length() > 6 ? s.substring(0, 6) + "…" : s);
     }
 
     /** TurboText: keeps an unmatched delivery report for [retryPendingReports]. */
@@ -488,6 +559,8 @@ public class PushReceiver extends BroadcastReceiver {
                     matched++;
                 }
                 prefs.edit().putString(PENDING_REPORTS_KEY, keep.toString()).apply();
+                android.util.Log.i(REPORT_TAG, "kept reports retried: " + matched + " matched, "
+                        + keep.length() + " still waiting");
             } catch (Exception e) {
                 Log.e(TAG, "couldn't match kept delivery reports", e);
             }

@@ -22,6 +22,10 @@ import java.io.File
  * SmsRepository matches them up the same way.
  */
 class MmsSentReceiver : BroadcastReceiver() {
+    private companion object {
+        const val REPORT_TAG = "TurboTextMmsReport"
+    }
+
     override fun onReceive(context: Context, intent: Intent) {
         val uri = intent.getStringExtra(MmsTransmitter.EXTRA_CONTENT_URI)?.let { Uri.parse(it) } ?: intent.data
         val ok = resultCode == Activity.RESULT_OK
@@ -32,6 +36,12 @@ class MmsSentReceiver : BroadcastReceiver() {
         if (uri == null) return
 
         val sendConf = if (ok) intent.getByteArrayExtra(SmsManager.EXTRA_MMS_DATA) else null
+        val confId = messageIdOf(sendConf)
+        Log.i(
+            REPORT_TAG,
+            "send result for ${uri.lastPathSegment}: ok=$ok, confirmation=${sendConf?.size ?: 0} bytes, " +
+                "Message-ID=${com.android.mms.transaction.PushReceiver.idForLog(confId?.toByteArray())}"
+        )
 
         val pending = goAsync()
         Thread {
@@ -43,7 +53,7 @@ class MmsSentReceiver : BroadcastReceiver() {
                             Telephony.Mms.MESSAGE_BOX,
                             if (ok) Telephony.Mms.MESSAGE_BOX_SENT else Telephony.Mms.MESSAGE_BOX_FAILED
                         )
-                        messageIdOf(sendConf)?.let { put(Telephony.Mms.MESSAGE_ID, it) }
+                        confId?.let { put(Telephony.Mms.MESSAGE_ID, it) }
                     },
                     null, null
                 )

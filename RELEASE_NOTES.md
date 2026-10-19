@@ -13,7 +13,7 @@
 - Options > Mark All as Read, on the conversation and group lists.
 
 ### Typing
-- Press * past ALL CAPS for the emoji picker: 550 emojis in a grid, by category, with your most-used under Recent. Use the D-pad to move, Left/Right at the edge to change category, and OK to insert. # inserts and keeps the picker open.
+- Press * past ALL CAPS for the emoji picker: about 500 emojis in a grid, by category, with your most-used under Recent. Use the D-pad to move, Left/Right at the edge to change category, and OK to insert. # inserts and keeps the picker open.
 
 ### Look & Feel
 - Message bubbles have a small tail on the sender's side.
@@ -22,13 +22,20 @@
 ### Outer screen
 - Works like MatChat's. A new message shows the time, who it's from and the message, scrolling across the outer screen. It comes back each time you close the flip or press an outside button, until you read it.
 - New: Settings > Notifications > Hide Message on Cover, which shows only "New message".
-- The Accessibility setting is no longer needed and TurboText no longer asks for it.
+
+### Running in the background
+- The Accessibility service is now called Background Helper. It keeps TurboText running in the background with no notification. Turn it on under Settings > Advanced > Background Helper.
+- While Background Helper is off, TurboText shows a quiet "TurboText is running" notification so Android keeps it running.
 
 ### Notifications
 - Do Not Disturb and silent/vibrate mode are respected. The notification still appears, but without sound or buzz.
 
 ### Report
 - New Settings > Report, protected by a PIN you choose the first time. Once a day at the time you set, it texts a number you choose how many texts this phone sent to and received from each contact, for example "Boby - 45 sent, 34 received".
+- Contact names are found however the number is written, and the time is picked with an hour, minute and AM/PM selector.
+
+### Removed
+- Settings > Advanced's option to open another app.
 
 ## Messaging
 - Send and receive pictures, video, voice messages, contact cards and files. Videos shrink automatically to fit MMS size limits.

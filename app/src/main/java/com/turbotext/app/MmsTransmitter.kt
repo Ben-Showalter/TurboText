@@ -178,6 +178,11 @@ object MmsTransmitter {
             .sendMultimediaMessage(context, contentUri, null, configOverrides, pendingIntent)
 
         Log.i(TAG, "MmsTransmitter: handed to platform uri=$messageUri id=$messageId subId=$resolvedSubId")
+        Log.i(
+            "TurboTextMmsReport",
+            "sent message $messageId asks for a delivery report: " +
+                ((persistedPdu as? com.google.android.mms.pdu_alt.SendReq)?.deliveryReport == PduHeaders.VALUE_YES)
+        )
         return messageUri
     }
 

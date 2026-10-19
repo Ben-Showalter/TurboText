@@ -716,6 +716,9 @@ class SmsRepository(private val context: Context) {
             sortOrder
         ) ?: return result
         val reports = deliveryReports(threadId)
+        if (reports.isNotEmpty()) {
+            android.util.Log.i("TurboTextMmsReport", "thread $threadId has reports for ${reports.size} sent message(s)")
+        }
 
         cursor.use {
             while (it.moveToNext()) {
