@@ -38,6 +38,11 @@ class SmsDeliveredReceiver : android.content.BroadcastReceiver() {
                 else -> SmsMessage.createFromPdu(pdu)
             }
             if (message != null) {
+                Log.i(
+                    "TurboTextMmsReport",
+                    "text delivery report for ${rowUri.lastPathSegment}: status=0x" +
+                        Integer.toHexString(message.status) + " format=$format"
+                )
                 DeliveryStatus.classify(message.status, format == "3gpp2")
             } else if (resultCode == Activity.RESULT_OK) {
                 DeliveryStatus.Result.DELIVERED
@@ -48,6 +53,7 @@ class SmsDeliveredReceiver : android.content.BroadcastReceiver() {
             if (resultCode == Activity.RESULT_OK) DeliveryStatus.Result.DELIVERED else DeliveryStatus.Result.FAILED
         }
 
+        Log.i("TurboTextMmsReport", "text ${rowUri.lastPathSegment} delivery: $result")
         val values = ContentValues().apply {
             put(
                 Telephony.Sms.STATUS,

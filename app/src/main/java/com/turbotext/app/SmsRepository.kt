@@ -34,6 +34,9 @@ class SmsRepository(private val context: Context) {
          *  leave it at "Sent". */
         private val DELIVERED_STATUSES = setOf(0x81, 0x86)
         private val UNDELIVERED_STATUSES = setOf(0x80, 0x82, 0x84, 0x87)
+
+        /** Last delivery-match line logged per sent message (logDeliveryMatch). */
+        private val loggedDeliveryLines = HashMap<Long, String>()
     }
 
     /** Moves MMS notices stuck on [PLACEHOLDER_THREAD_ID] (a download
@@ -716,9 +719,6 @@ class SmsRepository(private val context: Context) {
             sortOrder
         ) ?: return result
         val reports = deliveryReports(threadId)
-        if (reports.isNotEmpty()) {
-            android.util.Log.i("TurboTextMmsReport", "thread $threadId has reports for ${reports.size} sent message(s)")
-        }
 
         cursor.use {
             while (it.moveToNext()) {
@@ -738,6 +738,7 @@ class SmsRepository(private val context: Context) {
                         val byRecipient = mId?.let { m ->
                             reports[com.android.mms.transaction.PushReceiver.normalizeMessageId(m)]
                         }
+                        logDeliveryMatch(threadId, id, mId, reports, byRecipient)
                         if (byRecipient == null) {
                             "sent"
                         } else {
@@ -832,6 +833,23 @@ class SmsRepository(private val context: Context) {
         if (address.isNullOrBlank()) return "?"
         if (isEmailAddress(address.trim())) return address.trim().lowercase()
         return address.filter { it.isDigit() }.takeLast(10).ifEmpty { "?" }
+    }
+
+    /** Logs, once per change, how a sent picture message matched its
+     *  delivery reports (TurboTextMmsReport; IDs shortened, no content). */
+    private fun logDeliveryMatch(
+        threadId: Long, id: Long, mId: String?, reports: Map<String, Map<String, Int>>, matched: Map<String, Int>?
+    ) {
+        val idLog = com.android.mms.transaction.PushReceiver.idForLog(mId?.toByteArray())
+        val line = "thread $threadId sent message $id id=$idLog: " +
+            if (matched != null) "reports ${matched.values}" else
+                "no report matched (thread has reports for: " +
+                    reports.keys.joinToString { com.android.mms.transaction.PushReceiver.idForLog(it.toByteArray()) } + ")"
+        synchronized(loggedDeliveryLines) {
+            if (loggedDeliveryLines[id] == line) return
+            loggedDeliveryLines[id] = line
+        }
+        android.util.Log.i("TurboTextMmsReport", line)
     }
 
     /** How many people a sent MMS went to (its To, Cc and Bcc addresses),
