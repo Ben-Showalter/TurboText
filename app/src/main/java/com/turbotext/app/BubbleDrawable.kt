@@ -84,8 +84,8 @@ class BubbleDrawable(private val state: State) : Drawable() {
     }
 
     /** The rounded body, plus the tail when there is one: the body stops
-     *  [State.tailHeight] short of [box]'s bottom and the tail curves from
-     *  its bottom edge down to a point under the outer corner. */
+     *  [State.tailHeight] short of [box]'s bottom and the tail runs from
+     *  its outer corner down to a point, hooking back to its bottom edge. */
     private fun shape(box: RectF, r: Float): Path {
         val path = Path()
         val left = state.tailOnLeft
@@ -97,14 +97,17 @@ class BubbleDrawable(private val state: State) : Drawable() {
         val bodyBottom = box.bottom - h
         path.addRoundRect(RectF(box.left, box.top, box.right, bodyBottom), r, r, Path.Direction.CW)
 
-        // Drawn for the right-hand corner, mirrored for the left. Both
-        // ends of the tail start inside the body so the union is seamless.
+        // Drawn for the right-hand corner, mirrored for the left. The outer
+        // edge carries straight down the bubble's side to the tip, and the
+        // inner edge hooks back up to the bottom edge; the shape overlaps
+        // the body's corner so the union is seamless.
         val w = state.tailWidth
         fun x(fromEdge: Float) = if (left) box.left + fromEdge else box.right - fromEdge
         val tail = Path()
-        tail.moveTo(x(r * 0.5f + w), bodyBottom - 1f)
-        tail.quadTo(x(r * 0.4f + w * 0.2f), bodyBottom + h * 0.8f, x(0f), box.bottom)
-        tail.quadTo(x(r * 0.25f), bodyBottom + h * 0.25f, x(r * 0.2f), bodyBottom - r * 0.4f)
+        tail.moveTo(x(0f), bodyBottom - r)
+        tail.lineTo(x(0f), box.bottom)
+        tail.quadTo(x(r * 0.25f), bodyBottom + h * 0.3f, x(r * 0.5f + w), bodyBottom - 1f)
+        tail.lineTo(x(r * 0.5f + w), bodyBottom - r)
         tail.close()
         path.op(tail, Path.Op.UNION)
         return path
