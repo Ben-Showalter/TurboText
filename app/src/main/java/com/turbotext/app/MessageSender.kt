@@ -30,6 +30,31 @@ object MessageSender {
     }
 
     /**
+     * The thread a send to [recipients] lands in, worked out the same way
+     * the send itself does (group members normalized, as in [send]), so
+     * New Message can open the conversation before the send finishes.
+     * Does a provider query — call off the main thread. -1 if unknown.
+     */
+    fun threadIdFor(context: Context, recipients: List<String>): Long {
+        val repo = SmsRepository(context)
+        val cleaned = recipients.map { it.trim() }.filter { it.isNotEmpty() }
+        if (cleaned.isEmpty()) return -1
+        val addresses = if (cleaned.size > 1) cleaned.map { repo.normalizePhoneNumber(it) } else cleaned
+        return try {
+            android.provider.Telephony.Threads.getOrCreateThreadId(context, addresses.toSet())
+        } catch (e: Exception) {
+            Log.w(TAG, "couldn't work out the thread for a new message", e)
+            -1
+        }
+    }
+
+    /** What a thread's title shows for [recipients]: contact names where
+     *  known, otherwise the numbers. */
+    fun displayNameFor(context: Context, recipients: List<String>): String =
+        recipients.map { it.trim() }.filter { it.isNotEmpty() }
+            .joinToString(", ") { ContactHelper.lookupName(context, it) ?: it }
+
+    /**
      * Sends [body] (and [attachments], if any) to [recipients]. Blocks —
      * video compression can take a minute — so call from a background
      * thread. [onStatus] gets short progress text for the UI, e.g.

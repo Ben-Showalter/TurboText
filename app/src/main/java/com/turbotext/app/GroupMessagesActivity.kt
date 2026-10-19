@@ -216,18 +216,27 @@ class GroupMessagesActivity : AppCompatActivity() {
      *  carriers and handsets. */
     private fun sendNewGroup(body: String) {
         val addresses = pendingAddresses.toList()
-        Toast.makeText(this, "Sending group message…", Toast.LENGTH_SHORT).show()
+        val app = applicationContext
         Thread {
-            val error = try {
-                MessageSender.send(this, addresses, body, emptyList())
-            } catch (e: Exception) {
-                android.util.Log.e("TurboTextGroup", "group send failed", e)
-                e.message ?: "Group send failed"
-            }
+            val threadId = MessageSender.threadIdFor(app, addresses)
+            val name = MessageSender.displayNameFor(app, addresses)
             runOnUiThread {
-                if (!isFinishing && !isDestroyed) {
-                    Toast.makeText(this, error ?: "Sent", if (error != null) Toast.LENGTH_LONG else Toast.LENGTH_SHORT).show()
+                PendingSends.send(app, threadId, addresses, body, emptyList(), onDone = { error ->
+                    if (error != null) Toast.makeText(app, error, Toast.LENGTH_LONG).show()
+                })
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (threadId < 0) {
+                    Toast.makeText(this, "Sending group message…", Toast.LENGTH_SHORT).show()
+                    return@runOnUiThread
                 }
+                // Straight into the new group's thread, where the message
+                // shows as Sending and updates as it goes out.
+                startActivity(
+                    Intent(this, ConversationActivity::class.java)
+                        .putExtra("threadId", threadId)
+                        .putExtra("address", addresses.joinToString(","))
+                        .putExtra("displayName", name)
+                )
             }
         }.start()
     }

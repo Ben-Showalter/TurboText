@@ -143,8 +143,7 @@ class ConversationActivity : AppCompatActivity() {
         // query at all, just what's already in memory.
         val cached = MessageCache.get(threadId)
         if (cached != null) {
-            messageAdapter.update(cached, context = this)
-            scrollToBottom()
+            showMessages(cached)
             val newest = cached.maxByOrNull { it.date }
             android.util.Log.i("TurboTextPerf", "shown from cache instantly: ${System.currentTimeMillis() - openedAt}ms, ${cached.size} messages, newest hasImage=${newest?.imageUri != null}")
         }
@@ -159,8 +158,7 @@ class ConversationActivity : AppCompatActivity() {
                 android.util.Log.i("TurboTextPerf", "fast query done: ${System.currentTimeMillis() - openedAt}ms, got ${recent.size} messages")
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread
-                    messageAdapter.update(recent)
-                    scrollToBottom()
+                    showMessages(recent)
                 }
             }
 
@@ -175,19 +173,35 @@ class ConversationActivity : AppCompatActivity() {
             MessageCache.put(threadId, full)
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
-                // Not browsing messages → this is a fresh open or a new
-                // incoming message, so the newest message should be what's
-                // on screen. Only when the user is stepping through history
-                // (selection mode) do we respect their scroll position and
-                // leave them where they are unless they were already at the
-                // bottom.
-                val keepAtBottom = selectedMessageIndex == null || !messageList.canScrollVertically(1)
-                if (full == messageAdapter.currentItems()) return@runOnUiThread
-                messageAdapter.update(full)
-                if (keepAtBottom) scrollToBottom()
+                showMessages(full)
                 android.util.Log.i("TurboTextPerf", "rendered: ${System.currentTimeMillis() - openedAt}ms")
             }
         }.start()
+    }
+
+    /** Set by a send from this screen, so the next reload brings the new
+     *  bubble into view even if the user was reading back. */
+    private var stickAfterSend = false
+
+    /** Shows [messages] (plus any still on their way out) and only moves
+     *  the list when [ScrollRules] says so — a reload never pulls the
+     *  user away from a message they scrolled back to. */
+    private fun showMessages(messages: List<Message>) {
+        val merged = PendingSends.merge(threadId, messages)
+        if (merged == messageAdapter.currentItems()) return
+        val wasEmpty = messageAdapter.currentItems().isEmpty()
+        val wasAtBottom = !messageList.canScrollVertically(1)
+        val stick = ScrollRules.shouldStickToBottom(
+            wasEmpty = wasEmpty,
+            wasAtBottom = wasAtBottom,
+            browsing = selectedMessageIndex != null,
+            justSent = stickAfterSend
+        )
+        messageAdapter.update(merged, context = this)
+        if (stick) {
+            stickAfterSend = false
+            scrollToBottom()
+        }
     }
 
     /** Pins the *bottom* of the newest message to the bottom of the list.
@@ -682,27 +696,36 @@ class ConversationActivity : AppCompatActivity() {
             listeningIndicator.text = if (toSend.any { it.isVideo }) "Compressing video…" else "Preparing attachment…"
             listeningIndicator.visibility = View.VISIBLE
         }
-        Thread {
-            val error = MessageSender.send(this, recipients, body, toSend) { status ->
-                runOnUiThread {
-                    if (!isFinishing && !isDestroyed) {
-                        listeningIndicator.text = status
-                        listeningIndicator.visibility = View.VISIBLE
+        stickAfterSend = true
+        // Shows a "Sending" bubble straight away; MessageEvents refreshes
+        // it to Sent/Delivered (or Failed) as the receivers hear back.
+        PendingSends.send(
+            this, threadId, recipients, body, toSend,
+            onStatus = { status ->
+                if (!isFinishing && !isDestroyed) {
+                    listeningIndicator.text = status
+                    listeningIndicator.visibility = View.VISIBLE
+                }
+            },
+            onDone = { error ->
+                if (!isFinishing && !isDestroyed) {
+                    if (toSend.isNotEmpty()) listeningIndicator.visibility = View.GONE
+                    if (error != null) {
+                        // Nothing went out — put the message back so it isn't lost.
+                        Toast.makeText(this, error, Toast.LENGTH_LONG).show()
+                        restoreFailedSends()
                     }
                 }
             }
-            runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
-                if (toSend.isNotEmpty()) listeningIndicator.visibility = View.GONE
-                if (error != null) {
-                    // Nothing went out — put the message back so it isn't lost.
-                    Toast.makeText(this, error, Toast.LENGTH_LONG).show()
-                    if (inputController.currentText().isEmpty()) inputController.setText(typed)
-                    attachments.restore(toSend)
-                }
-                loadMessages()
-            }
-        }.start()
+        )
+    }
+
+    /** Puts the text (and attachments) of a send that failed — here or
+     *  from New Message — back in the compose box to try again. */
+    private fun restoreFailedSends() {
+        val failed = PendingSends.takeFailed(threadId).lastOrNull() ?: return
+        if (inputController.currentText().isEmpty()) inputController.setText(failed.first)
+        attachments.restore(failed.second)
     }
 
     // dispatchKeyEvent gets first crack at every physical key press, before
@@ -822,6 +845,16 @@ class ConversationActivity : AppCompatActivity() {
         SoundNotificationHelper.acknowledge(this, notificationKey())
     }
 
+    /** Sends, delivery reports and new messages, straight from this app's
+     *  own receivers — see MessageEvents for why the observer below isn't
+     *  enough on its own. */
+    private val messageEventListener = MessageEvents.Listener { changedThread ->
+        if (changedThread == null || changedThread == threadId) {
+            reloadHandler.removeCallbacks(reloadRunnable)
+            reloadHandler.postDelayed(reloadRunnable, 300)
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         // Covers both the initial open (onResume always follows onCreate)
@@ -832,6 +865,8 @@ class ConversationActivity : AppCompatActivity() {
         // otherwise sit unseen until some later change happened to fire
         // it. Re-querying here closes that gap the same way MainActivity's
         // onResume already does for the conversation list.
+        MessageEvents.addListener(messageEventListener)
+        restoreFailedSends()
         loadMessages()
         if (messageObserver == null) {
             messageObserver = object : android.database.ContentObserver(
@@ -871,6 +906,7 @@ class ConversationActivity : AppCompatActivity() {
         stopVoiceMessagePlayback()
         NotificationHelper.cancelForConversation(this, notificationKey())
         messageObserver?.let { contentResolver.unregisterContentObserver(it) }
+        MessageEvents.removeListener(messageEventListener)
         reloadHandler.removeCallbacks(reloadRunnable)
         inputController.confirmPending()
         val text = inputController.currentText()

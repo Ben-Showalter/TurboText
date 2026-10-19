@@ -51,6 +51,7 @@ class MmsSentReceiver : BroadcastReceiver() {
                     ?.use { if (it.moveToFirst()) it.getLong(0) else null }
                 if (threadId != null) {
                     MessageCache.put(threadId, SmsRepository(context).getMessages(threadId))
+                    MessageEvents.changed(threadId)
                 }
                 ProviderChangeTracker.bump()
             } catch (e: Exception) {

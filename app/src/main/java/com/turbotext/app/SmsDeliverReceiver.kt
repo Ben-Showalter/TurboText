@@ -45,6 +45,7 @@ class SmsDeliverReceiver : BroadcastReceiver() {
             try {
                 val threadId = Telephony.Threads.getOrCreateThreadId(context, address)
                 MessageCache.put(threadId, SmsRepository(context).getMessages(threadId))
+                MessageEvents.changed(threadId)
             } catch (e: Exception) {
                 android.util.Log.w("TurboTextCache", "failed to refresh cache for new SMS", e)
             }

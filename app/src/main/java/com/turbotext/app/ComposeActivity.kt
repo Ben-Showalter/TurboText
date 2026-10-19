@@ -476,31 +476,36 @@ class ComposeActivity : AppCompatActivity() {
         }
 
         sending = true
-        if (toSend.isNotEmpty()) {
-            listeningIndicator.text = if (toSend.any { it.isVideo }) "Compressing video…" else "Preparing attachment…"
-            listeningIndicator.visibility = View.VISIBLE
-        }
+        val app = applicationContext
         Thread {
-            // MessageSender picks SMS or MMS (attachments and email
-            // addresses go out as MMS).
-            val error = MessageSender.send(this, listOf(address), body, toSend) { status ->
-                runOnUiThread {
-                    if (!isFinishing && !isDestroyed) {
-                        listeningIndicator.text = status
-                        listeningIndicator.visibility = View.VISIBLE
-                    }
-                }
-            }
+            val recipients = listOf(address)
+            val threadId = MessageSender.threadIdFor(app, recipients)
+            val name = MessageSender.displayNameFor(app, recipients)
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
-                sending = false
-                listeningIndicator.visibility = View.GONE
-                if (error != null) {
-                    Toast.makeText(this, error, Toast.LENGTH_LONG).show()
-                } else {
-                    Toast.makeText(this, "Sent", Toast.LENGTH_SHORT).show()
-                    finish()
+                if (threadId < 0) {
+                    // Couldn't find the thread to open: send from here and
+                    // stay put, as before.
+                    PendingSends.send(app, threadId, recipients, body, toSend, onDone = { error ->
+                        if (isFinishing || isDestroyed) return@send
+                        sending = false
+                        if (error != null) Toast.makeText(this, error, Toast.LENGTH_LONG).show() else finish()
+                    })
+                    return@runOnUiThread
                 }
+                // The send carries on in the background; the thread opens
+                // straight away with a "Sending" bubble that turns into
+                // Sent/Delivered there (or puts the text back if it fails).
+                PendingSends.send(app, threadId, recipients, body, toSend, onDone = { error ->
+                    if (error != null) Toast.makeText(app, error, Toast.LENGTH_LONG).show()
+                })
+                startActivity(
+                    android.content.Intent(this, ConversationActivity::class.java)
+                        .putExtra("threadId", threadId)
+                        .putExtra("address", address)
+                        .putExtra("displayName", name)
+                )
+                finish()
             }
         }.start()
     }

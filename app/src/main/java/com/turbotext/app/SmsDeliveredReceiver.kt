@@ -56,6 +56,7 @@ class SmsDeliveredReceiver : android.content.BroadcastReceiver() {
             Thread {
                 try {
                     MessageCache.put(threadId, SmsRepository(context).getMessages(threadId))
+                    MessageEvents.changed(threadId)
                 } catch (e: Exception) {
                     Log.w("TurboTextSend", "failed to refresh cache after delivery confirmation", e)
                 }

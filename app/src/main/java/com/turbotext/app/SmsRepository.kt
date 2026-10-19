@@ -1092,19 +1092,23 @@ class SmsRepository(private val context: Context) {
 
         if (threadId != null) {
             MessageCache.put(threadId, getMessages(threadId))
+            MessageEvents.changed(threadId)
         }
     }
 
+    /** Only touches rows still unread: rewriting every row each time the
+     *  thread opened set off change notifications for nothing, and each
+     *  one reloaded the open thread. */
     fun markThreadRead(threadId: Long) {
         val smsValues = ContentValues().apply { put(Telephony.Sms.READ, 1) }
         context.contentResolver.update(
             Telephony.Sms.CONTENT_URI, smsValues,
-            "${Telephony.Sms.THREAD_ID} = ?", arrayOf(threadId.toString())
+            "${Telephony.Sms.THREAD_ID} = ? AND ${Telephony.Sms.READ} = 0", arrayOf(threadId.toString())
         )
         val mmsValues = ContentValues().apply { put(Telephony.Mms.READ, 1) }
         context.contentResolver.update(
             Telephony.Mms.CONTENT_URI, mmsValues,
-            "${Telephony.Mms.THREAD_ID} = ?", arrayOf(threadId.toString())
+            "${Telephony.Mms.THREAD_ID} = ? AND ${Telephony.Mms.READ} = 0", arrayOf(threadId.toString())
         )
     }
 

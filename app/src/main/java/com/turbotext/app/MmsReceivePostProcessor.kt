@@ -73,6 +73,7 @@ object MmsReceivePostProcessor {
             if (tid != null) {
                 try {
                     MessageCache.put(tid, repo.getMessages(tid))
+                    MessageEvents.changed(tid)
                 } catch (e: Exception) {
                     Log.w(TAG, "failed to refresh cache for new MMS", e)
                 }
