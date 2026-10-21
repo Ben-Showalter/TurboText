@@ -206,13 +206,32 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
+    /** Needed to receive picture/group messages and their delivery
+     *  reports: without them Android drops every incoming MMS push
+     *  ("Permission Denial ... requires RECEIVE_MMS"). Normally granted
+     *  with the default-SMS-app role, but they can be missing or revoked,
+     *  and were never asked for. Not in [requiredPermissions], so a
+     *  refusal doesn't stop the conversation list loading. */
+    private val receivePermissions = arrayOf(
+        Manifest.permission.RECEIVE_MMS,
+        Manifest.permission.RECEIVE_WAP_PUSH
+    )
+
     private fun hasAllPermissions() = requiredPermissions.all {
         ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
     }
 
+    private fun missingReceivePermissions() = receivePermissions.filter {
+        ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+    }
+
     private fun ensurePermissions() {
-        if (!hasAllPermissions()) {
-            ActivityCompat.requestPermissions(this, requiredPermissions, 100)
+        val missing = requiredPermissions.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        } + missingReceivePermissions()
+        if (missing.isNotEmpty()) {
+            android.util.Log.w("TurboTextMms", "asking for permissions: ${missing.joinToString()}")
+            ActivityCompat.requestPermissions(this, missing.toTypedArray(), 100)
         } else {
             continueSetup()
         }
@@ -231,6 +250,27 @@ class MainActivity : AppCompatActivity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (hasAllPermissions()) {
             refreshConversations()
+        }
+        if (requestCode == 100 && missingReceivePermissions().isNotEmpty() && !isFinishing && !isDestroyed) {
+            android.util.Log.w("TurboTextMms", "still missing: ${missingReceivePermissions().joinToString()}")
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Picture messages blocked")
+                .setMessage(
+                    "TurboText isn't allowed to receive picture and group messages. " +
+                        "Turn on SMS in Settings > Apps > TurboText > Permissions."
+                )
+                .setPositiveButton("Open Settings") { _, _ ->
+                    try {
+                        startActivity(
+                            Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                                .setData(android.net.Uri.fromParts("package", packageName, null))
+                        )
+                    } catch (e: Exception) {
+                    }
+                }
+                .setNegativeButton("Later") { _, _ -> continueSetup() }
+                .show()
+            return
         }
         continueSetup()
     }
