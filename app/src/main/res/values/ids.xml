@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Marks a window that already has SystemBars' focus listener. -->
+    <item name="system_bars_focus_listener" type="id" />
+</resources>

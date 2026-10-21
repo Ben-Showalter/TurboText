@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
-import android.provider.MediaStore
 import android.view.KeyEvent
 import android.view.View
 import android.widget.EditText
@@ -14,10 +13,8 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import java.io.File
 
 class ConversationActivity : AppCompatActivity() {
 
@@ -25,7 +22,6 @@ class ConversationActivity : AppCompatActivity() {
     private lateinit var engine: T9Engine
     private lateinit var inputController: T9InputController
     private lateinit var voiceHelper: GroqVoiceInputHelper
-    private lateinit var btMicWarmup: BluetoothMicWarmup
     private lateinit var messageAdapter: MessageAdapter
     private lateinit var messageList: RecyclerView
     private lateinit var composeText: EditText
@@ -36,10 +32,8 @@ class ConversationActivity : AppCompatActivity() {
 
     private var threadId: Long = -1
     private var address: String = ""
-    private var pendingPhotoUri: Uri? = null
-    private var pendingAudioUri: Uri? = null
-    private var pendingVcardBytes: ByteArray? = null
-    private var pendingVcardName: String = "contact.vcf"
+    private lateinit var attachments: PendingAttachments
+    private lateinit var picker: AttachmentPicker
     private lateinit var audioMemoRecorder: AudioMemoRecorder
     private var isRecordingMemo = false
     private var selectedMessageIndex: Int? = null
@@ -52,7 +46,11 @@ class ConversationActivity : AppCompatActivity() {
         threadId = intent.getLongExtra("threadId", -1)
         address = intent.getStringExtra("address") ?: ""
         val displayName = intent.getStringExtra("displayName") ?: address
-        NotificationHelper.cancelForAddress(this, address)
+        clearAlerts()
+        // Alerts posted before they were keyed by thread used the address.
+        // Clearing those once here stops one left over from the previous
+        // version from sticking around forever.
+        NotificationHelper.cancelForConversation(this, address)
         SoundNotificationHelper.acknowledge(this, address)
 
         findViewById<TextView>(R.id.contactName).text = displayName
@@ -74,8 +72,11 @@ class ConversationActivity : AppCompatActivity() {
         // by taking focus, so it should never intercept key events itself.
         messageList.isFocusable = false
         messageList.isFocusableInTouchMode = false
+        messageList.itemAnimator = null
+        messageList.setItemViewCacheSize(6)
         messageAdapter = MessageAdapter(emptyList())
         messageList.adapter = messageAdapter
+        messageList.addFocusScrollbar { messageAdapter.scrollbarPosition() }
 
         composeText = findViewById(R.id.composeText)
         composeText.movementMethod = android.text.method.ScrollingMovementMethod()
@@ -106,9 +107,9 @@ class ConversationActivity : AppCompatActivity() {
         draft?.let { inputController.setText(it) }
 
         voiceHelper = GroqVoiceInputHelper(this)
-        voiceHelper.keepBluetoothRouteWarm = true
-        btMicWarmup = BluetoothMicWarmup(this)
         audioMemoRecorder = AudioMemoRecorder(this)
+        attachments = PendingAttachments(this, attachmentIndicator)
+        picker = AttachmentPicker(this) { attachments.add(it) }
 
         // Not loaded here — onResume() always fires immediately after
         // onCreate() and handles the initial load itself, since it also
@@ -140,21 +141,25 @@ class ConversationActivity : AppCompatActivity() {
 
         // Instant if we've already loaded this thread this session — no
         // query at all, just what's already in memory.
-        MessageCache.get(threadId)?.let { cached ->
-            messageAdapter.update(cached)
-            scrollToBottom()
+        val cached = MessageCache.get(threadId)
+        if (cached != null) {
+            showMessages(cached)
             val newest = cached.maxByOrNull { it.date }
             android.util.Log.i("TurboTextPerf", "shown from cache instantly: ${System.currentTimeMillis() - openedAt}ms, ${cached.size} messages, newest hasImage=${newest?.imageUri != null}")
         }
 
         Thread {
-            // Fast path: show the most recent messages immediately...
-            val recent = repo.getRecentMessages(threadId, 12)
-            android.util.Log.i("TurboTextPerf", "fast query done: ${System.currentTimeMillis() - openedAt}ms, got ${recent.size} messages")
-            runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
-                messageAdapter.update(recent)
-                scrollToBottom()
+            // Fast path: show the most recent messages immediately — but
+            // only when nothing is on screen yet. If the cache was already
+            // shown, swapping in a 12-message list and then the full list
+            // again would remove and re-add the whole history twice.
+            if (cached == null) {
+                val recent = repo.getRecentMessages(threadId, 12)
+                android.util.Log.i("TurboTextPerf", "fast query done: ${System.currentTimeMillis() - openedAt}ms, got ${recent.size} messages")
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    showMessages(recent)
+                }
             }
 
             // ...then quietly fill in the rest of the history behind it.
@@ -168,18 +173,35 @@ class ConversationActivity : AppCompatActivity() {
             MessageCache.put(threadId, full)
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
-                // Not browsing messages → this is a fresh open or a new
-                // incoming message, so the newest message should be what's
-                // on screen. Only when the user is stepping through history
-                // (selection mode) do we respect their scroll position and
-                // leave them where they are unless they were already at the
-                // bottom.
-                val keepAtBottom = selectedMessageIndex == null || !messageList.canScrollVertically(1)
-                messageAdapter.update(full)
-                if (keepAtBottom) scrollToBottom()
+                showMessages(full)
                 android.util.Log.i("TurboTextPerf", "rendered: ${System.currentTimeMillis() - openedAt}ms")
             }
         }.start()
+    }
+
+    /** Set by a send from this screen, so the next reload brings the new
+     *  bubble into view even if the user was reading back. */
+    private var stickAfterSend = false
+
+    /** Shows [messages] (plus any still on their way out) and only moves
+     *  the list when [ScrollRules] says so — a reload never pulls the
+     *  user away from a message they scrolled back to. */
+    private fun showMessages(messages: List<Message>) {
+        val merged = PendingSends.merge(threadId, messages)
+        if (merged == messageAdapter.currentItems()) return
+        val wasEmpty = messageAdapter.currentItems().isEmpty()
+        val wasAtBottom = !messageList.canScrollVertically(1)
+        val stick = ScrollRules.shouldStickToBottom(
+            wasEmpty = wasEmpty,
+            wasAtBottom = wasAtBottom,
+            browsing = selectedMessageIndex != null,
+            justSent = stickAfterSend
+        )
+        messageAdapter.update(merged, context = this)
+        if (stick) {
+            stickAfterSend = false
+            scrollToBottom()
+        }
     }
 
     /** Pins the *bottom* of the newest message to the bottom of the list.
@@ -265,83 +287,26 @@ class ConversationActivity : AppCompatActivity() {
             showMessageOptions(message)
             return
         }
-        val hasAttachment = pendingPhotoUri != null || pendingAudioUri != null || pendingVcardBytes != null
-        val options = if (hasAttachment) {
-            arrayOf("Take Photo", "Attach", "Remove Attachment", "Paste")
+        val options = if (!attachments.isEmpty()) {
+            arrayOf("Take Photo", "Record Video", "Attach", "Remove Attachment", "Paste")
         } else {
-            arrayOf("Take Photo", "Attach", "Paste")
+            arrayOf("Take Photo", "Record Video", "Attach", "Paste")
         }
         AlertDialog.Builder(this)
             .setTitle("Options")
             .setItems(options) { _, which ->
                 when (options[which]) {
-                    "Take Photo" -> startPhotoCapture()
-                    "Attach" -> showAttachMenu()
+                    "Take Photo" -> picker.takePhoto()
+                    "Record Video" -> picker.recordVideo()
+                    "Attach" -> picker.showAttachMenu { startAudioMemoRecording() }
                     "Remove Attachment" -> {
-                        pendingPhotoUri = null
-                        pendingAudioUri = null
-                        pendingVcardBytes = null
-                        attachmentIndicator.visibility = View.GONE
+                        attachments.clear()
                         Toast.makeText(this, "Attachment removed", Toast.LENGTH_SHORT).show()
                     }
                     "Paste" -> pasteFromClipboard()
                 }
             }
             .show()
-    }
-
-    private fun showAttachMenu() {
-        val options = arrayOf("Photo from Gallery", "Audio Recording", "Contact")
-        AlertDialog.Builder(this)
-            .setTitle("Attach")
-            .setItems(options) { _, which ->
-                when (options[which]) {
-                    "Photo from Gallery" -> startGalleryPick()
-                    "Audio Recording" -> startAudioMemoRecording()
-                    "Contact" -> startContactPick()
-                }
-            }
-            .show()
-    }
-
-    private fun startContactPick() {
-        val intent = android.content.Intent(
-            android.content.Intent.ACTION_PICK, android.provider.ContactsContract.Contacts.CONTENT_URI
-        )
-        startActivityForResult(intent, 403)
-    }
-
-    /** Exports a contact as a standard .vcf via Android's own vCard
-     *  provider — the same mechanism the system Contacts app itself
-     *  uses to share a contact. */
-    private fun loadVcardBytes(contactUri: Uri): Pair<ByteArray, String>? {
-        return try {
-            val cursor = contentResolver.query(
-                contactUri,
-                arrayOf(
-                    android.provider.ContactsContract.Contacts.LOOKUP_KEY,
-                    android.provider.ContactsContract.Contacts.DISPLAY_NAME
-                ),
-                null, null, null
-            )
-            cursor?.use {
-                if (it.moveToFirst()) {
-                    val lookupKey = it.getString(0)
-                    val name = it.getString(1) ?: "contact"
-                    val vcardUri = Uri.withAppendedPath(
-                        android.provider.ContactsContract.Contacts.CONTENT_VCARD_URI, lookupKey
-                    )
-                    val bytes = contentResolver.openInputStream(vcardUri)?.use { stream -> stream.readBytes() }
-                    if (bytes != null) {
-                        val safeName = name.replace(Regex("[^A-Za-z0-9]"), "_") + ".vcf"
-                        bytes to safeName
-                    } else null
-                } else null
-            }
-        } catch (e: Exception) {
-            android.util.Log.w("TurboTextAttach", "failed to load vcard", e)
-            null
-        }
     }
 
     private fun startAudioMemoRecording() {
@@ -365,12 +330,7 @@ class ConversationActivity : AppCompatActivity() {
         isRecordingMemo = false
         listeningIndicator.visibility = View.GONE
         if (uri != null) {
-            pendingPhotoUri = null
-            pendingVcardBytes = null
-            pendingAudioUri = uri
-            attachmentIndicator.text = "🎤 Audio attached"
-            attachmentIndicator.visibility = View.VISIBLE
-            Toast.makeText(this, "Audio attached — press Send", Toast.LENGTH_SHORT).show()
+            attachments.add(listOf(OutgoingAttachment("audio/mp4", "audio_${System.currentTimeMillis()}.m4a", uri = uri)))
         } else {
             Toast.makeText(this, "Recording failed", Toast.LENGTH_SHORT).show()
         }
@@ -379,6 +339,10 @@ class ConversationActivity : AppCompatActivity() {
     private fun showMessageOptions(message: Message) {
         val options = mutableListOf("Copy Text to Clipboard", "Forward Message", "Translate to English")
         if (message.imageUri != null) options.add("Save to Gallery")
+        if (message.videoUri != null) options.add("Play Video")
+        if (message.videoUri != null || message.fileUri != null || message.audioUri != null) options.add("Save to Phone")
+        if (message.fileUri != null) options.add("Open File")
+        if (message.mmsDownloadPending) options.add("Download")
         if (message.vcardUri != null) options.add("Import Contact")
         if (message.audioUri != null) options.add("Play Audio")
         options.add("View Details")
@@ -394,6 +358,10 @@ class ConversationActivity : AppCompatActivity() {
                     "Save to Gallery" -> saveImageToGallery(message)
                     "Import Contact" -> importVcard(message)
                     "Play Audio" -> playVoiceMessage(message)
+                    "Play Video" -> message.videoUri?.let { openMediaViewer(it, "video/*") }
+                    "Save to Phone" -> saveAttachmentToPhone(message)
+                    "Open File" -> openFile(message)
+                    "Download" -> downloadPendingMms(message)
                     "View Details" -> showMessageDetails(message)
                     "Move to Trash" -> moveMessageToTrash(message)
                 }
@@ -401,45 +369,21 @@ class ConversationActivity : AppCompatActivity() {
             .show()
     }
 
-    /** MediaStore.Images.Media.insertImage handles both the file write
-     *  and registering it with the media scanner, so it shows up in the
-     *  system Gallery app immediately rather than needing a rescan. */
+    /** Copies the original pictures (all of them, for a multi-photo
+     *  MMS) into Pictures/TurboText — no decode/re-encode, so full
+     *  quality and no memory spike. */
     private fun saveImageToGallery(message: Message) {
-        val uri = message.imageUri?.let { Uri.parse(it) } ?: return
+        val uris = message.imageUris.map { Uri.parse(it) }
+        if (uris.isEmpty()) return
         Thread {
-            try {
-                val bitmap = contentResolver.openInputStream(uri)?.use {
-                    android.graphics.BitmapFactory.decodeStream(it)
+            val saved = uris.count { MediaSaver.save(this, it, contentResolver.getType(it) ?: "image/jpeg") }
+            runOnUiThread {
+                val text = when {
+                    saved == 0 -> "Couldn't save image"
+                    uris.size == 1 -> "Saved to Gallery"
+                    else -> "Saved $saved of ${uris.size} pictures to Gallery"
                 }
-                if (bitmap == null) {
-                    runOnUiThread { Toast.makeText(this, "Couldn't read image", Toast.LENGTH_SHORT).show() }
-                    return@Thread
-                }
-                val savedUri = android.provider.MediaStore.Images.Media.insertImage(
-                    contentResolver, bitmap, "TurboText_${System.currentTimeMillis()}", "Saved from TurboText"
-                )
-                runOnUiThread {
-                    if (savedUri != null) {
-                        Toast.makeText(this, "Saved to Gallery", Toast.LENGTH_SHORT).show()
-                        try {
-                            val viewIntent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-                                setDataAndType(Uri.parse(savedUri), "image/*")
-                                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            }
-                            startActivity(viewIntent)
-                        } catch (e: Exception) {
-                            // No gallery app available to open it — the save
-                            // itself already succeeded, so this is a soft
-                            // failure, not worth bothering the user about.
-                            android.util.Log.w("TurboTextAttach", "no app to view saved image", e)
-                        }
-                    } else {
-                        Toast.makeText(this, "Couldn't save image", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            } catch (e: Exception) {
-                android.util.Log.w("TurboTextAttach", "failed to save to gallery", e)
-                runOnUiThread { Toast.makeText(this, "Save failed: ${e.message}", Toast.LENGTH_SHORT).show() }
+                Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
             }
         }.start()
     }
@@ -517,7 +461,18 @@ class ConversationActivity : AppCompatActivity() {
     private fun forwardMessage(message: Message) {
         val intent = android.content.Intent(this, ComposeActivity::class.java).apply {
             if (message.body.isNotEmpty()) putExtra("prefillText", message.body)
-            if (message.imageUri != null) putExtra("prefillImageUri", message.imageUri)
+            val (uri, mime) = when {
+                message.imageUri != null -> message.imageUri to "image/jpeg"
+                message.videoUri != null -> message.videoUri to "video/mp4"
+                message.audioUri != null -> message.audioUri to "audio/mp4"
+                message.vcardUri != null -> message.vcardUri to "text/x-vcard"
+                message.fileUri != null -> message.fileUri to (message.fileMime ?: "application/octet-stream")
+                else -> null to null
+            }
+            if (uri != null) {
+                putExtra(ComposeActivity.EXTRA_PREFILL_ATTACHMENT_URI, uri)
+                putExtra(ComposeActivity.EXTRA_PREFILL_ATTACHMENT_MIME, mime)
+            }
         }
         startActivity(intent)
     }
@@ -703,130 +658,74 @@ class ConversationActivity : AppCompatActivity() {
         val message = messageAdapter.currentItems().getOrNull(realIndex) ?: return
         when {
             message.audioUri != null -> toggleVoiceMessage(message)
-            message.imageUri != null -> openImageViewer(message)
+            message.imageUri != null -> openImages(message.imageUris)
+            message.videoUri != null -> openMediaViewer(message.videoUri, "video/*")
+            message.fileUri != null -> openFile(message)
+            message.mmsDownloadPending -> downloadPendingMms(message)
             message.vcardUri != null -> importVcard(message)
             else -> showMessageOptions(message)
         }
     }
 
-    private fun startPhotoCapture() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), 300)
-            return
-        }
-        val dir = File(cacheDir, "camera").apply { mkdirs() }
-        val file = File(dir, "mms_${System.currentTimeMillis()}.jpg")
-        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
-        pendingPhotoUri = uri
-        val intent = android.content.Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
-            putExtra(MediaStore.EXTRA_OUTPUT, uri)
-        }
-        if (intent.resolveActivity(packageManager) != null) {
-            startActivityForResult(intent, 400)
-        } else {
-            Toast.makeText(this, "No camera app available", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private fun startGalleryPick() {
-        val intent = android.content.Intent(android.content.Intent.ACTION_GET_CONTENT).apply {
-            type = "image/*"
-        }
-        startActivityForResult(android.content.Intent.createChooser(intent, "Choose Photo"), 401)
-    }
-
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        when (requestCode) {
-            400 -> {
-                if (resultCode == RESULT_OK && pendingPhotoUri != null) {
-                    onPhotoAttached()
-                } else {
-                    pendingPhotoUri = null
-                }
-            }
-            401 -> {
-                val uri = data?.data
-                if (resultCode == RESULT_OK && uri != null) {
-                    pendingPhotoUri = uri
-                    onPhotoAttached()
-                }
-            }
-            403 -> {
-                val contactUri = data?.data
-                if (resultCode == RESULT_OK && contactUri != null) {
-                    Thread {
-                        val vcard = loadVcardBytes(contactUri)
-                        runOnUiThread {
-                            if (isFinishing || isDestroyed) return@runOnUiThread
-                            if (vcard != null) {
-                                pendingPhotoUri = null
-                                pendingAudioUri = null
-                                pendingVcardBytes = vcard.first
-                                pendingVcardName = vcard.second
-                                attachmentIndicator.text = "👤 Contact attached"
-                                attachmentIndicator.visibility = View.VISIBLE
-                                Toast.makeText(this, "Contact attached — press Send", Toast.LENGTH_SHORT).show()
-                            } else {
-                                Toast.makeText(this, "Couldn't read that contact", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    }.start()
-                }
-            }
-        }
-    }
-
-    private fun onPhotoAttached() {
-        pendingAudioUri = null
-        pendingVcardBytes = null
-        attachmentIndicator.text = "📷 Photo attached"
-        attachmentIndicator.visibility = View.VISIBLE
-        Toast.makeText(this, "Photo attached — press Send", Toast.LENGTH_SHORT).show()
+        picker.handleResult(requestCode, resultCode, data)
     }
 
     private fun sendCurrentMessage() {
-        val body = SettingsHelper.applySignature(this, inputController.currentText().trim())
-        val photoUri = pendingPhotoUri
-        val audioUri = pendingAudioUri
-        val vcardBytes = pendingVcardBytes
-        val vcardName = pendingVcardName
+        // A word still showing as a T9 suggestion goes out as shown, as if
+        // OK had been pressed first.
+        inputController.confirmPending()
+        val typed = inputController.currentText().trim()
+        val body = SettingsHelper.applySignature(this, typed)
+        val toSend = attachments.items
 
-        if (body.isEmpty() && photoUri == null && audioUri == null && vcardBytes == null) {
+        if (body.isEmpty() && toSend.isEmpty()) {
             Toast.makeText(this, "Nothing to send", Toast.LENGTH_SHORT).show()
             return
         }
 
         inputController.setText("")
-        pendingPhotoUri = null
-        pendingAudioUri = null
-        pendingVcardBytes = null
-        attachmentIndicator.visibility = View.GONE
+        attachments.clear()
         DraftHelper.clearDraft(this, address)
 
-        Thread {
-            if (address.contains(",")) {
-                // A group thread — reply goes to everyone, not just one
-                // address. Same experimental caveat as the rest of group
-                // messaging (see SmsRepository.sendGroupMmsMessage).
-                repo.sendGroupMmsMessage(address.split(","), body)
-            } else if (photoUri != null) {
-                repo.sendMmsMessage(address, body, imageUri = photoUri)
-            } else if (audioUri != null) {
-                repo.sendMmsMessage(address, body, audioUri = audioUri)
-            } else if (vcardBytes != null) {
-                repo.sendMmsMessage(address, body, vcardBytes = vcardBytes, vcardName = vcardName)
-            } else if (repo.isEmailAddress(address)) {
-                repo.sendMmsMessage(address, body)
-            } else {
-                repo.sendMessage(address, body)
+        // A group thread's address is every member, comma-joined — the
+        // reply goes to all of them as one group MMS.
+        val recipients = address.split(",")
+        if (toSend.isNotEmpty()) {
+            listeningIndicator.text = if (toSend.any { it.isVideo }) "Compressing video…" else "Preparing attachment…"
+            listeningIndicator.visibility = View.VISIBLE
+        }
+        stickAfterSend = true
+        // Shows a "Sending" bubble straight away; MessageEvents refreshes
+        // it to Sent/Delivered (or Failed) as the receivers hear back.
+        PendingSends.send(
+            this, threadId, recipients, body, toSend,
+            onStatus = { status ->
+                if (!isFinishing && !isDestroyed) {
+                    listeningIndicator.text = status
+                    listeningIndicator.visibility = View.VISIBLE
+                }
+            },
+            onDone = { error ->
+                if (!isFinishing && !isDestroyed) {
+                    if (toSend.isNotEmpty()) listeningIndicator.visibility = View.GONE
+                    if (error != null) {
+                        // Nothing went out — put the message back so it isn't lost.
+                        Toast.makeText(this, error, Toast.LENGTH_LONG).show()
+                        restoreFailedSends()
+                    }
+                }
             }
-            runOnUiThread {
-                if (!isFinishing && !isDestroyed) loadMessages()
-            }
-        }.start()
+        )
+    }
+
+    /** Puts the text (and attachments) of a send that failed — here or
+     *  from New Message — back in the compose box to try again. */
+    private fun restoreFailedSends() {
+        val failed = PendingSends.takeFailed(threadId).lastOrNull() ?: return
+        if (inputController.currentText().isEmpty()) inputController.setText(failed.first)
+        attachments.restore(failed.second)
     }
 
     // dispatchKeyEvent gets first crack at every physical key press, before
@@ -834,17 +733,6 @@ class ConversationActivity : AppCompatActivity() {
     // typing/scrolling works no matter what view happens to have focus.
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action == KeyEvent.ACTION_DOWN) {
-            // Any key press counts as screen activity — pushes the
-            // Bluetooth mic idle-teardown deadline back out. This also
-            // covers a long hold of the mic button itself: key-repeat
-            // events keep arriving while it's held (see the repeatCount
-            // handling below), so a recording longer than the idle timeout
-            // won't get the route pulled out from under it. The mic button
-            // itself uses extendIdle() rather than poke() — startVoiceRecording()
-            // below makes its own Bluetooth-connect request for this exact
-            // press, and a second concurrent one from poke() would race it
-            // (see BluetoothMicWarmup.extendIdle's doc).
-            if (event.keyCode in MicButtonKeyCodes.CODES) btMicWarmup.extendIdle() else btMicWarmup.poke()
             if (isRecordingMemo) {
                 if (event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
                     finishAudioMemoRecording()
@@ -938,19 +826,37 @@ class ConversationActivity : AppCompatActivity() {
         return super.dispatchKeyEvent(event)
     }
 
+    /** NotificationHelper.conversationKey for this thread. */
+    private fun notificationKey() = NotificationHelper.conversationKey(threadId, address)
+
+    /** Clears this conversation's notification, repeat alert and
+     *  outer-screen card. The "couldn't be downloaded" notice goes too:
+     *  opening a thread shows any "press OK to download" message there. */
+    private fun clearAlerts() {
+        NotificationHelper.cancelForConversation(this, notificationKey())
+        SoundNotificationHelper.acknowledge(this, notificationKey())
+        NotificationHelper.cancelMmsDownloadFailed(this)
+    }
+
     private var messageObserver: android.database.ContentObserver? = null
     private val reloadHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val reloadRunnable = Runnable {
         loadMessages()
-        SoundNotificationHelper.acknowledge(this, address)
+        SoundNotificationHelper.acknowledge(this, notificationKey())
+    }
+
+    /** Sends, delivery reports and new messages, straight from this app's
+     *  own receivers — see MessageEvents for why the observer below isn't
+     *  enough on its own. */
+    private val messageEventListener = MessageEvents.Listener { changedThread ->
+        if (changedThread == null || changedThread == threadId) {
+            reloadHandler.removeCallbacks(reloadRunnable)
+            reloadHandler.postDelayed(reloadRunnable, 300)
+        }
     }
 
     override fun onResume() {
         super.onResume()
-        // Start warming the Bluetooth mic route up as soon as the thread is
-        // visible — covers both the initial open and returning to an
-        // already-open conversation from the background.
-        btMicWarmup.poke()
         // Covers both the initial open (onResume always follows onCreate)
         // and returning to an already-open conversation from the
         // background — the ContentObserver below only catches changes
@@ -959,6 +865,8 @@ class ConversationActivity : AppCompatActivity() {
         // otherwise sit unseen until some later change happened to fire
         // it. Re-querying here closes that gap the same way MainActivity's
         // onResume already does for the conversation list.
+        MessageEvents.addListener(messageEventListener)
+        restoreFailedSends()
         loadMessages()
         if (messageObserver == null) {
             messageObserver = object : android.database.ContentObserver(
@@ -995,13 +903,12 @@ class ConversationActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
-        // No point keeping the headset in call-mode for a thread that's no
-        // longer on screen.
         stopVoiceMessagePlayback()
-        btMicWarmup.coolDown()
-        NotificationHelper.cancelForAddress(this, address)
+        NotificationHelper.cancelForConversation(this, notificationKey())
         messageObserver?.let { contentResolver.unregisterContentObserver(it) }
+        MessageEvents.removeListener(messageEventListener)
         reloadHandler.removeCallbacks(reloadRunnable)
+        inputController.confirmPending()
         val text = inputController.currentText()
         android.util.Log.i("TurboTextDraft", "onPause save: address=\"$address\" text=\"$text\"")
         DraftHelper.saveDraft(this, address, text)
@@ -1070,13 +977,86 @@ class ConversationActivity : AppCompatActivity() {
         messageAdapter.setPlayingAudioId(null)
     }
 
-    /** Center-key action on a focused picture message — opens it full
-     *  screen (zoom with OK, save with the right softkey). */
-    private fun openImageViewer(message: Message) {
-        val uri = message.imageUri ?: return
+    private fun saveAttachmentToPhone(message: Message) {
+        val (uri, mime) = when {
+            message.videoUri != null -> message.videoUri to "video/mp4"
+            message.fileUri != null -> message.fileUri to message.fileMime
+            message.audioUri != null -> message.audioUri to null
+            else -> return
+        }
+        Thread {
+            val ok = MediaSaver.save(this, Uri.parse(uri), mime)
+            runOnUiThread {
+                Toast.makeText(this, if (ok) "Saved to phone" else "Couldn't save", Toast.LENGTH_SHORT).show()
+            }
+        }.start()
+    }
+
+    /** Asks the phone's MMS service to fetch a message we only have the
+     *  carrier's notice for (an earlier download failed). When it lands,
+     *  LibraryMmsReceivedReceiver saves it and the thread refreshes. */
+    private fun downloadPendingMms(message: Message) {
+        Thread {
+            // Already downloaded (a leftover notice)? Just clear it.
+            repo.removeStaleMmsNotices()
+            if (!repo.mmsRowExists(message.id)) {
+                runOnUiThread { if (!isFinishing && !isDestroyed) loadMessages() }
+                return@Thread
+            }
+            val info = repo.mmsDownloadInfo(message.id)
+            runOnUiThread {
+                if (info == null) {
+                    Toast.makeText(this, "Can't download this one — the carrier's link is missing", Toast.LENGTH_LONG).show()
+                    return@runOnUiThread
+                }
+                try {
+                    com.android.mms.transaction.DownloadManager.getInstance().downloadMultimediaMessage(
+                        applicationContext, info.location, info.transactionId,
+                        Uri.withAppendedPath(android.provider.Telephony.Mms.CONTENT_URI, message.id.toString()),
+                        false, info.subId
+                    )
+                    Toast.makeText(this, "Downloading…", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    android.util.Log.w("TurboTextMms", "manual MMS download failed to start", e)
+                    Toast.makeText(this, "Couldn't start the download", Toast.LENGTH_LONG).show()
+                }
+            }
+        }.start()
+    }
+
+    /** Hands a document attachment to whatever app on the phone opens
+     *  that type (PDF viewer, etc.). */
+    private fun openFile(message: Message) {
+        val uri = message.fileUri ?: return
+        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+            setDataAndType(Uri.parse(uri), message.fileMime ?: "*/*")
+            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        try {
+            startActivity(intent)
+        } catch (e: Exception) {
+            Toast.makeText(this, "No app on this phone opens ${message.fileMime ?: "this file"} — try Save to Phone", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    /** Center-key action on a focused picture/video message — opens it
+     *  full screen (zoom or play with OK, save with the right softkey). */
+    private fun openMediaViewer(uri: String, mime: String) {
         startActivity(
-            android.content.Intent(this, ImageViewerActivity::class.java)
-                .putExtra(ImageViewerActivity.EXTRA_IMAGE_URI, uri)
+            android.content.Intent(this, MediaViewerActivity::class.java)
+                .putExtra(MediaViewerActivity.EXTRA_URI, uri)
+                .putExtra(MediaViewerActivity.EXTRA_MIME, mime)
+        )
+    }
+
+    /** A message's pictures, full screen — Left/Right steps through them
+     *  when there's more than one. */
+    private fun openImages(uris: List<String>) {
+        startActivity(
+            android.content.Intent(this, MediaViewerActivity::class.java)
+                .putExtra(MediaViewerActivity.EXTRA_URI, uris.first())
+                .putExtra(MediaViewerActivity.EXTRA_MIME, "image/*")
+                .putExtra(MediaViewerActivity.EXTRA_IMAGE_URIS, uris.toTypedArray())
         )
     }
 }

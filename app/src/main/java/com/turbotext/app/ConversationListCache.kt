@@ -20,6 +20,10 @@ object ConversationListCache {
         cached = list
     }
 
+    fun clear() {
+        cached = null
+    }
+
     /** Optimistically clears the unread flag for one thread in the cache,
      *  without waiting for a live re-query. Called right when a
      *  conversation is opened so that backing out to the list shows it
@@ -28,5 +32,11 @@ object ConversationListCache {
     fun markThreadRead(threadId: Long) {
         val list = cached ?: return
         cached = list.map { if (it.threadId == threadId && it.unread) it.copy(unread = false) else it }
+    }
+
+    /** Same as [markThreadRead], for every thread at once. */
+    fun markAllRead() {
+        val list = cached ?: return
+        cached = list.map { if (it.unread) it.copy(unread = false) else it }
     }
 }

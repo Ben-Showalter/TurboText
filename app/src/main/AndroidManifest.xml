@@ -22,25 +22,23 @@
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Lets UpdateChecker hand a downloaded update APK from GitHub
+         Releases to the system installer. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.BLUETOOTH" />
-    <!-- Needed on API 31+ to route voice-to-text recording through a
-         connected Bluetooth headset's mic (see BluetoothMicHelper). No-op
-         on the API 29 target device, but declared for forward compat. -->
-    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-    <!-- Without this, AudioManager silently denies setMode()/
-         startBluetoothSco()/setBluetoothScoOn() — no exception, they just
-         no-op — so Bluetooth-mic routing in BluetoothMicHelper never
-         actually connects and every recording falls back to the phone mic. -->
-    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.CALL_PHONE" />
     <uses-permission android:name="android.permission.VIBRATE" />
-    <uses-permission android:name="android.permission.GET_TASKS" />
-    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
+    <!-- mmslib holds a wake lock while saving a downloaded MMS
+         (DownloadManager.MmsDownloadReceiver). Without this the app
+         crashed right as each incoming MMS finished downloading, leaving
+         only the carrier's notice behind as an "Unknown" conversation. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- After a restart: background keep-alive and the report's alarm (BootReceiver). -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <uses-feature
         android:name="android.hardware.camera"
@@ -60,8 +58,7 @@
 
         <!-- Conversation list: also the entry point when picked as default SMS handler.
              singleTask (not singleTop) so re-launching from outside the app — the
-             home-screen icon, or KeyButtonAccessibilityService's hardware-key
-             interception — always lands here, discarding whatever screen (a
+             home-screen icon — always lands here, discarding whatever screen (a
              conversation thread, compose, settings, etc.) was left open on top of
              it, rather than just resuming the task as-is the way Android's default
              behavior would. A notification tap still deep-links straight into that
@@ -102,14 +99,6 @@
             android:exported="false" />
 
         <activity
-            android:name=".AppShortcutActivity"
-            android:exported="false" />
-
-        <activity
-            android:name=".AppPickerActivity"
-            android:exported="false" />
-
-        <activity
             android:name=".TextEntryActivity"
             android:exported="false" />
 
@@ -126,7 +115,7 @@
             android:exported="false" />
 
         <activity
-            android:name=".ImageViewerActivity"
+            android:name=".MediaViewerActivity"
             android:exported="false" />
 
         <activity
@@ -136,6 +125,26 @@
         <receiver
             android:name=".SoundAlarmReceiver"
             android:exported="false" />
+
+        <!-- Settings > Report: PIN-guarded daily texting report. -->
+        <activity
+            android:name=".ReportSettingsActivity"
+            android:exported="false" />
+
+        <receiver
+            android:name=".ReportAlarmReceiver"
+            android:exported="false" />
+
+        <!-- After a restart or an app update: keeps TurboText running in
+             the background (BackgroundHost) and re-arms the daily report. -->
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
         <receiver
             android:name=".SmsSentReceiver"
@@ -158,6 +167,21 @@
                 <data android:scheme="mms" />
                 <data android:scheme="mmsto" />
             </intent-filter>
+            <!-- "Share" from the gallery, files, contacts etc. — anything
+                 can be sent as an MMS attachment. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <!-- Several photos or videos shared at once (up to
+                 PendingAttachments.MAX go in one message). -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="video/*" />
+            </intent-filter>
         </activity>
 
         <!-- Thread view for a single conversation -->
@@ -176,9 +200,11 @@
             </intent-filter>
         </receiver>
 
-        <!-- Required: receives incoming MMS when this app is the default handler -->
+        <!-- Required: receives incoming MMS when this app is the default handler.
+             MmsReceiver is mmslib's PushReceiver: it parses the carrier's
+             notification and asks the system MMS service to download it. -->
         <receiver
-            android:name=".MmsDeliverReceiver"
+            android:name=".MmsReceiver"
             android:exported="true"
             android:permission="android.permission.BROADCAST_WAP_PUSH">
             <intent-filter>
@@ -187,15 +213,23 @@
             </intent-filter>
         </receiver>
 
-        <!-- Receives the completion callback from MmsManager.downloadMultimediaMessage()
-             (triggered via PendingIntent from MmsDeliverReceiver). This was
-             missing entirely at first, which is exactly why the download
-             request went out but nothing ever came back — Android has
-             nowhere to deliver to without this declaration, even for a
-             PendingIntent-only receiver like this one. -->
+        <!-- Download finished and saved. mmslib finds this receiver by its
+             taskAffinity (BroadcastUtils.sendExplicitBroadcast), so the
+             value must stay exactly this. -->
         <receiver
-            android:name=".MmsDownloadReceiver"
-            android:exported="true" />
+            android:name=".LibraryMmsReceivedReceiver"
+            android:exported="false"
+            android:taskAffinity="com.klinker.android.messaging.MMS_RECEIVED" />
+
+        <!-- Result of an MMS sent by MmsTransmitter. -->
+        <receiver
+            android:name=".MmsSentReceiver"
+            android:exported="false" />
+
+        <!-- Result of confirming a downloaded MMS to the carrier (MmsAcknowledger). -->
+        <receiver
+            android:name=".MmsAckSentReceiver"
+            android:exported="false" />
 
         <!-- Required: lets the phone's "respond via message" (decline call with text) work -->
         <service
@@ -223,23 +257,10 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
-        <!-- MMS-sending library (com.klinkerapps:android-smsmms) plumbing.
-             Note: we only use this library for MMS (photos) — plain SMS
-             sending goes through our own SmsRepository — so we only need
-             the receiver that marks an MMS as sent afterward. The library's
-             SentReceiver/DeliveredReceiver classes are abstract and require
-             a per-app subclass we don't need since we don't route SMS
-             through this library. -->
-        <receiver
-            android:name="com.klinker.android.send_message.MmsSentReceiver"
-            android:exported="false"
-            android:taskAffinity="com.klinker.android.messaging.MMS_SENT" />
 
-        <!-- Experimental — see KeyButtonAccessibilityService for why this
-             is the only way to observe hardware key presses (like volume)
-             from the background at all. Must be manually enabled by the
-             user in Settings > Accessibility; nothing in the app can
-             turn this on for them. -->
+        <!-- The Background Helper: keeps TurboText running without a
+             notification (BackgroundHost). Turned on by the user in
+             Settings > Accessibility. -->
         <service
             android:name=".KeyButtonAccessibilityService"
             android:exported="true"
@@ -251,6 +272,12 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config" />
         </service>
+
+        <!-- The fallback while the Background Helper is off: a foreground
+             service with a "running" notification. -->
+        <service
+            android:name=".KeepAliveService"
+            android:exported="false" />
 
     </application>
 </manifest>

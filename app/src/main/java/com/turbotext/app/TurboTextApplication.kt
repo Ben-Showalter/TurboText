@@ -1,6 +1,8 @@
 package com.turbotext.app
 
+import android.app.Activity
 import android.app.Application
+import android.os.Bundle
 
 /** How many conversations' full message history gets eagerly loaded into
  *  MessageCache at startup. Bounded because this runs sequentially and a
@@ -20,6 +22,55 @@ private const val PREWARM_THREAD_LIMIT = 25
 class TurboTextApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        SettingsHelper.clearRemovedSettings(this)
+
+        // mmslib's incoming-MMS path (PushReceiver) reads these: download
+        // through the phone's own MMS service, and treat multi-recipient
+        // messages as one group thread.
+        com.klinker.android.send_message.Transaction.settings =
+            com.klinker.android.send_message.Settings().apply {
+                setUseSystemSending(true)
+                setGroup(true)
+            }
+        // Carrier MMS settings (mms_config.xml) — PushReceiver loads these
+        // for each incoming MMS, but a manual "download" retry doesn't go
+        // through it.
+        com.android.mms.MmsConfig.init(this)
+
+        // Our own number(s), so received group messages leave us out of
+        // their thread (see OwnNumber), and a one-off fix for any group
+        // conversation that was split in two before.
+        OwnNumber.publish(this)
+        // The daily report's alarm (Settings > Report), in case it was lost
+        // (the app was force-stopped, or updated).
+        ReportSender.schedule(this)
+        // Stay running in the background: the Background Helper if it's
+        // on, otherwise a foreground service with a notification.
+        BackgroundHost.ensureRunning(this)
+        Thread {
+            try {
+                OwnNumber.validateLearned(this)
+                OwnNumber.repairOnce(this)
+            } catch (e: Exception) {
+                android.util.Log.w("TurboTextOwnNumber", "startup repair failed", e)
+            }
+        }.start()
+
+        // Hide the phone's white soft-key label bar (the system navigation
+        // bar) on every screen — see SystemBars. Done here rather than in
+        // each activity since there's no shared base activity.
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            override fun onActivityResumed(activity: Activity) {
+                SystemBars.hideNavigation(activity)
+                SystemBars.hideOnWindowFocus(activity)
+            }
+            override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
+            override fun onActivityStarted(activity: Activity) {}
+            override fun onActivityPaused(activity: Activity) {}
+            override fun onActivityStopped(activity: Activity) {}
+            override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
+            override fun onActivityDestroyed(activity: Activity) {}
+        })
 
         // Contact saves/edits happen in the system Contacts app, outside
         // our control — this is the only way to learn a name changed, so
@@ -44,6 +95,7 @@ class TurboTextApplication : Application() {
                 object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
                     override fun onChange(selfChange: Boolean) {
                         ContactHelper.invalidateCache()
+                        AvatarLoader.invalidate()
                     }
                 }
             )
@@ -118,12 +170,20 @@ class TurboTextApplication : Application() {
             // triggers at the same time.
             val conversations = try {
                 val repo = SmsRepository(this)
+                // Captured before the query — if the message that woke
+                // this process is inserted while it runs, the version
+                // moves on and MainActivity won't trust this snapshot.
+                val version = ProviderChangeTracker.current()
                 val list = repo.getConversations()
                 // Published immediately — MainActivity's first load can
                 // pick this up the moment it's ready, rather than waiting
                 // for the message-prewarm loop below to finish too.
-                ConversationPrewarm.publish(list)
-                ConversationListCache.put(list)
+                ConversationPrewarm.publish(list, version)
+                // A possibly-stale list shouldn't become what MainActivity
+                // shows "instantly" either.
+                if (ProviderChangeTracker.current() == version) {
+                    ConversationListCache.put(list)
+                }
                 list
             } catch (e: Exception) {
                 android.util.Log.w("TurboTextPerf", "conversation prewarm fetch failed (harmless, just means no head start)", e)
@@ -131,7 +191,7 @@ class TurboTextApplication : Application() {
                 // instead of leaving it stuck until the timeout — a
                 // failed prewarm just means it falls through to its own
                 // normal query, same as if this thread never existed.
-                ConversationPrewarm.publish(emptyList())
+                ConversationPrewarm.publish(emptyList(), ConversationPrewarm.STALE)
                 emptyList()
             }
             try {

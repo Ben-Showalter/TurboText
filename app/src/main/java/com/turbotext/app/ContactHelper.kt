@@ -29,6 +29,25 @@ object ContactHelper {
         return name
     }
 
+    /** (is a saved contact, is starred) for [phoneNumber] — what Do Not
+     *  Disturb's "messages from contacts / starred contacts" rule asks.
+     *  Not cached: it's only read when an alert is about to sound. */
+    fun lookupFlags(context: Context, phoneNumber: String): Pair<Boolean, Boolean> {
+        val uri = Uri.withAppendedPath(
+            ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
+            Uri.encode(phoneNumber)
+        )
+        return try {
+            context.contentResolver.query(
+                uri, arrayOf(ContactsContract.PhoneLookup.STARRED), null, null, null
+            )?.use {
+                if (it.moveToFirst()) true to (it.getInt(0) == 1) else false to false
+            } ?: (false to false)
+        } catch (e: Exception) {
+            false to false
+        }
+    }
+
     /** Drops every cached lookup so the next call re-hits the provider.
      *  Needed because a number looked up before it's saved to contacts
      *  (or before an existing contact's name changes) would otherwise

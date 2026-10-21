@@ -12,4 +12,8 @@ object GroupThreadsCache {
     fun put(groups: List<Conversation>) {
         cached = groups
     }
+
+    fun clear() {
+        cached = null
+    }
 }

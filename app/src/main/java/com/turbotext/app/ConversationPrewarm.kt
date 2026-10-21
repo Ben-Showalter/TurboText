@@ -16,12 +16,22 @@ import java.util.concurrent.TimeUnit
  *  fetch's result instead of starting its own — one query pays the
  *  cold-connection cost instead of two racing each other for it. */
 object ConversationPrewarm {
+    // Declared first: Kotlin rejects a forward reference to it from the
+    // resultVersion initializer below, even though it's a const.
+    /** Never equals a real ProviderChangeTracker version (those start at 0). */
+    const val STALE = -1L
+
     @Volatile private var result: List<Conversation>? = null
+    @Volatile private var resultVersion: Long = STALE
     @Volatile private var consumed = false
     private val latch = CountDownLatch(1)
 
-    fun publish(conversations: List<Conversation>) {
+    /** [versionAtQueryStart] is ProviderChangeTracker.current() captured
+     *  *before* the query began — pass [STALE] for a result that should
+     *  never be used. */
+    fun publish(conversations: List<Conversation>, versionAtQueryStart: Long) {
         result = conversations
+        resultVersion = versionAtQueryStart
         latch.countDown()
     }
 
@@ -37,14 +47,25 @@ object ConversationPrewarm {
      *  unbounded getConversations() scan *concurrently* with the first
      *  one still in flight, doubling the exact contention this class
      *  exists to avoid. Waiting longer for the one query already
-     *  running is strictly better than racing a duplicate of it. */
+     *  running is strictly better than racing a duplicate of it.
+     *
+     *  Also returns null when a message was written to the provider
+     *  after the query started (see ProviderChangeTracker) — the
+     *  snapshot may be missing it, so the caller's live query has to
+     *  run instead. */
     @Synchronized
     fun consumeIfFresh(timeoutMs: Long = 60000): List<Conversation>? {
         if (consumed) return null
         consumed = true
         return try {
             latch.await(timeoutMs, TimeUnit.MILLISECONDS)
-            result
+            val snapshot = result
+            if (snapshot != null && resultVersion != ProviderChangeTracker.current()) {
+                android.util.Log.i("TurboTextPerf", "prewarm snapshot stale (messages arrived since), running live query")
+                null
+            } else {
+                snapshot
+            }
         } catch (e: InterruptedException) {
             null
         }

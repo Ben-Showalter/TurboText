@@ -45,7 +45,7 @@ class BroadcastListDetailAdapter(
             1 -> bindAction(holder, "+ Add Contact", onAddContact, false)
             else -> {
                 val contact = members[position - 2]
-                holder.text.text = "${contact.name} (${contact.number})"
+                holder.text.text = if (contact.name.isBlank()) contact.number else "${contact.name} (${contact.number})"
                 holder.text.setTextColor(ThemeHelper.getCurrentTheme(holder.itemView.context).textPrimary)
                 holder.itemView.setOnClickListener { onSelectMember(contact) }
                 holder.itemView.setOnKeyListener { _, keyCode, event ->

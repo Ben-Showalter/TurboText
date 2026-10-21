@@ -12,10 +12,9 @@ import androidx.appcompat.app.AppCompatActivity
 class AdvancedSettingsActivity : AppCompatActivity() {
 
     private lateinit var defaultAppRow: TextView
-    private lateinit var appShortcutRow: TextView
-    private lateinit var accessibilityRow: TextView
-    private lateinit var usageAccessRow: TextView
+    private lateinit var backgroundHelperRow: TextView
     private lateinit var trustedNumberRow: TextView
+    private lateinit var checkUpdatesRow: TextView
     private var currentRow = 0
     private val lastRow = 4
 
@@ -25,18 +24,15 @@ class AdvancedSettingsActivity : AppCompatActivity() {
         ThemeHelper.apply(this)
 
         defaultAppRow = findViewById(R.id.defaultAppRow)
-        appShortcutRow = findViewById(R.id.appShortcutRow)
-        accessibilityRow = findViewById(R.id.accessibilityRow)
-        usageAccessRow = findViewById(R.id.usageAccessRow)
+        backgroundHelperRow = findViewById(R.id.backgroundHelperRow)
         trustedNumberRow = findViewById(R.id.trustedNumberRow)
+        checkUpdatesRow = findViewById(R.id.checkUpdatesRow)
 
         defaultAppRow.setOnClickListener { openDefaultAppSettings() }
-        appShortcutRow.setOnClickListener {
-            startActivity(Intent(this, AppShortcutActivity::class.java))
-        }
-        accessibilityRow.setOnClickListener { openAccessibilitySettings() }
-        usageAccessRow.setOnClickListener { openUsageAccessSettings() }
+        backgroundHelperRow.setOnClickListener { AccessibilityHelper.openSettings(this) }
         trustedNumberRow.setOnClickListener { promptTrustedNumber() }
+        checkUpdatesRow.setOnClickListener { checkForUpdate() }
+        checkUpdatesRow.text = "Check for Updates (installed v${UpdateChecker.installedVersion(this)})"
 
         updateTrustedNumberRowLabel()
         updateRowHighlight()
@@ -45,6 +41,11 @@ class AdvancedSettingsActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         updateTrustedNumberRowLabel()
+        // Back from Accessibility settings: show the new state, and swap
+        // the "running" notification in or out to match.
+        backgroundHelperRow.text =
+            "Background Helper: ${if (AccessibilityHelper.isServiceEnabled(this)) "On" else "Off"}"
+        BackgroundHost.ensureRunning(this)
     }
 
     private fun updateTrustedNumberRowLabel() {
@@ -87,9 +88,25 @@ class AdvancedSettingsActivity : AppCompatActivity() {
         }
     }
 
+    /** Manual counterpart to the conversation list's weekly automatic
+     *  check (MainActivity.maybeCheckForUpdate). */
+    private fun checkForUpdate() {
+        Toast.makeText(this, "Checking for updates…", Toast.LENGTH_SHORT).show()
+        UpdatePrompt.fetch(this) { result ->
+            val release = result.getOrNull()
+            when {
+                result.isFailure ->
+                    Toast.makeText(this, "Couldn't check for updates", Toast.LENGTH_LONG).show()
+                release == null ->
+                    Toast.makeText(this, "TurboText is up to date", Toast.LENGTH_SHORT).show()
+                else -> UpdatePrompt.show(this, release)
+            }
+        }
+    }
+
     private fun updateRowHighlight() {
         val surface2 = ThemeHelper.getCurrentTheme(this).surface2
-        val rows = listOf(defaultAppRow, appShortcutRow, accessibilityRow, usageAccessRow, trustedNumberRow)
+        val rows = listOf(defaultAppRow, backgroundHelperRow, trustedNumberRow, checkUpdatesRow)
         rows.forEachIndexed { index, row ->
             row.setBackgroundColor(if (currentRow == index) surface2 else android.graphics.Color.TRANSPARENT)
         }
@@ -108,32 +125,6 @@ class AdvancedSettingsActivity : AppCompatActivity() {
             startActivity(intent)
         } catch (e: Exception) {
             Toast.makeText(this, "Open Settings > Apps > Default apps > SMS app", Toast.LENGTH_LONG).show()
-        }
-    }
-
-    /** Deep-links to the system's own Accessibility settings list — there's
-     *  no reliable cross-OEM way to jump straight to TurboText's specific
-     *  toggle within it, so the fallback Toast tells the user what to look
-     *  for. This is the one-time manual step KeyButtonAccessibilityService's
-     *  right-soft-key shortcut and outer-screen pulse both depend on. */
-    private fun openAccessibilitySettings() {
-        try {
-            startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            Toast.makeText(this, "Find and enable \"TurboText\" in the list", Toast.LENGTH_LONG).show()
-        } catch (e: Exception) {
-            Toast.makeText(this, "Open Settings > Accessibility > TurboText", Toast.LENGTH_LONG).show()
-        }
-    }
-
-    /** Deep-links to the system's "Apps with usage access" list — needed
-     *  for the UsageStatsManager checks KeyButtonAccessibilityService
-     *  makes (see its currentForeground()). */
-    private fun openUsageAccessSettings() {
-        try {
-            startActivity(Intent(android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS))
-            Toast.makeText(this, "Find and enable \"TurboText\" in the list", Toast.LENGTH_LONG).show()
-        } catch (e: Exception) {
-            Toast.makeText(this, "Open Settings > Apps > Special access > Usage access > TurboText", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -157,10 +148,9 @@ class AdvancedSettingsActivity : AppCompatActivity() {
             KeyEvent.KEYCODE_DPAD_CENTER -> {
                 when (currentRow) {
                     0 -> openDefaultAppSettings()
-                    1 -> startActivity(Intent(this, AppShortcutActivity::class.java))
-                    2 -> openAccessibilitySettings()
-                    3 -> openUsageAccessSettings()
-                    4 -> promptTrustedNumber()
+                    1 -> AccessibilityHelper.openSettings(this)
+                    2 -> promptTrustedNumber()
+                    3 -> checkForUpdate()
                 }
                 return true
             }

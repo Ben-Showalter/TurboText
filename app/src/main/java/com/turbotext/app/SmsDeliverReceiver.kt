@@ -31,6 +31,9 @@ class SmsDeliverReceiver : BroadcastReceiver() {
             put(Telephony.Sms.TYPE, Telephony.Sms.MESSAGE_TYPE_INBOX)
         }
         context.contentResolver.insert(Telephony.Sms.CONTENT_URI, values)
+        // Synchronously, before anything else — a conversation-list
+        // snapshot taken before this insert must not be trusted.
+        ProviderChangeTracker.bump()
 
         // Refresh this thread's cache right away, regardless of what
         // screen (if any) is currently showing — without this, a thread
@@ -42,6 +45,7 @@ class SmsDeliverReceiver : BroadcastReceiver() {
             try {
                 val threadId = Telephony.Threads.getOrCreateThreadId(context, address)
                 MessageCache.put(threadId, SmsRepository(context).getMessages(threadId))
+                MessageEvents.changed(threadId)
             } catch (e: Exception) {
                 android.util.Log.w("TurboTextCache", "failed to refresh cache for new SMS", e)
             }
@@ -51,13 +55,15 @@ class SmsDeliverReceiver : BroadcastReceiver() {
         // vCard sent as plain SMS (rather than an MMS attachment) is raw
         // vCard syntax in `body` — that's what SmsRepository.getSmsMessages()
         // detects and turns into a contact-card bubble for the thread
-        // view, but the notification/read-aloud preview here isn't
+        // view, but the notification preview here isn't
         // routed through that, so it needs its own friendly text instead
-        // of speaking/showing "N:Doe;John;;;" etc.
+        // of showing "N:Doe;John;;;" etc.
         val displayName = ContactHelper.lookupName(context, address) ?: address
         val notifyBody = if (VcardTextExtractor.extract(body) != null) "Contact card" else body
-        NotificationHelper.showIncoming(context, address, displayName, notifyBody)
-        SoundNotificationHelper.notifyNewMessage(context, address, displayName)
-        ReadAloudHelper.maybeReadAloud(context, displayName, notifyBody)
+        val threadId = NotificationHelper.showIncoming(context, address, displayName, notifyBody)
+        SoundNotificationHelper.notifyNewMessage(
+            context, NotificationHelper.conversationKey(threadId, address), displayName,
+            sender = address, preview = notifyBody
+        )
     }
 }

@@ -38,34 +38,10 @@
         android:background="?android:attr/selectableItemBackground" />
 
     <TextView
-        android:id="@+id/appShortcutRow"
+        android:id="@+id/backgroundHelperRow"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="App Shortcut"
-        android:textColor="@android:color/white"
-        android:textSize="18sp"
-        android:padding="14dp"
-        android:focusable="true"
-        android:focusableInTouchMode="true"
-        android:background="?android:attr/selectableItemBackground" />
-
-    <TextView
-        android:id="@+id/accessibilityRow"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Enable Accessibility Service"
-        android:textColor="@android:color/white"
-        android:textSize="18sp"
-        android:padding="14dp"
-        android:focusable="true"
-        android:focusableInTouchMode="true"
-        android:background="?android:attr/selectableItemBackground" />
-
-    <TextView
-        android:id="@+id/usageAccessRow"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Enable Usage Access"
+        android:text="Background Helper: Off"
         android:textColor="@android:color/white"
         android:textSize="18sp"
         android:padding="14dp"
@@ -78,6 +54,20 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Trusted Provisioning Number: Not Set"
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
+        android:padding="14dp"
+        android:focusable="true"
+        android:focusableInTouchMode="true"
+        android:background="?android:attr/selectableItemBackground" />
+
+
+
+    <TextView
+        android:id="@+id/checkUpdatesRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Check for Updates"
         android:textColor="@android:color/white"
         android:textSize="18sp"
         android:padding="14dp"

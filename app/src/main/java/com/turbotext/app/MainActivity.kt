@@ -9,7 +9,6 @@ import android.view.KeyEvent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 
 class MainActivity : AppCompatActivity() {
@@ -18,6 +17,27 @@ class MainActivity : AppCompatActivity() {
     private lateinit var adapter: ConversationAdapter
     private lateinit var list: RecyclerView
     private var focusedConversation: Conversation? = null
+
+    // Keeps the list live while it's on screen — without this, a message
+    // (or an MMS download finishing) after the list loaded only showed up
+    // after leaving and coming back. Same debounced-observer approach as
+    // ConversationActivity's thread view.
+    private val reloadHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val reloadRunnable = Runnable {
+        if (isFinishing || isDestroyed) return@Runnable
+        refreshConversations()
+        updateGroupsLabel()
+    }
+    private val messageObserver = object : android.database.ContentObserver(reloadHandler) {
+        override fun onChange(selfChange: Boolean) {
+            // One incoming message fires several notifications in a row
+            // (row insert, then parts/thread updates) — reload once per
+            // burst rather than once per notification.
+            reloadHandler.removeCallbacks(reloadRunnable)
+            reloadHandler.postDelayed(reloadRunnable, 800)
+        }
+    }
+    private var observerRegistered = false
 
     // WRITE/READ_EXTERNAL_STORAGE are declared in the manifest with
     // maxSdkVersion="28" (scoped storage replaces them from API 29 on —
@@ -41,13 +61,6 @@ class MainActivity : AppCompatActivity() {
         arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.READ_EXTERNAL_STORAGE)
     } else {
         emptyArray()
-    } + if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-        // Needed to route voice-to-text through a Bluetooth headset mic
-        // (see BluetoothMicHelper) — below API 31 the legacy BLUETOOTH
-        // permission already declared in the manifest is enough.
-        arrayOf(Manifest.permission.BLUETOOTH_CONNECT)
-    } else {
-        emptyArray()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -57,8 +70,7 @@ class MainActivity : AppCompatActivity() {
         repo = SmsRepository(this)
 
         list = findViewById(R.id.conversationList)
-        list.layoutManager = LinearLayoutManager(this)
-        list.snapTopRowOnIdle()
+        list.setUpForDpad()
         // Without this, the RecyclerView container itself is a valid focus
         // target — descendantFocusability="afterDescendants" only affects
         // search order *within* it. Returning from a thread (window focus
@@ -88,10 +100,70 @@ class MainActivity : AppCompatActivity() {
         // file appears on external storage as soon as "All files access"
         // is granted, without needing a reinstall.
         GroqConfig.ensureKeyFileExists()
+        // The Background Helper may have just been turned on or off.
+        BackgroundHost.ensureRunning(this)
         if (hasAllPermissions()) {
             refreshConversations()
             updateGroupsLabel()
+            registerMessageObserver()
+            // Not while a setup prompt is up — the two dialogs would stack.
+            if (setupDialog?.isShowing != true) maybeCheckForUpdate()
         }
+    }
+
+    /** Checks GitHub for a newer release about once a week (this screen
+     *  resumes constantly, so no background scheduler is needed) and, if
+     *  there is one, asks whether to install it. Only runs once permissions
+     *  are granted, so it never stacks on top of the first-launch prompts.
+     *  Advanced settings has a manual "Check for Updates" too. */
+    private fun maybeCheckForUpdate() {
+        val now = System.currentTimeMillis()
+        val last = SettingsHelper.getLastUpdateCheckAt(this)
+        // A last-check time in the future means the clock was turned back; check anyway.
+        if (now - last in 0 until UpdateChecker.CHECK_INTERVAL_MS) return
+        // Recorded up front so resumes while the check is in flight don't start another.
+        SettingsHelper.setLastUpdateCheckAt(this, now)
+        UpdatePrompt.fetch(this) { result ->
+            result.onFailure {
+                // Offline or rate-limited: try again in a day rather than a week.
+                SettingsHelper.setLastUpdateCheckAt(
+                    this, now - UpdateChecker.CHECK_INTERVAL_MS + UpdateChecker.RETRY_AFTER_FAILURE_MS
+                )
+            }
+            val release = result.getOrNull() ?: return@fetch
+            if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+                UpdatePrompt.show(this, release)
+            } else {
+                // Left this screen mid-check; ask on the next resume instead.
+                SettingsHelper.setLastUpdateCheckAt(this, 0L)
+            }
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        if (observerRegistered) {
+            contentResolver.unregisterContentObserver(messageObserver)
+            observerRegistered = false
+        }
+        reloadHandler.removeCallbacks(reloadRunnable)
+    }
+
+    /** Watches all three URIs for the same reason ConversationActivity
+     *  does — this device's provider can't be relied on to propagate
+     *  changes up to the combined content://mms-sms/ authority alone. */
+    private fun registerMessageObserver() {
+        if (observerRegistered) return
+        contentResolver.registerContentObserver(
+            android.net.Uri.parse("content://mms-sms/"), true, messageObserver
+        )
+        contentResolver.registerContentObserver(
+            android.provider.Telephony.Sms.CONTENT_URI, true, messageObserver
+        )
+        contentResolver.registerContentObserver(
+            android.provider.Telephony.Mms.CONTENT_URI, true, messageObserver
+        )
+        observerRegistered = true
     }
 
     /** Highlights the "◀ Groups" header entry when a group thread has an
@@ -134,13 +206,34 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
+    /** Needed to receive picture/group messages and their delivery
+     *  reports: without them Android drops every incoming MMS push
+     *  ("Permission Denial ... requires RECEIVE_MMS"). Normally granted
+     *  with the default-SMS-app role, but they can be missing or revoked,
+     *  and were never asked for. Not in [requiredPermissions], so a
+     *  refusal doesn't stop the conversation list loading. */
+    private val receivePermissions = arrayOf(
+        Manifest.permission.RECEIVE_MMS,
+        Manifest.permission.RECEIVE_WAP_PUSH
+    )
+
     private fun hasAllPermissions() = requiredPermissions.all {
         ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
     }
 
+    private fun missingReceivePermissions() = receivePermissions.filter {
+        ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+    }
+
     private fun ensurePermissions() {
-        if (!hasAllPermissions()) {
-            ActivityCompat.requestPermissions(this, requiredPermissions, 100)
+        val missing = requiredPermissions.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        } + missingReceivePermissions()
+        if (missing.isNotEmpty()) {
+            android.util.Log.w("TurboTextMms", "asking for permissions: ${missing.joinToString()}")
+            ActivityCompat.requestPermissions(this, missing.toTypedArray(), 100)
+        } else {
+            continueSetup()
         }
         // No else-branch refresh call here — onResume() always fires
         // immediately after onCreate() regardless, and already handles
@@ -158,12 +251,69 @@ class MainActivity : AppCompatActivity() {
         if (hasAllPermissions()) {
             refreshConversations()
         }
+        if (requestCode == 100 && missingReceivePermissions().isNotEmpty() && !isFinishing && !isDestroyed) {
+            android.util.Log.w("TurboTextMms", "still missing: ${missingReceivePermissions().joinToString()}")
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Picture messages blocked")
+                .setMessage(
+                    "TurboText isn't allowed to receive picture and group messages. " +
+                        "Turn on SMS in Settings > Apps > TurboText > Permissions."
+                )
+                .setPositiveButton("Open Settings") { _, _ ->
+                    try {
+                        startActivity(
+                            Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                                .setData(android.net.Uri.fromParts("package", packageName, null))
+                        )
+                    } catch (e: Exception) {
+                    }
+                }
+                .setNegativeButton("Later") { _, _ -> continueSetup() }
+                .show()
+            return
+        }
+        continueSetup()
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == DefaultSmsRoleHelper.REQUEST_CODE) {
             refreshConversations()
+            continueSetup()
+        }
+    }
+
+    // Each setup prompt is shown at most once per launch; anything still
+    // missing is asked for again on the next launch.
+    private var askedDefaultThisLaunch = false
+    private var askedHelperThisLaunch = false
+    private var setupDialog: androidx.appcompat.app.AlertDialog? = null
+
+    /** Startup setup, one step at a time (each step's result calls this
+     *  again): app permissions → default SMS app → Background Helper. Steps
+     *  already granted are skipped. */
+    private fun continueSetup() {
+        if (isFinishing || isDestroyed) return
+        if (!DefaultSmsRoleHelper.isDefault(this) && !askedDefaultThisLaunch) {
+            askedDefaultThisLaunch = true
+            DefaultSmsRoleHelper.requestDefault(this)
+            return
+        }
+        if (!AccessibilityHelper.isServiceEnabled(this) && !askedHelperThisLaunch &&
+            !SettingsHelper.isHelperPromptDismissed(this)
+        ) {
+            askedHelperThisLaunch = true
+            setupDialog = androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Turn on Background Helper")
+                .setMessage(
+                    "Keeps TurboText running in the background without a \"running\" notification. " +
+                        "On the next screen, choose TurboText and turn it on. " +
+                        "You can also turn it on later in Settings > Advanced."
+                )
+                .setPositiveButton("Open Settings") { _, _ -> AccessibilityHelper.openSettings(this) }
+                .setNegativeButton("Not now", null)
+                .setNeutralButton("Don't ask again") { _, _ -> SettingsHelper.setHelperPromptDismissed(this, true) }
+                .show()
         }
     }
 
@@ -179,7 +329,7 @@ class MainActivity : AppCompatActivity() {
         // cache was built.
         val cachedList = ConversationListCache.get()
         if (cachedList != null) {
-            adapter.update(cachedList)
+            adapter.update(cachedList, this)
             findViewById<android.view.View>(R.id.emptyView).visibility =
                 if (cachedList.isEmpty()) android.view.View.VISIBLE else android.view.View.GONE
             android.util.Log.i("TurboTextPerf", "shown from cache instantly: ${System.currentTimeMillis() - startedAt}ms")
@@ -207,7 +357,7 @@ class MainActivity : AppCompatActivity() {
             }
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
-                adapter.update(conversations)
+                adapter.update(conversations, this)
                 findViewById<android.view.View>(R.id.emptyView).visibility =
                     if (conversations.isEmpty()) android.view.View.VISIBLE else android.view.View.GONE
                 android.util.Log.i("TurboTextPerf", "refreshConversations() rendered: ${System.currentTimeMillis() - startedAt}ms")
@@ -233,19 +383,19 @@ class MainActivity : AppCompatActivity() {
         // move the highlight, center/OK selects) — no touch needed.
         val convo = focusedConversation
         val options = if (convo != null) {
-            arrayOf("Move to Trash", "Archive All Conversations", "Add to Contacts", "Refresh", "Trash Bin", "Settings")
+            arrayOf("Mark All as Read", "Move to Trash", "Archive All Conversations", "Add to Contacts", "Trash Bin", "Settings")
         } else {
-            arrayOf("Archive All Conversations", "Refresh", "Trash Bin", "Settings")
+            arrayOf("Mark All as Read", "Archive All Conversations", "Trash Bin", "Settings")
         }
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Options")
             .setItems(options) { _, which ->
                 val choice = options[which]
                 when (choice) {
+                    "Mark All as Read" -> ReadAll.run(this) { refreshConversations() }
                     "Move to Trash" -> convo?.let { trashConversation(it) }
                     "Archive All Conversations" -> archiveAllConversations()
                     "Add to Contacts" -> convo?.let { addToContacts(it) }
-                    "Refresh" -> refreshConversations()
                     "Trash Bin" -> startActivity(Intent(this, TrashBinActivity::class.java))
                     "Settings" -> startActivity(Intent(this, SettingsActivity::class.java))
                 }

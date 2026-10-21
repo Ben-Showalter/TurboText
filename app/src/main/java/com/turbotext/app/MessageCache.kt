@@ -15,4 +15,8 @@ object MessageCache {
     fun put(threadId: Long, messages: List<Message>) {
         cache[threadId] = messages
     }
+
+    fun remove(threadId: Long) {
+        cache.remove(threadId)
+    }
 }

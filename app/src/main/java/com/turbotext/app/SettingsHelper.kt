@@ -7,6 +7,24 @@ object SettingsHelper {
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
+    /** Keys left behind by removed features (read-aloud, Bluetooth mic, the T9 engine choice).
+     *  Cleared once at startup so they don't linger in the prefs file. */
+    private val REMOVED_KEYS = listOf(
+        "read_aloud_mode", "read_aloud_voice", "tts_engine",
+        "native_tts_voice", "native_tts_rate", "native_tts_engine_package",
+        "voice_input_bluetooth_mic", "prediction_engine"
+    )
+
+    fun clearRemovedSettings(context: Context) {
+        // Settings > Advanced's app shortcut (removed) kept its own file.
+        context.deleteSharedPreferences("message_pro_app_shortcut")
+        val p = prefs(context)
+        if (REMOVED_KEYS.none { p.contains(it) }) return
+        val e = p.edit()
+        REMOVED_KEYS.forEach { e.remove(it) }
+        e.apply()
+    }
+
     fun isSignatureEnabled(context: Context): Boolean =
         prefs(context).getBoolean("signature_enabled", false)
 
@@ -56,62 +74,39 @@ object SettingsHelper {
         prefs(context).edit().putString("notif_vibrate_pattern", patternId).apply()
     }
 
-    /** "always", "bluetooth", or "never" — defaults to never. */
-    fun getReadAloudMode(context: Context): String =
-        prefs(context).getString("read_aloud_mode", "never") ?: "never"
+    /** "Don't ask again" on the startup Background Helper prompt. */
+    fun isHelperPromptDismissed(context: Context): Boolean =
+        prefs(context).getBoolean("helper_prompt_dismissed", false)
 
-    fun setReadAloudMode(context: Context, mode: String) {
-        prefs(context).edit().putString("read_aloud_mode", mode).apply()
+    fun setHelperPromptDismissed(context: Context, dismissed: Boolean) {
+        prefs(context).edit().putBoolean("helper_prompt_dismissed", dismissed).apply()
     }
 
-    /** One of Groq's Orpheus English voices: autumn, diana, hannah,
-     *  austin, daniel, troy. Defaults to "austin" — used in Groq's own
-     *  documentation examples as a fairly neutral-sounding default. */
-    fun getReadAloudVoice(context: Context): String =
-        prefs(context).getString("read_aloud_voice", "austin") ?: "austin"
+    /** Cover screen shows "New message" instead of who it's from and what
+     *  it says, for anyone who doesn't want that readable on the outside
+     *  of a closed phone. Off by default. */
+    fun isHideMessageOnCover(context: Context): Boolean =
+        prefs(context).getBoolean("hide_message_on_cover", false)
 
-    fun setReadAloudVoice(context: Context, voice: String) {
-        prefs(context).edit().putString("read_aloud_voice", voice).apply()
+    fun setHideMessageOnCover(context: Context, hide: Boolean) {
+        prefs(context).edit().putBoolean("hide_message_on_cover", hide).apply()
     }
+
+    /** Contact photo / initials circle on conversation rows and next to
+     *  group-thread senders. On by default. */
+    fun isShowAvatars(context: Context): Boolean =
+        prefs(context).getBoolean("show_avatars", true)
+
+    fun setShowAvatars(context: Context, show: Boolean) {
+        prefs(context).edit().putBoolean("show_avatars", show).apply()
+    }
+
 
     fun getThemeId(context: Context): String =
         prefs(context).getString("theme_id", "classic_dark") ?: "classic_dark"
 
     fun setThemeId(context: Context, id: String) {
         prefs(context).edit().putString("theme_id", id).apply()
-    }
-
-    /** "cloud" (Groq) or "native" (on-device Android TTS). Defaults to
-     *  cloud, since it's the proven-working option on this device. */
-    fun getTtsEngine(context: Context): String =
-        prefs(context).getString("tts_engine", "cloud") ?: "cloud"
-
-    fun setTtsEngine(context: Context, engine: String) {
-        prefs(context).edit().putString("tts_engine", engine).apply()
-    }
-
-    fun getNativeVoiceName(context: Context): String? =
-        prefs(context).getString("native_tts_voice", null)
-
-    fun setNativeVoiceName(context: Context, name: String?) {
-        prefs(context).edit().putString("native_tts_voice", name).apply()
-    }
-
-    fun getNativeSpeechRate(context: Context): Float =
-        prefs(context).getFloat("native_tts_rate", 1.0f)
-
-    fun setNativeSpeechRate(context: Context, rate: Float) {
-        prefs(context).edit().putFloat("native_tts_rate", rate).apply()
-    }
-
-    /** Package name of a specific TTS engine to use (e.g. eSpeak-NG,
-     *  RHVoice), overriding whatever the phone's system-wide default is.
-     *  Null means "use the system default". */
-    fun getNativeTtsEnginePackage(context: Context): String? =
-        prefs(context).getString("native_tts_engine_package", null)
-
-    fun setNativeTtsEnginePackage(context: Context, packageName: String?) {
-        prefs(context).edit().putString("native_tts_engine_package", packageName).apply()
     }
 
     /** A runtime-set Groq API key, overriding the hardcoded fallback in
@@ -138,14 +133,12 @@ object SettingsHelper {
         prefs(context).edit().putString("trusted_provisioning_number", number).apply()
     }
 
-    /** When true, GroqVoiceInputHelper routes voice-to-text recording
-     *  through a connected Bluetooth headset's mic instead of the phone's
-     *  built-in one. Defaults to false (phone mic) — off unless the user
-     *  opts in from Advanced settings. */
-    fun isBluetoothMicEnabled(context: Context): Boolean =
-        prefs(context).getBoolean("voice_input_bluetooth_mic", false)
+    /** When the conversation list last started an automatic update check
+     *  (epoch ms, 0 = never) — see MainActivity.maybeCheckForUpdate. */
+    fun getLastUpdateCheckAt(context: Context): Long =
+        prefs(context).getLong("last_update_check_at", 0L)
 
-    fun setBluetoothMicEnabled(context: Context, enabled: Boolean) {
-        prefs(context).edit().putBoolean("voice_input_bluetooth_mic", enabled).apply()
+    fun setLastUpdateCheckAt(context: Context, time: Long) {
+        prefs(context).edit().putLong("last_update_check_at", time).apply()
     }
 }

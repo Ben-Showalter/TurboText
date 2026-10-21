@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- The Background Helper (KeyButtonAccessibilityService): only keeps
+     TurboText running. It asks for no window content and no keys. -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
-    android:accessibilityEventTypes="typeAllMask"
-    android:accessibilityFlags="flagRequestFilterKeyEvents|flagRetrieveInteractiveWindows"
-    android:canRequestFilterKeyEvents="true"
+    android:accessibilityEventTypes="typeAnnouncement"
+    android:canRetrieveWindowContent="false"
     android:description="@string/accessibility_service_description"
     android:notificationTimeout="100" />

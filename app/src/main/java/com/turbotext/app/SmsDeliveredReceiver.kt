@@ -27,23 +27,41 @@ class SmsDeliveredReceiver : android.content.BroadcastReceiver() {
         // success or a failure — resultCode alone (unlike the sent
         // callback) isn't the whole story, since the broadcast itself
         // succeeding just means we received *a* report, not that it was
-        // a positive one.
-        val delivered = try {
+        // a positive one. The PDU has to be read in the format it came in
+        // (GSM or CDMA), which the broadcast says.
+        val result = try {
             val pdu = intent.getByteArrayExtra("pdu")
-            if (pdu != null) {
-                val message = SmsMessage.createFromPdu(pdu)
-                message?.status == 0 // 0 = successfully delivered, per the SMS PDU status spec
+            val format = intent.getStringExtra("format")
+            val message = when {
+                pdu == null -> null
+                format != null -> SmsMessage.createFromPdu(pdu, format)
+                else -> SmsMessage.createFromPdu(pdu)
+            }
+            if (message != null) {
+                Log.i(
+                    "TurboTextMmsReport",
+                    "text delivery report for ${rowUri.lastPathSegment}: status=0x" +
+                        Integer.toHexString(message.status) + " format=$format"
+                )
+                DeliveryStatus.classify(message.status, format == "3gpp2")
+            } else if (resultCode == Activity.RESULT_OK) {
+                DeliveryStatus.Result.DELIVERED
             } else {
-                resultCode == Activity.RESULT_OK
+                DeliveryStatus.Result.FAILED
             }
         } catch (e: Exception) {
-            resultCode == Activity.RESULT_OK
+            if (resultCode == Activity.RESULT_OK) DeliveryStatus.Result.DELIVERED else DeliveryStatus.Result.FAILED
         }
 
+        Log.i("TurboTextMmsReport", "text ${rowUri.lastPathSegment} delivery: $result")
         val values = ContentValues().apply {
             put(
                 Telephony.Sms.STATUS,
-                if (delivered) Telephony.Sms.STATUS_COMPLETE else Telephony.Sms.STATUS_FAILED
+                when (result) {
+                    DeliveryStatus.Result.DELIVERED -> Telephony.Sms.STATUS_COMPLETE
+                    DeliveryStatus.Result.PENDING -> Telephony.Sms.STATUS_PENDING
+                    DeliveryStatus.Result.FAILED -> Telephony.Sms.STATUS_FAILED
+                }
             )
         }
         try {
@@ -56,6 +74,7 @@ class SmsDeliveredReceiver : android.content.BroadcastReceiver() {
             Thread {
                 try {
                     MessageCache.put(threadId, SmsRepository(context).getMessages(threadId))
+                    MessageEvents.changed(threadId)
                 } catch (e: Exception) {
                     Log.w("TurboTextSend", "failed to refresh cache after delivery confirmation", e)
                 }

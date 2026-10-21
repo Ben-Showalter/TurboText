@@ -13,19 +13,21 @@ object NotificationHelper {
     // (SHORTCUT_CHANNEL_ID/NOTIFICATION_ID removed — see note near the
     // bottom of this file.)
 
-    /** rawAddress is needed (separately from displayName) to resolve which
-     *  thread this belongs to, so tapping the notification can jump
-     *  straight into that conversation instead of just the list. */
-    fun showIncoming(
-        context: Context,
-        rawAddress: String,
-        displayName: String,
-        body: String,
-        threadId: Long? = null,
-        conversationAddress: String? = null
-    ) {
-        val manager = context.getSystemService(NotificationManager::class.java)
+    /** Fixed id for the "couldn't be downloaded" notice — it isn't tied to
+     *  any conversation, so it gets one slot that a later success clears. */
+    private const val MMS_DOWNLOAD_FAILED_ID = 9998
 
+    /** The one key every per-conversation alert uses — the notification,
+     *  its tap action, the outer-screen card and the repeat alarm — so
+     *  posting and clearing always agree. It's the thread id: an SMS and
+     *  an MMS from the same person, a group thread, or an address the
+     *  provider formats differently ("+1555…" vs "555…") all land on the
+     *  same conversation. Falls back to the address only if the thread
+     *  couldn't be resolved. */
+    fun conversationKey(threadId: Long, address: String): String =
+        if (threadId > 0) "thread:$threadId" else address
+
+    private fun ensureChannel(manager: NotificationManager) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 INCOMING_CHANNEL_ID, "Messages", NotificationManager.IMPORTANCE_HIGH
@@ -44,6 +46,24 @@ object NotificationHelper {
             channel.setSound(null, null)
             manager.createNotificationChannel(channel)
         }
+    }
+
+    /** rawAddress is needed (separately from displayName) to resolve which
+     *  thread this belongs to, so tapping the notification can jump
+     *  straight into that conversation instead of just the list.
+     *  Returns the thread id it resolved (-1 if it couldn't), for the
+     *  caller to key its sound/outer-screen alert with the same
+     *  [conversationKey]. */
+    fun showIncoming(
+        context: Context,
+        rawAddress: String,
+        displayName: String,
+        body: String,
+        threadId: Long? = null,
+        conversationAddress: String? = null
+    ): Long {
+        val manager = context.getSystemService(NotificationManager::class.java)
+        ensureChannel(manager)
 
         val resolvedThreadId = threadId ?: try {
             android.provider.Telephony.Threads.getOrCreateThreadId(context, rawAddress)
@@ -51,10 +71,13 @@ object NotificationHelper {
             -1L
         }
 
+        val address = conversationAddress ?: rawAddress
+        val notificationId = conversationKey(resolvedThreadId, address).hashCode()
+
         val mainIntent = Intent(context, MainActivity::class.java)
         val conversationIntent = Intent(context, ConversationActivity::class.java).apply {
             putExtra("threadId", resolvedThreadId)
-            putExtra("address", conversationAddress ?: rawAddress)
+            putExtra("address", address)
             putExtra("displayName", displayName)
         }
         val pendingIntent = TaskStackBuilder.create(context).run {
@@ -64,7 +87,11 @@ object NotificationHelper {
             // to the conversation list instead of just closing the app.
             addNextIntent(mainIntent)
             addNextIntent(conversationIntent)
-            getPendingIntent(0, android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE)
+            // One request code per conversation. With a shared code every
+            // notification's tap action was the same PendingIntent, updated
+            // to whichever conversation notified last — so tapping an older
+            // notification opened the wrong thread.
+            getPendingIntent(notificationId, android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE)
         }
 
         val notification = NotificationCompat.Builder(context, INCOMING_CHANNEL_ID)
@@ -88,23 +115,43 @@ object NotificationHelper {
             .setLights(android.graphics.Color.BLUE, 1, 0)
             .build()
 
-        // Must match what cancelForAddress() below (and SoundNotificationHelper's
-        // own notify/acknowledge pair) will be called with once the thread is
-        // opened — for a group MMS thread that's the joined conversationAddress,
-        // not the single rawAddress this notification happens to be about.
-        // Keying on rawAddress alone left group-thread notifications (and the
-        // outer-screen rich card, and the persistent alert) stuck forever,
-        // since the id used to post never matched the id used to cancel.
-        manager.notify((conversationAddress ?: rawAddress).hashCode(), notification)
+        manager.notify(notificationId, notification)
+        return resolvedThreadId
     }
 
-    /** Clears the incoming-message notification for a given address —
+    /** Shown when an MMS failed to download and nothing was saved, so
+     *  there's no conversation to point at — tapping it opens the
+     *  conversation list, where the "press OK to download" notice is.
+     *  Cleared by [cancelMmsDownloadFailed] once an MMS comes through. */
+    fun showMmsDownloadFailed(context: Context) {
+        val manager = context.getSystemService(NotificationManager::class.java)
+        ensureChannel(manager)
+        val pendingIntent = android.app.PendingIntent.getActivity(
+            context, MMS_DOWNLOAD_FAILED_ID, Intent(context, MainActivity::class.java),
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = NotificationCompat.Builder(context, INCOMING_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.sym_action_chat)
+            .setContentTitle("Multimedia message")
+            .setContentText("A multimedia message couldn't be downloaded")
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .build()
+        manager.notify(MMS_DOWNLOAD_FAILED_ID, notification)
+    }
+
+    fun cancelMmsDownloadFailed(context: Context) {
+        context.getSystemService(NotificationManager::class.java).cancel(MMS_DOWNLOAD_FAILED_ID)
+    }
+
+    /** Clears the incoming-message notification for a conversation —
      *  called when the thread is actually opened, so it goes away even if
      *  you got there by opening the app directly rather than tapping the
-     *  notification. */
-    fun cancelForAddress(context: Context, address: String) {
-        val manager = context.getSystemService(NotificationManager::class.java)
-        manager.cancel(address.hashCode())
+     *  notification. [key] is [conversationKey]. */
+    fun cancelForConversation(context: Context, key: String) {
+        context.getSystemService(NotificationManager::class.java).cancel(key.hashCode())
     }
 
     fun showProvisioningConfirmation(context: Context) {

@@ -4,4 +4,6 @@
     <cache-path name="mms_downloads" path="mms_downloads/" />
     <cache-path name="audio_memos" path="audio_memos/" />
     <cache-path name="sms_vcards" path="sms_vcards/" />
+    <!-- Downloaded update APKs (see UpdateChecker.download). -->
+    <cache-path name="updates" path="updates/" />
 </paths>

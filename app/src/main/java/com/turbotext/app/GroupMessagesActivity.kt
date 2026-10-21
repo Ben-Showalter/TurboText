@@ -10,7 +10,6 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 
 class GroupMessagesActivity : AppCompatActivity() {
@@ -34,8 +33,7 @@ class GroupMessagesActivity : AppCompatActivity() {
         repo = SmsRepository(this)
         list = findViewById(R.id.groupList)
         emptyView = findViewById(R.id.groupEmptyView)
-        list.layoutManager = LinearLayoutManager(this)
-        list.snapTopRowOnIdle()
+        list.setUpForDpad()
         adapter = ConversationAdapter(
             emptyList(),
             onSelected = { convo ->
@@ -52,9 +50,13 @@ class GroupMessagesActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        loadGroups()
+    }
+
+    private fun loadGroups() {
         val cached = GroupThreadsCache.get()
         if (cached != null) {
-            adapter.update(cached)
+            adapter.update(cached, this)
             emptyView.visibility = if (cached.isEmpty()) View.VISIBLE else View.GONE
             // Fast pass: getGroupThreads() below takes seconds, so a thread
             // that was just opened and read would keep its ● / accent
@@ -64,7 +66,7 @@ class GroupMessagesActivity : AppCompatActivity() {
                 val unreadIds = repo.unreadThreadIds()
                 val patched = cached.map { it.copy(unread = it.threadId in unreadIds) }
                 if (patched != cached) runOnUiThread {
-                    if (!isFinishing && !isDestroyed) adapter.update(patched)
+                    if (!isFinishing && !isDestroyed) adapter.update(patched, this)
                 }
             }.start()
         }
@@ -79,7 +81,7 @@ class GroupMessagesActivity : AppCompatActivity() {
             if (groups == cached) return@Thread
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
-                adapter.update(groups)
+                adapter.update(groups, this)
                 emptyView.visibility = if (groups.isEmpty()) View.VISIBLE else View.GONE
             }
         }.start()
@@ -130,7 +132,7 @@ class GroupMessagesActivity : AppCompatActivity() {
                 Thread {
                     val groups = repo.getGroupThreads()
                     runOnUiThread {
-                        if (!isFinishing && !isDestroyed) adapter.update(groups)
+                        if (!isFinishing && !isDestroyed) adapter.update(groups, this)
                     }
                 }.start()
             }
@@ -213,24 +215,32 @@ class GroupMessagesActivity : AppCompatActivity() {
         }
     }
 
-    /** This is the single most uncertain part of this whole feature —
-     *  see SmsRepository.sendGroupMmsMessage's own note. If this doesn't
-     *  work as-is, it's the specific place to focus on fixing, likely
-     *  with real error feedback the same way the earlier audio/vcard
-     *  attachment work needed. */
+    /** One group MMS to everyone picked, via MessageSender — whether the
+     *  recipients' phones show it as a shared thread is up to their
+     *  carriers and handsets. */
     private fun sendNewGroup(body: String) {
         val addresses = pendingAddresses.toList()
-        Toast.makeText(this, "Sending group message…", Toast.LENGTH_SHORT).show()
+        val app = applicationContext
         Thread {
-            try {
-                repo.sendGroupMmsMessage(addresses, body)
-            } catch (e: Exception) {
-                android.util.Log.e("TurboTextGroup", "group send failed", e)
-            }
+            val threadId = MessageSender.threadIdFor(app, addresses)
+            val name = MessageSender.displayNameFor(app, addresses)
             runOnUiThread {
-                if (!isFinishing && !isDestroyed) {
-                    Toast.makeText(this, "Sent", Toast.LENGTH_SHORT).show()
+                PendingSends.send(app, threadId, addresses, body, emptyList(), onDone = { error ->
+                    if (error != null) Toast.makeText(app, error, Toast.LENGTH_LONG).show()
+                })
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (threadId < 0) {
+                    Toast.makeText(this, "Sending group message…", Toast.LENGTH_SHORT).show()
+                    return@runOnUiThread
                 }
+                // Straight into the new group's thread, where the message
+                // shows as Sending and updates as it goes out.
+                startActivity(
+                    Intent(this, ConversationActivity::class.java)
+                        .putExtra("threadId", threadId)
+                        .putExtra("address", addresses.joinToString(","))
+                        .putExtra("displayName", name)
+                )
             }
         }.start()
     }
@@ -249,9 +259,9 @@ class GroupMessagesActivity : AppCompatActivity() {
     private fun showOptions() {
         val group = focusedGroup
         val options = if (group != null) {
-            arrayOf("Nickname Group", "Add Person to Group", "Archive All Groups", "Move to Trash")
+            arrayOf("Nickname Group", "Add Person to Group", "Mark All as Read", "Archive All Groups", "Move to Trash")
         } else {
-            arrayOf("New Group Message", "Archive All Groups")
+            arrayOf("New Group Message", "Mark All as Read", "Archive All Groups")
         }
         AlertDialog.Builder(this)
             .setTitle("Options")
@@ -259,6 +269,7 @@ class GroupMessagesActivity : AppCompatActivity() {
                 when (options[which]) {
                     "Nickname Group" -> group?.let { promptNickname(it) }
                     "Add Person to Group" -> group?.let { addPersonToGroup(it) }
+                    "Mark All as Read" -> ReadAll.run(this) { loadGroups() }
                     "Archive All Groups" -> archiveAllGroups()
                     "Move to Trash" -> group?.let { trashGroup(it) }
                     "New Group Message" -> startNewGroup()
@@ -290,7 +301,7 @@ class GroupMessagesActivity : AppCompatActivity() {
                 Toast.makeText(this, "Moved to trash", Toast.LENGTH_SHORT).show()
                 Thread {
                     val groups = repo.getGroupThreads()
-                    runOnUiThread { if (!isFinishing && !isDestroyed) adapter.update(groups) }
+                    runOnUiThread { if (!isFinishing && !isDestroyed) adapter.update(groups, this) }
                 }.start()
             }
         }.start()
