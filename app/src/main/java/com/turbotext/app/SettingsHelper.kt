@@ -7,12 +7,12 @@ object SettingsHelper {
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    /** Keys left behind by removed features (read-aloud, Bluetooth mic).
+    /** Keys left behind by removed features (read-aloud, Bluetooth mic, the T9 engine choice).
      *  Cleared once at startup so they don't linger in the prefs file. */
     private val REMOVED_KEYS = listOf(
         "read_aloud_mode", "read_aloud_voice", "tts_engine",
         "native_tts_voice", "native_tts_rate", "native_tts_engine_package",
-        "voice_input_bluetooth_mic"
+        "voice_input_bluetooth_mic", "prediction_engine"
     )
 
     fun clearRemovedSettings(context: Context) {
@@ -101,14 +101,6 @@ object SettingsHelper {
         prefs(context).edit().putBoolean("show_avatars", show).apply()
     }
 
-    /** Which T9 word predictor to use: T9Engine.ENGINE_TT9 (default) or
-     *  T9Engine.ENGINE_CLASSIC (TurboText's original). */
-    fun getPredictionEngine(context: Context): String =
-        prefs(context).getString("prediction_engine", T9Engine.ENGINE_TT9) ?: T9Engine.ENGINE_TT9
-
-    fun setPredictionEngine(context: Context, engine: String) {
-        prefs(context).edit().putString("prediction_engine", engine).apply()
-    }
 
     fun getThemeId(context: Context): String =
         prefs(context).getString("theme_id", "classic_dark") ?: "classic_dark"

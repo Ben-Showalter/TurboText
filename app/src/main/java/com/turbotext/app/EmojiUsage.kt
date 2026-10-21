@@ -6,8 +6,9 @@ import android.content.Context
  * The emoji picker's contents: 516 emojis in categories, plus a
  * "Recent" category of the ones you use most.
  *
- * Kept to emojis from Unicode's Emoji 12 or earlier so they draw on this
- * phone's system font; anything newer would show as an empty box. Every
+ * Kept to emojis from Unicode's Emoji 12 or earlier, and on top of that
+ * only the ones this phone's font can actually draw ([drawable]): some
+ * phones' fonts are older and showed the rest as an empty box. Every
  * insert bumps a per-emoji count, which is what "Recent" is sorted by.
  */
 object EmojiUsage {
@@ -111,7 +112,7 @@ object EmojiUsage {
         // Anything used before the list was reorganised still counts.
         val extra = p.all.keys.filter { it !in all && it !in REMOVED }
         return (all + extra)
-            .filter { p.getInt(it, 0) > 0 }
+            .filter { p.getInt(it, 0) > 0 && drawable(it) }
             .sortedByDescending { p.getInt(it, 0) }
             .take(RECENT_MAX)
     }
@@ -119,7 +120,22 @@ object EmojiUsage {
     /** "Recent" (when there is anything), then every category. */
     fun categories(context: Context): List<Category> {
         val recent = recent(context)
-        return if (recent.isEmpty()) CATEGORIES else listOf(Category("Recent", recent)) + CATEGORIES
+        val shown = CATEGORIES.map { c -> Category(c.name, c.emojis.filter(::drawable)) }
+            .filter { it.emojis.isNotEmpty() }
+        return if (recent.isEmpty()) shown else listOf(Category("Recent", recent)) + shown
+    }
+
+    private val glyphCache = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+    private val glyphPaint by lazy { android.graphics.Paint() }
+
+    /** True when the system font has an image for [emoji] (checked once
+     *  each). If the check itself fails, the emoji is kept. */
+    fun drawable(emoji: String): Boolean = glyphCache.getOrPut(emoji) {
+        try {
+            synchronized(glyphPaint) { glyphPaint.hasGlyph(emoji) }
+        } catch (e: Throwable) {
+            true
+        }
     }
 
     fun recordUse(context: Context, emoji: String) {

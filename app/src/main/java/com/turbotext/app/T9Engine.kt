@@ -23,10 +23,8 @@ object T9EngineHolder {
  * T9 for every typing screen: key maps, multi-tap cycles, My Words, and
  * the word predictor behind the suggestion bar.
  *
- * Word prediction is delegated to a [WordPredictor] — by default
- * [Tt9WordEngine] (Traditional T9's dictionary and ranking/learning
- * rules); [ClassicT9Engine] (TurboText's original trie) can be chosen in
- * Advanced settings. Everything [T9InputController] calls is unchanged.
+ * Word prediction is delegated to a [WordPredictor]: [Tt9WordEngine]
+ * (Traditional T9's dictionary and ranking/learning rules).
  *
  * On top of the predictor:
  *  - Contact names and My Words are always offered for their keys.
@@ -36,11 +34,6 @@ object T9EngineHolder {
  *  - The raw digits are always available as a candidate.
  */
 class T9Engine(private val context: Context) {
-
-    companion object {
-        const val ENGINE_TT9 = "tt9"
-        const val ENGINE_CLASSIC = "classic"
-    }
 
     private val keyLetters = mapOf(
         '2' to "abc", '3' to "def", '4' to "ghi", '5' to "jkl",
@@ -74,11 +67,7 @@ class T9Engine(private val context: Context) {
     @Volatile private var previousWord: String? = null
 
     private val predictor: WordPredictor =
-        if (SettingsHelper.getPredictionEngine(context) == ENGINE_CLASSIC) {
-            ClassicT9Engine(context, ::digitCodeFor)
-        } else {
-            Tt9WordEngine(context, ::digitCodeFor).also { migrateLegacyLearning(it) }
-        }
+        Tt9WordEngine(context, ::digitCodeFor).also { migrateLegacyLearning(it) }
 
     init {
         // Contact names, then My Words — real-world relevance to messaging

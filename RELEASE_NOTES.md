@@ -22,7 +22,7 @@
 - Sending asks first, then texts each person one at a time, a few seconds apart, with progress in a notification. It keeps going if you leave the screen. After about 30 texts, Android may ask whether TurboText may send this many messages. Choose to always allow it.
 
 ### Typing
-- Press * past ALL CAPS for the emoji picker: about 500 emojis in a grid, by category, with your most-used under Recent. Use the D-pad to move, Left/Right at the edge to change category, and OK to insert. # inserts and keeps the picker open.
+- Press * past ALL CAPS for the emoji picker: up to about 500 emojis (only the ones this phone can show) in a grid, by category, with your most-used under Recent. Use the D-pad to move, Left/Right at the edge to change category, and OK to insert. # inserts and keeps the picker open.
 
 ### Look & Feel
 - Message bubbles have a small tail on the sender's side.
@@ -42,9 +42,12 @@
 ### Report
 - New Settings > Report, protected by a PIN you choose the first time. Once a day at the time you set, it texts a number you choose how many texts this phone sent to and received from each contact, for example "Boby - 45 sent, 34 received".
 - Contact names are found however the number is written, and the time is picked with an hour, minute and AM/PM selector.
+- Contacts saved without the area code are matched too. A number with no contact shows as (555) 123-4567 instead of +15551234567.
 
 ### Removed
 - Settings > Advanced's option to open another app.
+- Options > Refresh (the list refreshes by itself).
+- Settings > Advanced > T9 Prediction Engine. TT9 is the only engine.
 
 ## Messaging
 - Send and receive pictures, video, voice messages, contact cards and files. Videos shrink automatically to fit MMS size limits.

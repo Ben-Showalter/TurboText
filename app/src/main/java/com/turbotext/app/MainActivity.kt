@@ -383,9 +383,9 @@ class MainActivity : AppCompatActivity() {
         // move the highlight, center/OK selects) — no touch needed.
         val convo = focusedConversation
         val options = if (convo != null) {
-            arrayOf("Mark All as Read", "Move to Trash", "Archive All Conversations", "Add to Contacts", "Refresh", "Trash Bin", "Settings")
+            arrayOf("Mark All as Read", "Move to Trash", "Archive All Conversations", "Add to Contacts", "Trash Bin", "Settings")
         } else {
-            arrayOf("Mark All as Read", "Archive All Conversations", "Refresh", "Trash Bin", "Settings")
+            arrayOf("Mark All as Read", "Archive All Conversations", "Trash Bin", "Settings")
         }
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Options")
@@ -396,7 +396,6 @@ class MainActivity : AppCompatActivity() {
                     "Move to Trash" -> convo?.let { trashConversation(it) }
                     "Archive All Conversations" -> archiveAllConversations()
                     "Add to Contacts" -> convo?.let { addToContacts(it) }
-                    "Refresh" -> refreshConversations()
                     "Trash Bin" -> startActivity(Intent(this, TrashBinActivity::class.java))
                     "Settings" -> startActivity(Intent(this, SettingsActivity::class.java))
                 }

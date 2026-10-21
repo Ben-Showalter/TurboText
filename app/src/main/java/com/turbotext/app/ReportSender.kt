@@ -65,7 +65,8 @@ object ReportSender {
             val key = OwnNumber.key(address).ifEmpty { address.lowercase() }
             if (key == excludeKey) return null
             return nameByKey.getOrPut(key) {
-                contacts.nameFor(address) ?: ContactHelper.lookupName(context, address) ?: address
+                contacts.nameFor(address) ?: ContactHelper.lookupName(context, address)
+                    ?: ContactIndex.formatNumber(address)
             }
         }
 
