@@ -1405,6 +1405,22 @@ public class PduPersister {
                         // compatibility issues with devices that place numbers in this field
                         // for group messages.
                         loadRecipients(PduHeaders.CC, recipients, addressMap, true);
+
+                        // TurboText: a group message must never shrink to
+                        // its sender alone. If our list of own numbers took
+                        // out every other member, one of them is wrong:
+                        // fall back to leaving out only the line number.
+                        int others = count(addressMap, PduHeaders.TO) + count(addressMap, PduHeaders.CC);
+                        if (recipients.size() <= 1 && others >= 2) {
+                            Log.w(TAG, "own-number check left only the sender; keeping the group");
+                            sIgnoreOwnNumbers.set(true);
+                            try {
+                                loadRecipients(PduHeaders.TO, recipients, addressMap, true);
+                                loadRecipients(PduHeaders.CC, recipients, addressMap, true);
+                            } finally {
+                                sIgnoreOwnNumbers.set(false);
+                            }
+                        }
                     }
                     break;
                 case PduHeaders.MESSAGE_TYPE_SEND_REQ:
@@ -1545,8 +1561,10 @@ public class PduPersister {
                 // No phone-state permission: rely on the app's numbers.
             }
             if (line1 != null && !line1.isEmpty()) myNumbers.add(line1);
-            synchronized (sOwnNumbers) {
-                myNumbers.addAll(sOwnNumbers);
+            if (!sIgnoreOwnNumbers.get()) {
+                synchronized (sOwnNumbers) {
+                    myNumbers.addAll(sOwnNumbers);
+                }
             }
         }
         for (EncodedStringValue v : array) {
@@ -1570,6 +1588,19 @@ public class PduPersister {
     /** TurboText: this phone's own numbers, as far as the app knows them,
      *  left out of a received group message's thread (see loadRecipients). */
     private static final java.util.Set<String> sOwnNumbers = new java.util.HashSet<String>();
+
+    /** TurboText: set while re-loading a group's members without the app's numbers. */
+    private static final ThreadLocal<Boolean> sIgnoreOwnNumbers = new ThreadLocal<Boolean>() {
+        @Override
+        protected Boolean initialValue() {
+            return false;
+        }
+    };
+
+    private static int count(HashMap<Integer, EncodedStringValue[]> addressMap, int type) {
+        EncodedStringValue[] array = addressMap.get(type);
+        return array == null ? 0 : array.length;
+    }
 
     public static void setOwnNumbers(java.util.Collection<String> numbers) {
         synchronized (sOwnNumbers) {

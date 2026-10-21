@@ -1128,7 +1128,9 @@ class SmsRepository(private val context: Context) {
     }
 
     /** Sends the message and writes a copy into the Sent folder ourselves (required for default SMS apps). */
-    fun sendMessage(address: String, body: String) {
+    /** Returns the new row (its type turns SENT or FAILED once the
+     *  carrier answers), or null when it couldn't be saved. */
+    fun sendMessage(address: String, body: String): android.net.Uri? {
         // getSystemService(SmsManager::class.java) only exists on API 31+ and
         // returns null below that, which crashed Send on this phone's older
         // Android — getDefault() works on every version.
@@ -1202,6 +1204,7 @@ class SmsRepository(private val context: Context) {
             MessageCache.put(threadId, getMessages(threadId))
             MessageEvents.changed(threadId)
         }
+        return rowUri
     }
 
     /** Marks every unread text and picture message read, in one update

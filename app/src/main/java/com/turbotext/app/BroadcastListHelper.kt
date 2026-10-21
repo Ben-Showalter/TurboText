@@ -48,6 +48,15 @@ object BroadcastListHelper {
         return list
     }
 
+    /** Lays [contacts] over the list (CsvContacts.merge): numbers already
+     *  in it are updated, never duplicated. Returns (added, updated). */
+    fun importInto(context: Context, listId: String, contacts: List<BroadcastContact>): Pair<Int, Int> {
+        val list = getList(context, listId) ?: return 0 to 0
+        val (merged, added, updated) = CsvContacts.merge(list.contacts, contacts)
+        saveList(context, list.copy(contacts = merged))
+        return added to updated
+    }
+
     private fun persistAll(context: Context, lists: List<BroadcastList>) {
         val array = JSONArray()
         for (list in lists) {

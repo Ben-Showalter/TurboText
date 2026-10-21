@@ -108,10 +108,26 @@ object MmsReceivePostProcessor {
             // notice is out of date (it was most likely this message).
             NotificationHelper.cancelMmsDownloadFailed(context)
             Log.i(TAG, "processed MMS id=$id thread=$tid from=$sender group=$isGroup")
+            // Which numbers the message named and which we took for ours
+            // (last 4 digits only), to see where a group message went.
+            Log.i(
+                TAG,
+                "MMS $id addresses: from=${digits(context, id, "137")} to=${digits(context, id, "151")} " +
+                    "cc=${digits(context, id, "130")}; thread $tid has ${participants.size} people " +
+                    "(${participants.joinToString(" ") { OwnNumber.last4(it) }}); ours: ${OwnNumber.describe(context)}"
+            )
         } catch (e: Exception) {
             Log.e(TAG, "error post-processing MMS id=$id", e)
         }
     }
+
+    private fun digits(context: Context, id: Long, types: String): String =
+        context.contentResolver.query(
+            Uri.parse("content://mms/$id/addr"), arrayOf("address"), "type IN ($types)", null, null
+        )?.use { c ->
+            generateSequence { if (c.moveToNext()) c.getString(0) else null }
+                .joinToString(",") { OwnNumber.last4(it) }
+        }.orEmpty().ifEmpty { "-" }
 
     private fun threadIdOf(context: Context, id: Long): Long? =
         context.contentResolver.query(

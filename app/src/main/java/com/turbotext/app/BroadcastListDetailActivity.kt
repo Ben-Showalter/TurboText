@@ -13,6 +13,12 @@ import androidx.recyclerview.widget.RecyclerView
 
 class BroadcastListDetailActivity : AppCompatActivity() {
 
+    companion object {
+        private const val REQUEST_CSV = 504
+        /** A CSV import's summary to show on opening (a new list from CSV). */
+        const val EXTRA_IMPORT_SUMMARY = "import_summary"
+    }
+
     private lateinit var listId: String
     private lateinit var adapter: BroadcastListDetailAdapter
     private lateinit var recyclerView: RecyclerView
@@ -35,6 +41,9 @@ class BroadcastListDetailActivity : AppCompatActivity() {
             onSelectMember = { contact -> confirmRemoveMember(contact) }
         )
         recyclerView.adapter = adapter
+        if (savedInstanceState == null) {
+            intent.getStringExtra(EXTRA_IMPORT_SUMMARY)?.let { CsvImport.showSummary(this, it) }
+        }
     }
 
     override fun onResume() {
@@ -94,9 +103,7 @@ class BroadcastListDetailActivity : AppCompatActivity() {
                             if (isFinishing || isDestroyed) return@runOnUiThread
                             if (added != null) {
                                 val list = BroadcastListHelper.getList(this, listId)
-                                if (list != null && list.contacts.none { it.number == added.number }) {
-                                    BroadcastListHelper.saveList(this, list.copy(contacts = list.contacts + added))
-                                }
+                                if (list != null) BroadcastListHelper.importInto(this, listId, listOf(added))
                                 reload()
                             } else {
                                 Toast.makeText(this, "Couldn't read that contact", Toast.LENGTH_SHORT).show()
@@ -109,6 +116,15 @@ class BroadcastListDetailActivity : AppCompatActivity() {
                 if (resultCode == Activity.RESULT_OK) {
                     val body = data?.getStringExtra(TextEntryActivity.EXTRA_RESULT_TEXT)?.trim()
                     if (!body.isNullOrEmpty()) sendBroadcast(body)
+                }
+            }
+            REQUEST_CSV -> {
+                val uri = data?.data
+                if (resultCode == Activity.RESULT_OK && uri != null) {
+                    CsvImport.run(this, uri, listId) { summary ->
+                        reload()
+                        CsvImport.showSummary(this, summary)
+                    }
                 }
             }
             503 -> {
@@ -158,28 +174,36 @@ class BroadcastListDetailActivity : AppCompatActivity() {
         }
     }
 
-    /** Sends the same message individually to each list member, reusing
-     *  the same send logic as any normal single-recipient message —
-     *  replies naturally land in that person's own existing thread,
-     *  since as far as the phone/carrier is concerned each one is just
-     *  an ordinary separate text. */
+    /** Confirms, then sends the message to each member as their own
+     *  text (BroadcastSender) — replies land in that person's own thread.
+     *  Paced, with progress in a notification, so it carries on with the
+     *  screen closed. */
     private fun sendBroadcast(body: String) {
         val list = BroadcastListHelper.getList(this, listId) ?: return
-        Toast.makeText(this, "Sending to ${list.contacts.size} people…", Toast.LENGTH_SHORT).show()
-        Thread {
-            for (contact in list.contacts) {
-                try {
-                    repo.sendMessage(contact.number, body)
-                } catch (e: Exception) {
-                    android.util.Log.w("TurboTextBroadcast", "failed to send to ${contact.number}", e)
+        if (BroadcastSender.isRunning) {
+            Toast.makeText(this, "Another broadcast is still sending", Toast.LENGTH_LONG).show()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Send to ${list.contacts.size} people?")
+            .setMessage("Each person gets their own text, a few seconds apart. Progress shows in the notifications.")
+            .setPositiveButton("Send") { _, _ ->
+                if (BroadcastSender.start(this, list, body)) {
+                    Toast.makeText(this, "Sending to ${list.contacts.size} people…", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, "Another broadcast is still sending", Toast.LENGTH_LONG).show()
                 }
             }
-            runOnUiThread {
-                if (!isFinishing && !isDestroyed) {
-                    Toast.makeText(this, "Sent to ${list.contacts.size} people", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }.start()
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun pickCsv() {
+        try {
+            startActivityForResult(CsvImport.pickIntent(), REQUEST_CSV)
+        } catch (e: android.content.ActivityNotFoundException) {
+            Toast.makeText(this, "No file browser found on this phone", Toast.LENGTH_LONG).show()
+        }
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
@@ -191,13 +215,14 @@ class BroadcastListDetailActivity : AppCompatActivity() {
     }
 
     private fun showOptions() {
-        val options = arrayOf("Rename List", "Delete List")
+        val options = arrayOf("Import from CSV", "Rename List", "Delete List")
         AlertDialog.Builder(this)
             .setTitle("Options")
             .setItems(options) { _, which ->
                 when (which) {
-                    0 -> renameList()
-                    1 -> confirmDeleteList()
+                    0 -> pickCsv()
+                    1 -> renameList()
+                    2 -> confirmDeleteList()
                 }
             }
             .show()

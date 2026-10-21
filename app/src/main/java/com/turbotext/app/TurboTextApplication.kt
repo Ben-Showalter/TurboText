@@ -49,6 +49,7 @@ class TurboTextApplication : Application() {
         BackgroundHost.ensureRunning(this)
         Thread {
             try {
+                OwnNumber.validateLearned(this)
                 OwnNumber.repairOnce(this)
             } catch (e: Exception) {
                 android.util.Log.w("TurboTextOwnNumber", "startup repair failed", e)

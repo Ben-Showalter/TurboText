@@ -25,6 +25,8 @@ object OwnNumber {
     private const val PREFS = "own_number"
     private const val KEY_LEARNED = "learned"
     private const val KEY_HISTORY = "group_to_lists"
+    /** Like KEY_HISTORY, with each message's sender: {"f": key, "r": [keys]}. */
+    private const val KEY_HISTORY_V2 = "group_messages"
     private const val KEY_REPAIRED = "repaired_for"
 
     /** Received group messages to remember the recipients of. */
@@ -56,6 +58,60 @@ object OwnNumber {
         }
         prefs(context).getString(KEY_LEARNED, null)?.let { numbers.add(it) }
         return numbers
+    }
+
+    /** Our numbers for the log: each one's source and last 4 digits only. */
+    fun describe(context: Context): String {
+        val parts = ArrayList<String>()
+        try {
+            val tm = context.getSystemService(TelephonyManager::class.java)
+            @Suppress("DEPRECATION", "HardwareIds")
+            tm?.line1Number?.takeIf { it.isNotBlank() }?.let { parts.add("line:" + last4(it)) }
+        } catch (e: Exception) {
+        }
+        try {
+            val sm = context.getSystemService(SubscriptionManager::class.java)
+            @Suppress("DEPRECATION")
+            sm?.activeSubscriptionInfoList?.forEach { info ->
+                info.number?.takeIf { it.isNotBlank() }?.let { parts.add("sim:" + last4(it)) }
+            }
+        } catch (e: Exception) {
+        }
+        prefs(context).getString(KEY_LEARNED, null)?.let { parts.add("learned:" + last4(it)) }
+        return if (parts.isEmpty()) "none" else parts.joinToString(" ")
+    }
+
+    fun last4(number: String): String = number.filter { it.isDigit() }.takeLast(4).ifEmpty { "?" }
+
+    /**
+     * Forgets a learned number that has since sent us something — then it
+     * was a group member, not us, and leaving it out of group threads made
+     * that person's group messages land somewhere else. Earlier versions
+     * could learn one from a run of messages all sent by the same person.
+     * Off the main thread.
+     */
+    fun validateLearned(context: Context) {
+        val prefs = prefs(context)
+        val learned = prefs.getString(KEY_LEARNED, null) ?: return
+        try {
+            if (!hasSentUs(context, key(learned))) return
+            prefs.edit()
+                .remove(KEY_LEARNED)
+                .remove(KEY_HISTORY)
+                .remove(KEY_HISTORY_V2)
+                .putStringSet(KEY_REPAIRED, (prefs.getStringSet(KEY_REPAIRED, emptySet()) ?: emptySet()) - key(learned))
+                .apply()
+            Log.w(TAG, "learned own number ..${last4(learned)} has sent us messages: forgotten")
+            publish(context)
+        } catch (e: Exception) {
+            Log.w(TAG, "couldn't check the learned number", e)
+        }
+    }
+
+    /** Clears a learned number (Settings > Advanced). */
+    fun forgetLearned(context: Context) {
+        prefs(context).edit().remove(KEY_LEARNED).remove(KEY_HISTORY).remove(KEY_HISTORY_V2).apply()
+        publish(context)
     }
 
     /** Repairs the threads (GroupThreadRepair) once for each of our
@@ -90,15 +146,21 @@ object OwnNumber {
             val recipients = addresses(context, mmsId, "151, 130").map(::key).filter { it.isNotEmpty() }.toSet()
             if (recipients.size < 2) return // not a group message
 
-            val prefs = prefs(context)
-            val history = JSONArray(prefs.getString(KEY_HISTORY, "[]"))
-            val lists = (0 until history.length()).map { i ->
-                val a = history.getJSONArray(i)
-                (0 until a.length()).map { a.getString(it) }.toSet()
-            }.plusElement(recipients).takeLast(HISTORY_SIZE)
-            prefs.edit().putString(KEY_HISTORY, JSONArray(lists.map { JSONArray(it.toList()) }).toString()).apply()
+            val sender = addresses(context, mmsId, "137").firstOrNull()?.let(::key).orEmpty()
 
-            val candidate = pick(lists, MIN_GROUP_MESSAGES) ?: return
+            val prefs = prefs(context)
+            val history = JSONArray(prefs.getString(KEY_HISTORY_V2, "[]"))
+            val samples = (0 until history.length()).map { i ->
+                val o = history.getJSONObject(i)
+                val r = o.getJSONArray("r")
+                Sample(o.optString("f"), (0 until r.length()).map { r.getString(it) }.toSet())
+            }.plusElement(Sample(sender, recipients)).takeLast(HISTORY_SIZE)
+            prefs.edit().putString(
+                KEY_HISTORY_V2,
+                JSONArray(samples.map { org.json.JSONObject().put("f", it.from).put("r", JSONArray(it.to.toList())) }).toString()
+            ).apply()
+
+            val candidate = pickFrom(samples, MIN_GROUP_MESSAGES) ?: return
             if (hasSentUs(context, candidate)) return
             val number = addresses(context, mmsId, "151, 130").first { key(it) == candidate }
             prefs.edit().putString(KEY_LEARNED, number).apply()
@@ -108,6 +170,19 @@ object OwnNumber {
         } catch (e: Exception) {
             Log.w(TAG, "couldn't learn own number", e)
         }
+    }
+
+    /** One received group message: its sender and its To/Cc numbers. */
+    data class Sample(val from: String, val to: Set<String>)
+
+    /** [pick] over [samples], stricter: they must come from at least two
+     *  different senders (with one sender, the other members are in every
+     *  list too), and the number must never be one of the senders. */
+    fun pickFrom(samples: List<Sample>, minLists: Int): String? {
+        val senders = samples.map { it.from }.filter { it.isNotEmpty() }.toSet()
+        if (senders.size < 2) return null
+        val candidate = pick(samples.map { it.to }, minLists) ?: return null
+        return candidate.takeIf { it !in senders }
     }
 
     /** The one number in every list, once there are at least [minLists]

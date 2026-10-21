@@ -8,6 +8,8 @@ Key features:
 
 •	Group messaging support. Groups show up in a separate list.
 
+•	Broadcast lists: text the same announcement to many people, each getting their own private text. Lists can be imported from a CSV file (one phone number per row, with an optional name column). Copy the file to the phone (for example to Download), then use Broadcast Lists > + New List from CSV.
+
 •	Translation to English of incoming texts to most languages.
 
 •	Archives all conversations with a click of a button. 

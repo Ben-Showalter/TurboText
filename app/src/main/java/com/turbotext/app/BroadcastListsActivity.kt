@@ -23,6 +23,13 @@ class BroadcastListsActivity : AppCompatActivity() {
         adapter = BroadcastListsAdapter(
             emptyList(),
             onAddNew = { promptNewListName() },
+            onImportNew = {
+                try {
+                    startActivityForResult(CsvImport.pickIntent(), 501)
+                } catch (e: android.content.ActivityNotFoundException) {
+                    android.widget.Toast.makeText(this, "No file browser found on this phone", android.widget.Toast.LENGTH_LONG).show()
+                }
+            },
             onSelectList = { bl ->
                 val intent = Intent(this, BroadcastListDetailActivity::class.java)
                 intent.putExtra("list_id", bl.id)
@@ -52,6 +59,18 @@ class BroadcastListsActivity : AppCompatActivity() {
                 val newList = BroadcastListHelper.createList(this, name)
                 val intent = Intent(this, BroadcastListDetailActivity::class.java)
                 intent.putExtra("list_id", newList.id)
+                startActivity(intent)
+            }
+        }
+        if (requestCode == 501 && resultCode == Activity.RESULT_OK) {
+            val uri = data?.data ?: return
+            // A new list named after the file, filled from it, then opened.
+            val newList = BroadcastListHelper.createList(this, CsvImport.displayName(this, uri) ?: "Imported list")
+            CsvImport.run(this, uri, newList.id) { summary ->
+                adapter.update(BroadcastListHelper.getAllLists(this))
+                val intent = Intent(this, BroadcastListDetailActivity::class.java)
+                intent.putExtra("list_id", newList.id)
+                intent.putExtra(BroadcastListDetailActivity.EXTRA_IMPORT_SUMMARY, summary)
                 startActivity(intent)
             }
         }

@@ -12,6 +12,13 @@
 - A new picture message is no longer dropped when the carrier reuses an old message's download address.
 - Reading back through a conversation no longer jumps to the bottom on its own.
 - Options > Mark All as Read, on the conversation and group lists.
+- A delivered picture message stays "Delivered" even when the carrier later sends an "expired" report for it.
+- Group messages: a number wrongly taken for this phone's own is forgotten, so that person's group messages land in the group again. A group message can no longer end up in the sender's private conversation that way.
+
+### Broadcast lists
+- Import a customer list from a CSV file: Broadcast Lists > + New List from CSV, or Options > Import from CSV on a list. Any column with phone numbers works, with an optional name column (Name, or First Name + Last Name). A header row is optional.
+- Numbers already in the list are updated, not added twice, so you can import a newer copy of the same file.
+- Sending asks first, then texts each person one at a time, a few seconds apart, with progress in a notification. It keeps going if you leave the screen. After about 30 texts, Android may ask whether TurboText may send this many messages. Choose to always allow it.
 
 ### Typing
 - Press * past ALL CAPS for the emoji picker: about 500 emojis in a grid, by category, with your most-used under Recent. Use the D-pad to move, Left/Right at the edge to change category, and OK to insert. # inserts and keeps the picker open.
