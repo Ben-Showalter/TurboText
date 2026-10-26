@@ -55,6 +55,7 @@ class ConversationActivity : AppCompatActivity() {
 
         findViewById<TextView>(R.id.contactName).text = displayName
         repo = SmsRepository(this)
+        bindTitleAvatar(displayName)
         engine = T9EngineHolder.get(this)
 
         messageList = findViewById(R.id.messageList)
@@ -853,6 +854,39 @@ class ConversationActivity : AppCompatActivity() {
             reloadHandler.removeCallbacks(reloadRunnable)
             reloadHandler.postDelayed(reloadRunnable, 300)
         }
+    }
+
+    /** The avatar left of the name in the top bar, the same image or
+     *  coloured initials as this thread's row in the lists (Show Avatars
+     *  setting). A group is bound the way getGroupThreads() builds its
+     *  row — members in the provider's order, nickname or member names —
+     *  so the colour matches; that lookup runs off the main thread. */
+    private fun bindTitleAvatar(displayName: String) {
+        val avatarView = findViewById<android.widget.ImageView>(R.id.contactAvatar)
+        if (!SettingsHelper.isShowAvatars(this)) {
+            avatarView.visibility = View.GONE
+            return
+        }
+        avatarView.visibility = View.VISIBLE
+        if (!address.contains(',') && !address.contains(';')) {
+            AvatarLoader.bind(avatarView, address, displayName)
+            return
+        }
+        val app = applicationContext
+        Thread {
+            val members = if (threadId > 0) repo.getThreadParticipants(threadId) else emptyList()
+            val (groupAddress, groupNames) = if (members.size > 1) {
+                members.joinToString(",") to (
+                    GroupNicknameHelper.getNickname(app, threadId)
+                        ?: members.joinToString(", ") { ContactHelper.lookupName(app, it) ?: it }
+                    )
+            } else {
+                address to displayName
+            }
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) AvatarLoader.bind(avatarView, groupAddress, groupNames)
+            }
+        }.start()
     }
 
     override fun onResume() {
