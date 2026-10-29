@@ -32,10 +32,11 @@ object AttachmentPolicy {
      *  every US carrier we know of, sender and recipient side. */
     private const val DEFAULT_MAX_MESSAGE_BYTES = 600 * 1024
 
-    /** Even if a carrier allows more, the *recipient's* carrier may not —
-     *  messages over ~1 MB are often accepted, reported "sent", and then
-     *  silently dropped in transit. */
-    private const val HARD_CAP_BYTES = 1000 * 1024
+    /** Even if this phone's carrier allows more, the *recipient's*
+     *  carrier may not: bigger messages are accepted, reported "sent",
+     *  and then silently dropped in transit — pictures that "didn't always
+     *  go through". 600 KB is what every US carrier passes on. */
+    private const val HARD_CAP_BYTES = 600 * 1024
 
     /** SMIL, headers, part names — what the PDU costs on top of the media. */
     private const val PDU_OVERHEAD_BYTES = 2 * 1024

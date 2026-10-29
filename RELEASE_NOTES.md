@@ -13,6 +13,10 @@
 - Reading back through a conversation no longer jumps to the bottom on its own.
 - Options > Mark All as Read, on the conversation and group lists.
 - Picture and group messages are received again. TurboText now asks for Android's "receive picture messages" permission at startup. It could be missing, and then Android silently dropped every incoming picture message, group message and picture delivery report.
+- Picture messages go through more reliably:
+  - If sending fails because of a weak signal or no data connection, TurboText tries again twice: after 20 seconds and after 90 seconds.
+  - If the carrier refuses a picture, it shows "Failed" instead of "Sent".
+  - Pictures are now kept under 600 KB, which every US carrier passes on. Bigger ones were sometimes dropped on the way to someone on another carrier.
 - A delivered picture message stays "Delivered" even when the carrier later sends an "expired" report for it.
 - Group messages: a number wrongly taken for this phone's own is forgotten, so that person's group messages land in the group again. A group message can no longer end up in the sender's private conversation that way.
 

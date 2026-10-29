@@ -81,6 +81,9 @@ object MmsTransmitter {
 
     const val EXTRA_CONTENT_URI = "content_uri"
     const val EXTRA_FILE_PATH = "file_path"
+    const val EXTRA_SUB_ID = "sub_id"
+    const val EXTRA_GROUP = "group_mms"
+    const val EXTRA_ATTEMPT = "attempt"
 
     private val MMS_OUTBOX: Uri = Uri.parse("content://mms/outbox")
 
@@ -165,6 +168,9 @@ object MmsTransmitter {
             data = messageUri
             putExtra(EXTRA_CONTENT_URI, messageUri.toString())
             putExtra(EXTRA_FILE_PATH, pduFile.path)
+            // So a failed attempt can be sent again (MmsSentReceiver).
+            putExtra(EXTRA_SUB_ID, resolvedSubId)
+            putExtra(EXTRA_GROUP, groupMms)
         }
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_IMMUTABLE else 0
@@ -186,7 +192,39 @@ object MmsTransmitter {
         return messageUri
     }
 
-    private fun markFailed(context: Context, messageUri: Uri) {
+    /**
+     * Sends the already-composed PDU in [pduPath] again, for attempt
+     * [attempt] of the message at [messageUri] (still in the outbox).
+     * False when the file is gone.
+     */
+    fun resend(context: Context, messageUri: Uri, pduPath: String, subId: Int, groupMms: Boolean, attempt: Int): Boolean {
+        val pduFile = File(pduPath)
+        if (!pduFile.exists()) return false
+        val contentUri = Uri.Builder()
+            .authority(context.packageName + ".MmsFileProvider")
+            .path(pduFile.name)
+            .scheme(ContentResolver.SCHEME_CONTENT)
+            .build()
+        val sentIntent = Intent(context, MmsSentReceiver::class.java).apply {
+            data = messageUri
+            putExtra(EXTRA_CONTENT_URI, messageUri.toString())
+            putExtra(EXTRA_FILE_PATH, pduFile.path)
+            putExtra(EXTRA_SUB_ID, subId)
+            putExtra(EXTRA_GROUP, groupMms)
+            putExtra(EXTRA_ATTEMPT, attempt)
+        }
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_IMMUTABLE else 0
+        val requestCode = messageUri.lastPathSegment?.toIntOrNull() ?: 0
+        val pendingIntent = PendingIntent.getBroadcast(context, requestCode, sentIntent, flags)
+        val configOverrides = Bundle().apply { putBoolean(SmsManager.MMS_CONFIG_GROUP_MMS_ENABLED, groupMms) }
+        SmsManagerFactory.createSmsManager(subId)
+            .sendMultimediaMessage(context, contentUri, null, configOverrides, pendingIntent)
+        Log.i(TAG, "MmsTransmitter: attempt $attempt for $messageUri")
+        return true
+    }
+
+    fun markFailed(context: Context, messageUri: Uri) {
         try {
             context.contentResolver.update(
                 messageUri,

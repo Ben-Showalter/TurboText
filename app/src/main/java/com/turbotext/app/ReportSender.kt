@@ -181,11 +181,32 @@ class ReportAlarmReceiver : BroadcastReceiver() {
 /** After a restart or an app update: keep running in the background, and
  *  set the report's alarm again (alarms don't survive either). */
 class BootReceiver : BroadcastReceiver() {
+
+    /** A picture message still "Sending" from before the restart lost its
+     *  retry alarm (MmsSentReceiver) and would say "Sending" forever: show
+     *  it as failed, so it can be sent again. Ones from the last 10
+     *  minutes may still be going through, and are left alone. */
+    private fun failStuckPictureMessages(context: Context) {
+        try {
+            val before = System.currentTimeMillis() / 1000 - 10 * 60
+            val n = context.contentResolver.update(
+                Telephony.Mms.CONTENT_URI,
+                android.content.ContentValues().apply { put(Telephony.Mms.MESSAGE_BOX, Telephony.Mms.MESSAGE_BOX_FAILED) },
+                "${Telephony.Mms.MESSAGE_BOX} = ${Telephony.Mms.MESSAGE_BOX_OUTBOX} AND ${Telephony.Mms.DATE} < $before",
+                null
+            )
+            if (n > 0) android.util.Log.i("TurboTextMms", "marked $n stuck picture message(s) as failed")
+        } catch (e: Exception) {
+            android.util.Log.w("TurboTextMms", "couldn't check for stuck picture messages", e)
+        }
+    }
+
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
             Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED -> {
                 BackgroundHost.ensureRunning(context)
                 ReportSender.schedule(context.applicationContext)
+                failStuckPictureMessages(context.applicationContext)
             }
         }
     }
