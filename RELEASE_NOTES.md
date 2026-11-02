@@ -14,6 +14,7 @@
 - Options > Mark All as Read, on the conversation and group lists.
 - Picture and group messages are received again. TurboText now asks for Android's "receive picture messages" permission at startup. It could be missing, and then Android silently dropped every incoming picture message, group message and picture delivery report.
 - No signal? Texts and picture messages now wait and are sent again on their own once the phone has service. Their bubble says "Waiting for signal". If there's still no signal after a day, the message shows "Failed" and a notification tells you.
+- New: Resend, at the top of a message's options for any message you sent, whether it was sent, delivered, not delivered or failed. It sends the text and any picture, video or file again as a new message. Resending a failed message replaces it.
 - New: Settings > Advanced > Save Bug Report. It saves TurboText's log, with crashes and errors, to the Download folder, so a problem can be looked into without a computer cable or adb. It lists phone numbers and contact names, but not what messages say.
 - Picture messages go through more reliably:
   - If sending fails because of a weak signal or no data connection, TurboText tries again twice: after 20 seconds and after 90 seconds.

@@ -339,6 +339,10 @@ class ConversationActivity : AppCompatActivity() {
 
     private fun showMessageOptions(message: Message) {
         val options = mutableListOf("Copy Text to Clipboard", "Forward Message", "Translate to English")
+        // Any message of ours that's done sending, sent or failed.
+        if (message.isOutgoing && message.id >= 0 && message.sendStatus !in setOf("sending", "waiting")) {
+            options.add(0, "Resend")
+        }
         if (message.imageUri != null) options.add("Save to Gallery")
         if (message.videoUri != null) options.add("Play Video")
         if (message.videoUri != null || message.fileUri != null || message.audioUri != null) options.add("Save to Phone")
@@ -353,6 +357,7 @@ class ConversationActivity : AppCompatActivity() {
             .setTitle("Message Options")
             .setItems(options.toTypedArray()) { _, which ->
                 when (options[which]) {
+                    "Resend" -> resendMessage(message)
                     "Copy Text to Clipboard" -> copyMessageText(message)
                     "Forward Message" -> forwardMessage(message)
                     "Translate to English" -> translateMessage(message)
@@ -457,6 +462,76 @@ class ConversationActivity : AppCompatActivity() {
             return
         }
         inputController.appendVoiceResult(text)
+    }
+
+    /**
+     * Sends [message] (text and attachments) again to this conversation,
+     * as a new message. The text goes as it was, signature included. A
+     * failed message's old copy is removed, so it isn't shown twice.
+     */
+    private fun resendMessage(message: Message) {
+        AlertDialog.Builder(this)
+            .setTitle("Resend?")
+            .setMessage("Send this message again?")
+            .setPositiveButton("Resend") { _, _ ->
+                Thread {
+                    val attachments = resendAttachments(message)
+                    runOnUiThread {
+                        if (isFinishing || isDestroyed) return@runOnUiThread
+                        if (message.body.isBlank() && attachments.isEmpty()) {
+                            Toast.makeText(this, "Nothing to resend", Toast.LENGTH_SHORT).show()
+                            return@runOnUiThread
+                        }
+                        exitSelectionMode()
+                        stickAfterSend = true
+                        PendingSends.send(
+                            this, threadId, address.split(","), message.body, attachments,
+                            onDone = { error ->
+                                if (error != null) {
+                                    if (!isFinishing && !isDestroyed) Toast.makeText(this, error, Toast.LENGTH_LONG).show()
+                                } else if (message.sendStatus == "failed") {
+                                    removeRow(message)
+                                }
+                            }
+                        )
+                    }
+                }.start()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /** The attachments [message] carried, ready to send again. */
+    private fun resendAttachments(message: Message): List<OutgoingAttachment> {
+        val found = LinkedHashMap<String, String>() // uri -> fallback type
+        message.imageUris.forEach { found[it] = "image/jpeg" }
+        message.imageUri?.let { found.putIfAbsent(it, "image/jpeg") }
+        message.videoUri?.let { found[it] = "video/mp4" }
+        message.audioUri?.let { found[it] = "audio/mp4" }
+        message.vcardUri?.let { found[it] = "text/x-vcard" }
+        message.fileUri?.let { found[it] = message.fileMime ?: "application/octet-stream" }
+        return found.mapNotNull { (uri, mime) ->
+            try {
+                OutgoingAttachment.fromUri(this, Uri.parse(uri), mime)
+            } catch (e: Exception) {
+                android.util.Log.w("TurboTextSend", "couldn't reattach $uri", e)
+                null
+            }
+        }
+    }
+
+    /** Deletes a failed message's own row once its resend went out. */
+    private fun removeRow(message: Message) {
+        Thread {
+            try {
+                val table = if (message.isMms) "mms" else "sms"
+                contentResolver.delete(Uri.parse("content://$table/${message.id}"), null, null)
+                MessageCache.remove(threadId)
+                MessageEvents.changed(threadId)
+            } catch (e: Exception) {
+                android.util.Log.w("TurboTextSend", "couldn't remove the failed copy", e)
+            }
+        }.start()
     }
 
     private fun forwardMessage(message: Message) {
