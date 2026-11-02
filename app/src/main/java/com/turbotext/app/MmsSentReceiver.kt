@@ -70,6 +70,18 @@ class MmsSentReceiver : BroadcastReceiver() {
         if (sent && !ok) Log.w(TAG, "carrier refused MMS $uri: response status 0x${Integer.toHexString(responseStatus ?: 0)}")
 
         val filePath = intent.getStringExtra(MmsTransmitter.EXTRA_FILE_PATH)
+        // No signal or no data: wait for service and send again then
+        // (SendRetry), however many tries that takes.
+        if (!sent && uri != null && filePath != null &&
+            (resultCode == 8 /* MMS_ERROR_NO_DATA_NETWORK */ || !SendRetry.inService(context))
+        ) {
+            SendRetry.waitMms(
+                context.applicationContext, uri, filePath,
+                intent.getIntExtra(MmsTransmitter.EXTRA_SUB_ID, -1),
+                intent.getBooleanExtra(MmsTransmitter.EXTRA_GROUP, false)
+            )
+            return
+        }
         if (!ok && uri != null && filePath != null && attempt < MAX_ATTEMPTS) {
             val transient = if (sent) isTransientResponse(responseStatus ?: 0)
             else resultCode in TRANSIENT_RESULTS && !(httpStatus in 400..499 && httpStatus != 408 && httpStatus != 429)

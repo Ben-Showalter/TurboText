@@ -201,6 +201,7 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
         val timeText = DateLabels.forMessage(msg.date)
         val statusWord = when (msg.sendStatus) {
             "sending" -> "Sending"
+            "waiting" -> "Waiting for signal"
             "sent" -> "Sent"
             "delivered" -> "Delivered"
             "partially_delivered" -> "Delivered to ${msg.deliveredTo} of ${msg.recipientCount}"

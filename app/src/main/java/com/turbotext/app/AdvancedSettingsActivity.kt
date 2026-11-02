@@ -14,9 +14,11 @@ class AdvancedSettingsActivity : AppCompatActivity() {
     private lateinit var defaultAppRow: TextView
     private lateinit var backgroundHelperRow: TextView
     private lateinit var trustedNumberRow: TextView
+    private lateinit var bugReportRow: TextView
     private lateinit var checkUpdatesRow: TextView
     private var currentRow = 0
-    private val lastRow = 4
+    private val rows get() = listOf(defaultAppRow, backgroundHelperRow, trustedNumberRow, bugReportRow, checkUpdatesRow)
+    private val lastRow get() = rows.size - 1
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -26,11 +28,13 @@ class AdvancedSettingsActivity : AppCompatActivity() {
         defaultAppRow = findViewById(R.id.defaultAppRow)
         backgroundHelperRow = findViewById(R.id.backgroundHelperRow)
         trustedNumberRow = findViewById(R.id.trustedNumberRow)
+        bugReportRow = findViewById(R.id.bugReportRow)
         checkUpdatesRow = findViewById(R.id.checkUpdatesRow)
 
         defaultAppRow.setOnClickListener { openDefaultAppSettings() }
         backgroundHelperRow.setOnClickListener { AccessibilityHelper.openSettings(this) }
         trustedNumberRow.setOnClickListener { promptTrustedNumber() }
+        bugReportRow.setOnClickListener { saveBugReport() }
         checkUpdatesRow.setOnClickListener { checkForUpdate() }
         checkUpdatesRow.text = "Check for Updates (installed v${UpdateChecker.installedVersion(this)})"
 
@@ -106,13 +110,34 @@ class AdvancedSettingsActivity : AppCompatActivity() {
 
     private fun updateRowHighlight() {
         val surface2 = ThemeHelper.getCurrentTheme(this).surface2
-        val rows = listOf(defaultAppRow, backgroundHelperRow, trustedNumberRow, checkUpdatesRow)
+        val rows = rows
         rows.forEachIndexed { index, row ->
             row.setBackgroundColor(if (currentRow == index) surface2 else android.graphics.Color.TRANSPARENT)
         }
         rows[currentRow].requestRectangleOnScreen(
             android.graphics.Rect(0, 0, rows[currentRow].width, rows[currentRow].height), true
         )
+    }
+
+    /** Saves TurboText's log (AppLog) to Download, to hand to whoever
+     *  is fixing a problem. */
+    private fun saveBugReport() {
+        Toast.makeText(this, "Saving bug report…", Toast.LENGTH_SHORT).show()
+        Thread {
+            val where = AppLog.saveReport(applicationContext)
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                AlertDialog.Builder(this)
+                    .setTitle("Bug Report")
+                    .setMessage(
+                        if (where != null) "Saved to $where.\n\nCopy it to a computer over USB and send it to whoever is " +
+                            "helping you. It lists phone numbers and contact names, but not what your messages say."
+                        else "Couldn't save the bug report."
+                    )
+                    .setPositiveButton("OK", null)
+                    .show()
+            }
+        }.start()
     }
 
     private fun openDefaultAppSettings() {
@@ -150,7 +175,8 @@ class AdvancedSettingsActivity : AppCompatActivity() {
                     0 -> openDefaultAppSettings()
                     1 -> AccessibilityHelper.openSettings(this)
                     2 -> promptTrustedNumber()
-                    3 -> checkForUpdate()
+                    3 -> saveBugReport()
+                    4 -> checkForUpdate()
                 }
                 return true
             }

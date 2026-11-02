@@ -77,7 +77,9 @@ object BroadcastSender {
                 ?.use { if (it.moveToFirst()) it.getInt(0) else null }
             when (type) {
                 Telephony.Sms.MESSAGE_TYPE_FAILED -> return false
-                null, Telephony.Sms.MESSAGE_TYPE_OUTBOX, Telephony.Sms.MESSAGE_TYPE_QUEUED -> Thread.sleep(500)
+                // No signal: SendRetry sends it once there is.
+                Telephony.Sms.MESSAGE_TYPE_QUEUED -> return true
+                null, Telephony.Sms.MESSAGE_TYPE_OUTBOX -> Thread.sleep(500)
                 else -> return true
             }
         }

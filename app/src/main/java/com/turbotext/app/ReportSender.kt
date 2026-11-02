@@ -189,10 +189,13 @@ class BootReceiver : BroadcastReceiver() {
     private fun failStuckPictureMessages(context: Context) {
         try {
             val before = System.currentTimeMillis() / 1000 - 10 * 60
+            // Ones waiting for service (SendRetry) aren't stuck.
+            val waiting = SendRetry.waitingMmsIds(context)
+            val notWaiting = if (waiting.isEmpty()) "" else " AND ${Telephony.Mms._ID} NOT IN (${waiting.joinToString(",")})"
             val n = context.contentResolver.update(
                 Telephony.Mms.CONTENT_URI,
                 android.content.ContentValues().apply { put(Telephony.Mms.MESSAGE_BOX, Telephony.Mms.MESSAGE_BOX_FAILED) },
-                "${Telephony.Mms.MESSAGE_BOX} = ${Telephony.Mms.MESSAGE_BOX_OUTBOX} AND ${Telephony.Mms.DATE} < $before",
+                "${Telephony.Mms.MESSAGE_BOX} = ${Telephony.Mms.MESSAGE_BOX_OUTBOX} AND ${Telephony.Mms.DATE} < $before$notWaiting",
                 null
             )
             if (n > 0) android.util.Log.i("TurboTextMms", "marked $n stuck picture message(s) as failed")
@@ -207,6 +210,8 @@ class BootReceiver : BroadcastReceiver() {
                 BackgroundHost.ensureRunning(context)
                 ReportSender.schedule(context.applicationContext)
                 failStuckPictureMessages(context.applicationContext)
+                // Messages waiting for service lost their alarm too.
+                SendRetry.retryAll(context.applicationContext)
             }
         }
     }

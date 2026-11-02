@@ -640,13 +640,14 @@ class SmsRepository(private val context: Context) {
                 // 1 = inbox (incoming), 2 = sent, 4 = outbox (still
                 // sending), 5 = failed — the latter two are also
                 // outgoing, just not yet confirmed either way.
-                val isOutgoing = type == 2 || type == 4 || type == 5
+                val isOutgoing = type == 2 || type == 4 || type == 5 || type == 6
                 val sendStatus = when {
                     type == 2 && status == Telephony.Sms.STATUS_COMPLETE -> "delivered"
                     type == 2 && status == Telephony.Sms.STATUS_FAILED -> "not_delivered"
                     type == 2 -> "sent"
                     type == 4 -> "sending"
                     type == 5 -> "failed"
+                    type == 6 -> "waiting" // queued for service (SendRetry)
                     type == 1 -> "received"
                     else -> null
                 }
@@ -719,6 +720,7 @@ class SmsRepository(private val context: Context) {
             sortOrder
         ) ?: return result
         val reports = deliveryReports(threadId)
+        val waiting = SendRetry.waitingMmsIds(context)
 
         cursor.use {
             while (it.moveToNext()) {
@@ -753,7 +755,7 @@ class SmsRepository(private val context: Context) {
                             }
                         }
                     }
-                    Telephony.Mms.MESSAGE_BOX_OUTBOX -> "sending"
+                    Telephony.Mms.MESSAGE_BOX_OUTBOX -> if (id in waiting) "waiting" else "sending"
                     Telephony.Mms.MESSAGE_BOX_FAILED -> "failed"
                     Telephony.Mms.MESSAGE_BOX_INBOX -> "received"
                     else -> null
@@ -1154,48 +1156,8 @@ class SmsRepository(private val context: Context) {
             if (threadId != null) put(Telephony.Sms.THREAD_ID, threadId)
         }
         val rowUri = context.contentResolver.insert(Telephony.Sms.CONTENT_URI, values)
-
         if (rowUri != null) {
-            val requestCode = rowUri.lastPathSegment?.toIntOrNull() ?: System.currentTimeMillis().toInt()
-            // One PendingIntent per part (the data URI differs by part
-            // index, which keeps them distinct) so SmsSentReceiver hears
-            // about every part and only marks the message Sent once all
-            // of them went out — previously one shared PendingIntent meant
-            // whichever part reported last decided the status.
-            SmsSentReceiver.expectParts(rowUri.toString(), parts.size)
-            val sentIntents = ArrayList<android.app.PendingIntent>()
-            for (i in parts.indices) {
-                val sentIntent = Intent(context, SmsSentReceiver::class.java).apply {
-                    data = rowUri.buildUpon().appendQueryParameter("part", i.toString()).build()
-                    putExtra("row_uri", rowUri.toString())
-                    putExtra("thread_id", threadId ?: -1L)
-                    putExtra(SmsSentReceiver.EXTRA_PART_INDEX, i)
-                    putExtra(SmsSentReceiver.EXTRA_PART_COUNT, parts.size)
-                }
-                sentIntents.add(
-                    android.app.PendingIntent.getBroadcast(
-                        context, requestCode, sentIntent,
-                        android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_MUTABLE
-                    )
-                )
-            }
-
-            // Separate from sentIntent — this only fires if/when the
-            // carrier reports the recipient's phone actually received
-            // it, which not every carrier supports or enables.
-            val deliveredIntent = Intent(context, SmsDeliveredReceiver::class.java).apply {
-                data = rowUri
-                putExtra("row_uri", rowUri.toString())
-                putExtra("thread_id", threadId ?: -1L)
-            }
-            val deliveredPendingIntent = android.app.PendingIntent.getBroadcast(
-                context, requestCode, deliveredIntent,
-                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_MUTABLE
-            )
-            val deliveredIntents = ArrayList<android.app.PendingIntent>()
-            for (i in parts.indices) deliveredIntents.add(deliveredPendingIntent)
-
-            smsManager.sendMultipartTextMessage(address, null, parts, sentIntents, deliveredIntents)
+            transmitSms(rowUri, address, body, threadId)
         } else {
             smsManager.sendMultipartTextMessage(address, null, parts, null, null)
         }
@@ -1205,6 +1167,55 @@ class SmsRepository(private val context: Context) {
             MessageEvents.changed(threadId)
         }
         return rowUri
+    }
+
+    /** Hands an SMS row ([rowUri], already saved) to the radio, part by
+     *  part; [SmsSentReceiver] moves it to SENT or FAILED, or to
+     *  waiting-for-service ([SendRetry]). Also used to send a waiting
+     *  text again. */
+    fun transmitSms(rowUri: android.net.Uri, address: String, body: String, threadId: Long?) {
+        val smsManager = SmsManager.getDefault()
+        val parts = smsManager.divideMessage(body)
+        val requestCode = rowUri.lastPathSegment?.toIntOrNull() ?: System.currentTimeMillis().toInt()
+        // One PendingIntent per part (the data URI differs by part
+        // index, which keeps them distinct) so SmsSentReceiver hears
+        // about every part and only marks the message Sent once all
+        // of them went out — previously one shared PendingIntent meant
+        // whichever part reported last decided the status.
+        SmsSentReceiver.expectParts(rowUri.toString(), parts.size)
+        val sentIntents = ArrayList<android.app.PendingIntent>()
+        for (i in parts.indices) {
+            val sentIntent = Intent(context, SmsSentReceiver::class.java).apply {
+                data = rowUri.buildUpon().appendQueryParameter("part", i.toString()).build()
+                putExtra("row_uri", rowUri.toString())
+                putExtra("thread_id", threadId ?: -1L)
+                putExtra(SmsSentReceiver.EXTRA_PART_INDEX, i)
+                putExtra(SmsSentReceiver.EXTRA_PART_COUNT, parts.size)
+            }
+            sentIntents.add(
+                android.app.PendingIntent.getBroadcast(
+                    context, requestCode, sentIntent,
+                    android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_MUTABLE
+                )
+            )
+        }
+
+        // Separate from sentIntent — this only fires if/when the
+        // carrier reports the recipient's phone actually received
+        // it, which not every carrier supports or enables.
+        val deliveredIntent = Intent(context, SmsDeliveredReceiver::class.java).apply {
+            data = rowUri
+            putExtra("row_uri", rowUri.toString())
+            putExtra("thread_id", threadId ?: -1L)
+        }
+        val deliveredPendingIntent = android.app.PendingIntent.getBroadcast(
+            context, requestCode, deliveredIntent,
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_MUTABLE
+        )
+        val deliveredIntents = ArrayList<android.app.PendingIntent>()
+        for (i in parts.indices) deliveredIntents.add(deliveredPendingIntent)
+
+        smsManager.sendMultipartTextMessage(address, null, parts, sentIntents, deliveredIntents)
     }
 
     /** Marks every unread text and picture message read, in one update

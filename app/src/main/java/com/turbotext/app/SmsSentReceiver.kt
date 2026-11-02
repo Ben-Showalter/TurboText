@@ -23,6 +23,16 @@ class SmsSentReceiver : android.content.BroadcastReceiver() {
         private val pending = HashMap<String, Int>()
         private val failed = HashSet<String>()
 
+        /** Failures that mean "no signal right now": the radio is off or
+         *  has no service, or a generic failure while out of service. */
+        fun isNoService(context: Context, resultCode: Int): Boolean = when (resultCode) {
+            android.telephony.SmsManager.RESULT_ERROR_RADIO_OFF,
+            android.telephony.SmsManager.RESULT_ERROR_NO_SERVICE,
+            9 /* RESULT_RADIO_NOT_AVAILABLE */ -> true
+            android.telephony.SmsManager.RESULT_ERROR_GENERIC_FAILURE -> !SendRetry.inService(context)
+            else -> false
+        }
+
         fun expectParts(rowUri: String, count: Int) {
             synchronized(pending) {
                 pending[rowUri] = count
@@ -68,6 +78,15 @@ class SmsSentReceiver : android.content.BroadcastReceiver() {
 
         val newType = partResult(rowUriString, partIndex, partCount, resultCode == Activity.RESULT_OK)
             ?: return // more parts still to report
+        if (newType == Telephony.Sms.MESSAGE_TYPE_FAILED) {
+            Log.w("TurboTextSend", "text ${rowUri.lastPathSegment} failed: result $resultCode")
+            // No signal: wait for it and send again (SendRetry) rather
+            // than leave it failed.
+            if (isNoService(context, resultCode)) {
+                SendRetry.waitSms(context.applicationContext, rowUri)
+                return
+            }
+        }
         val values = ContentValues().apply { put(Telephony.Sms.TYPE, newType) }
         try {
             context.contentResolver.update(rowUri, values, null, null)

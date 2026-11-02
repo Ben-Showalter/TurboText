@@ -137,7 +137,7 @@ class GroqVoiceInputHelper(private val context: Context) {
                         return@Thread
                     }
                     val text = JSONObject(bodyStr).optString("text").trim()
-                    Log.i(TAG, "Groq transcription: \"$text\"")
+                    Log.i(TAG, "Groq transcription: ${text.length} chars")
                     if (text.isNotEmpty()) VibrationPatterns.tick(context, 40)
                     mainHandler.post { onResult(text) }
                 }

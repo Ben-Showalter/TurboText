@@ -104,7 +104,7 @@ class ConversationActivity : AppCompatActivity() {
         // "T9Word" the layout happened to hardcode.
         softLeftLabel.text = inputController.currentLabel()
         val draft = DraftHelper.getDraft(this, address)
-        android.util.Log.i("TurboTextDraft", "onCreate restore: address=\"$address\" draft=${if (draft != null) "\"$draft\"" else "null"}")
+        android.util.Log.i("TurboTextDraft", "onCreate restore: address=\"$address\" draft=${draft?.let { "${it.length} chars" } ?: "none"}")
         draft?.let { inputController.setText(it) }
 
         voiceHelper = GroqVoiceInputHelper(this)
@@ -944,7 +944,7 @@ class ConversationActivity : AppCompatActivity() {
         reloadHandler.removeCallbacks(reloadRunnable)
         inputController.confirmPending()
         val text = inputController.currentText()
-        android.util.Log.i("TurboTextDraft", "onPause save: address=\"$address\" text=\"$text\"")
+        android.util.Log.i("TurboTextDraft", "onPause save: address=\"$address\" ${text.length} chars")
         DraftHelper.saveDraft(this, address, text)
     }
 

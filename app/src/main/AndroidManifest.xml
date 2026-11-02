@@ -226,6 +226,11 @@
             android:name=".MmsSentReceiver"
             android:exported="false" />
 
+        <!-- Sends texts and pictures that were waiting for a signal (SendRetry). -->
+        <receiver
+            android:name=".SendRetryReceiver"
+            android:exported="false" />
+
         <!-- Result of confirming a downloaded MMS to the carrier (MmsAcknowledger). -->
         <receiver
             android:name=".MmsAckSentReceiver"

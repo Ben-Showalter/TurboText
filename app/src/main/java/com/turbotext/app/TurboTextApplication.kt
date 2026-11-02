@@ -22,6 +22,9 @@ private const val PREWARM_THREAD_LIMIT = 25
 class TurboTextApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        // Our own log on the phone, for Settings > Advanced > Save Bug
+        // Report; first, so it catches everything after it.
+        AppLog.start(this)
         SettingsHelper.clearRemovedSettings(this)
 
         // mmslib's incoming-MMS path (PushReceiver) reads these: download
@@ -47,6 +50,8 @@ class TurboTextApplication : Application() {
         // Stay running in the background: the Background Helper if it's
         // on, otherwise a foreground service with a notification.
         BackgroundHost.ensureRunning(this)
+        // Texts and pictures waiting for a signal go out when it's back.
+        SendRetry.startListening(this)
         Thread {
             try {
                 OwnNumber.validateLearned(this)
