@@ -411,10 +411,16 @@ class SmsRepository(private val context: Context) {
         // with a stale snippet. The conversations view's own "date DESC"
         // isn't honored by every OEM provider, so re-derive each thread's
         // real timestamp from its newest surviving message and sort here.
+        // Only the newest few messages per group are read (the whole
+        // history, pictures included, took seconds — so a new message took
+        // that long to move its group to the top). The full history is
+        // read only if every one of those few is in the trash.
         return result
             .mapNotNull { convo ->
-                val msgs = getMessages(convo.threadId)
-                if (msgs.isEmpty()) null else convo.copy(date = msgs.last().date)
+                val newest = getRecentMessages(convo.threadId, 5).lastOrNull()
+                    ?: getMessages(convo.threadId).lastOrNull()
+                    ?: return@mapNotNull null
+                convo.copy(date = newest.date, snippet = snippetFor(newest, convo.snippet))
             }
             .sortedByDescending { it.date }
     }
@@ -571,6 +577,18 @@ class SmsRepository(private val context: Context) {
             .filterNot { groupThreadIds.contains(it.threadId) }
             .sortedByDescending { it.date }
         return if (limit != null) sorted.take(limit + 1) else sorted
+    }
+
+    /** A list row's preview for [message]: its text, or what it carries. */
+    fun snippetFor(message: Message, fallback: String = ""): String = when {
+        message.body.isNotBlank() -> message.body
+        message.imageUri != null -> "Picture message"
+        message.audioUri != null -> "Voice message"
+        message.vcardUri != null -> "Contact card"
+        message.videoUri != null -> "Video"
+        message.fileUri != null -> "File: ${message.fileName ?: message.fileMime}"
+        message.isMms -> "Multimedia message"
+        else -> fallback
     }
 
     fun getMessages(threadId: Long): List<Message> {

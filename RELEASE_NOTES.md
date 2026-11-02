@@ -20,6 +20,7 @@
 - Options now has Record Audio, where Record Video used to be. Record Video moved to Attach.
 - Saved pictures and files show in the Gallery right away and at the top. Pictures saved from the picture viewer used to be stored as ".bin" files, which the Gallery doesn't show. TurboText now reads the picture's real type from the file itself.
 - Paste works again. Android only shows the clipboard to the screen in front, and Paste used to read it while the Options menu was still closing.
+- A new group message moves its group to the top of the Groups list straight away, with the new message as its preview. Working out the order used to load every group's whole history first, which took several seconds.
 - The conversation and Groups lists update as soon as a message arrives. Before, an older reload could finish last and put the old list back, and the Groups list only updated when you reopened it.
 - Group conversations: Options > Show Members lists everyone in the group with their numbers. It's handy once a group has a nickname. It's in the Groups list and in the group's own conversation.
 - The punctuation picker ('1') puts the marks you use most at the front, and learns as you go.

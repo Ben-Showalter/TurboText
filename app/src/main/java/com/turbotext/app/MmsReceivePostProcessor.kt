@@ -87,6 +87,9 @@ object MmsReceivePostProcessor {
 
             val participants = if (tid != null) repo.getThreadParticipants(tid) else emptyList()
             val isGroup = participants.size > 1
+            // The Groups list shows it at the top at once; its full reload
+            // follows (ContentObserver).
+            if (isGroup && tid != null) GroupThreadsCache.bump(tid, System.currentTimeMillis(), preview)
             val displayName = if (isGroup) {
                 GroupNicknameHelper.getNickname(context, tid ?: -1)
                     ?: participants.joinToString(", ") { ContactHelper.lookupName(context, it) ?: it }
