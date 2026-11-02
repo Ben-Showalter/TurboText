@@ -37,15 +37,31 @@ object ClipboardPaste {
     }
 
     private fun read(activity: Activity, onText: (String) -> Unit) {
+        val manager = activity.getSystemService(ClipboardManager::class.java)
         val clip = try {
-            activity.getSystemService(ClipboardManager::class.java)?.primaryClip
+            manager?.primaryClip
         } catch (e: Exception) {
             Log.w(TAG, "clipboard read refused", e)
             null
         }
-        // A link or styled text comes through as plain text.
-        val text = clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(activity)?.toString().orEmpty()
-        Log.i(TAG, "paste: ${if (clip == null) "no clip (or not allowed)" else "${text.length} chars"}")
+        // What the clipboard holds, without its contents, for the bug
+        // report: whether Android says there is something, its types, and
+        // which form each item is in.
+        Log.i(
+            TAG,
+            "paste: focus=${activity.hasWindowFocus()} hasClip=${try { manager?.hasPrimaryClip() } catch (e: Exception) { "error" }} " +
+                "types=${clip?.description?.let { d -> (0 until d.mimeTypeCount).joinToString { d.getMimeType(it) } } ?: "-"} " +
+                "items=${clip?.itemCount ?: 0} " +
+                (clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.let { i ->
+                    "text=${i.text?.length ?: "none"} html=${i.htmlText?.length ?: "none"} uri=${i.uri != null} intent=${i.intent != null}"
+                } ?: "")
+        )
+        // Every item, in order: some editors put the selection in a later
+        // one. Links and styled text come through as plain text.
+        val text = clip?.let { c ->
+            (0 until c.itemCount).map { c.getItemAt(it).coerceToText(activity)?.toString().orEmpty() }
+                .filter { it.isNotEmpty() }.joinToString("\n")
+        }.orEmpty()
         if (text.isEmpty()) {
             Toast.makeText(activity, "Clipboard is empty", Toast.LENGTH_SHORT).show()
             return

@@ -200,7 +200,7 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
         val statusWord = when (msg.sendStatus) {
             "sending" -> "Sending"
             "waiting" -> "Waiting for signal"
-            "scheduled" -> if (ScheduleLabels.isToday(msg.date)) "Scheduled" else "Scheduled for tomorrow"
+            "scheduled" -> ScheduleLabels.bubbleStatus(msg.date)
             "sent" -> "Sent"
             "delivered" -> "Delivered"
             "partially_delivered" -> "Delivered to ${msg.deliveredTo} of ${msg.recipientCount}"

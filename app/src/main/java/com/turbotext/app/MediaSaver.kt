@@ -36,7 +36,10 @@ object MediaSaver {
         "image/jpg" to "image/jpeg", "image/pjpeg" to "image/jpeg", "image/x-png" to "image/png",
         "image/x-ms-bmp" to "image/bmp", "video/3gp" to "video/3gpp", "audio/mp3" to "audio/mpeg",
         "audio/x-wav" to "audio/wav", "audio/m4a" to "audio/mp4", "audio/x-m4a" to "audio/mp4",
-        "text/vcard" to "text/x-vcard"
+        "text/vcard" to "text/x-vcard",
+        // Only a wildcard known (and the file's bytes didn't say): the
+        // usual type for each, so it still saves as something viewable.
+        "image/*" to "image/jpeg", "video/*" to "video/mp4", "audio/*" to "audio/mp4"
     )
 
     /** (type, extension) to save [mime] as; unknown types keep their type
@@ -49,12 +52,56 @@ object MediaSaver {
         return type to ext
     }
 
+    /** A real type: not a wildcard (any image, any video) or a generic binary. */
+    fun isSpecific(mime: String): Boolean {
+        val m = mime.trim().lowercase()
+        return m.contains('/') && !m.endsWith("/*") && m != "application/octet-stream"
+    }
+
+    /** A picture, video or sound's type from its first bytes. */
+    fun sniff(head: ByteArray): String? {
+        fun at(i: Int, vararg b: Int) = head.size >= i + b.size && b.indices.all { head[i + it].toInt() and 0xFF == b[it] }
+        fun ascii(i: Int, text: String) = at(i, *text.map { it.code }.toIntArray())
+        return when {
+            at(0, 0xFF, 0xD8, 0xFF) -> "image/jpeg"
+            at(0, 0x89, 0x50, 0x4E, 0x47) -> "image/png"
+            ascii(0, "GIF8") -> "image/gif"
+            ascii(0, "RIFF") && ascii(8, "WEBP") -> "image/webp"
+            ascii(0, "BM") -> "image/bmp"
+            ascii(4, "ftyp") && (ascii(8, "heic") || ascii(8, "heix") || ascii(8, "mif1")) -> "image/heic"
+            ascii(4, "ftyp") && ascii(8, "3g2") -> "video/3gpp2"
+            ascii(4, "ftyp") && ascii(8, "3gp") -> "video/3gpp"
+            ascii(4, "ftyp") && ascii(8, "M4A") -> "audio/mp4"
+            ascii(4, "ftyp") && ascii(8, "qt") -> "video/quicktime"
+            ascii(4, "ftyp") -> "video/mp4"
+            ascii(0, "#!AMR") -> "audio/amr"
+            ascii(0, "ID3") || at(0, 0xFF, 0xFB) -> "audio/mpeg"
+            ascii(0, "OggS") -> "audio/ogg"
+            ascii(0, "%PDF") -> "application/pdf"
+            else -> null
+        }
+    }
+
     private fun systemExtension(mime: String): String? =
         android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(mime)
 
     fun save(context: android.content.Context, source: Uri, mimeIn: String?, toDownloads: Boolean = false): Boolean {
         val resolver = context.contentResolver
-        val (mime, ext) = normalize(mimeIn ?: resolver.getType(source))
+        // "image/*" (what the viewer knew) isn't a type a file can have —
+        // saved as one, it became a .bin the Gallery never showed. Ask the
+        // source, then read the file's first bytes.
+        val given = listOf(mimeIn, try { resolver.getType(source) } catch (e: Exception) { null })
+            .firstOrNull { it != null && isSpecific(it) }
+        val sniffed = if (given == null) try {
+            resolver.openInputStream(source)?.use { input ->
+                val head = ByteArray(16)
+                val n = input.read(head)
+                if (n > 0) sniff(head.copyOf(n)) else null
+            }
+        } catch (e: Exception) {
+            null
+        } else null
+        val (mime, ext) = normalize(given ?: sniffed ?: mimeIn)
         val name = "TurboText_${System.currentTimeMillis()}.$ext"
         val ok = try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) saveQ(context, source, mime, name, toDownloads)

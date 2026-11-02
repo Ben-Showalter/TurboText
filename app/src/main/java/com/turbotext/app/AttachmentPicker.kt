@@ -116,48 +116,52 @@ class AttachmentPicker(
 
     /**
      * Opens the phone's own gallery to choose pictures or videos — not a
-     * chooser or the file browser. The gallery is the app that handles
-     * ACTION_PICK for images; it's asked first for both pictures and
-     * videos, then for the forms it may understand better, and the file
-     * browser is only the last resort.
+     * chooser, and not the file browser. Asking Android for "an app that
+     * picks pictures" matches both the Gallery and the File manager here,
+     * so it showed "Open with". Instead the Gallery's own screen is found
+     * and opened by name (as the stock Messages app does), asked for
+     * pictures and videos first, then for its plain picture picker.
      */
     fun pickFromGallery() {
         val pm = activity.packageManager
-        val gallery = Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
-            .resolveActivity(pm)?.packageName
-        val tries = ArrayList<Pair<String, Intent>>()
-        if (gallery != null) {
-            tries.add("gallery $gallery (pictures and videos)" to Intent(Intent.ACTION_GET_CONTENT).apply {
-                type = "*/*"
-                putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*"))
-                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-                addCategory(Intent.CATEGORY_OPENABLE)
-                setPackage(gallery)
-            })
-            tries.add("gallery $gallery (pick)" to Intent(Intent.ACTION_PICK).apply {
-                type = "image/* video/*"
-                setPackage(gallery)
-            })
-        }
-        tries.add("pictures" to Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI))
-        for ((label, intent) in tries) {
-            if (intent.resolveActivity(pm) == null) continue
-            try {
-                activity.startActivityForResult(intent, REQ_GALLERY)
-                android.util.Log.i("TurboTextAttach", "choosing from $label")
-                return
-            } catch (e: Exception) {
-                android.util.Log.w("TurboTextAttach", "couldn't open $label", e)
-            }
-        }
-        android.util.Log.i("TurboTextAttach", "no gallery found; using the file chooser")
-        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+        val getContent = Intent(Intent.ACTION_GET_CONTENT).apply {
             type = "*/*"
             putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*"))
             putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
             addCategory(Intent.CATEGORY_OPENABLE)
         }
-        activity.startActivityForResult(Intent.createChooser(intent, "Choose Picture or Video"), REQ_GALLERY)
+        val pick = Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+        val gallery = galleryPackage(pm, listOf(pick, Intent(Intent.ACTION_GET_CONTENT).setType("image/*")))
+        android.util.Log.i("TurboTextAttach", "gallery app: ${gallery ?: "none found"}")
+        if (gallery != null) {
+            for ((label, base) in listOf("pictures and videos" to getContent, "pictures" to pick)) {
+                val target = pm.queryIntentActivities(Intent(base).setPackage(gallery), 0).firstOrNull() ?: continue
+                val intent = Intent(base).setClassName(target.activityInfo.packageName, target.activityInfo.name)
+                try {
+                    activity.startActivityForResult(intent, REQ_GALLERY)
+                    android.util.Log.i("TurboTextAttach", "choosing $label in ${target.activityInfo.name}")
+                    return
+                } catch (e: Exception) {
+                    android.util.Log.w("TurboTextAttach", "couldn't open ${target.activityInfo.name}", e)
+                }
+            }
+        }
+        android.util.Log.i("TurboTextAttach", "no gallery screen found; using the chooser")
+        activity.startActivityForResult(Intent.createChooser(getContent, "Choose Picture or Video"), REQ_GALLERY)
+    }
+
+    /** The gallery app among those that can pick pictures: one with
+     *  "gallery", "photo" or "album" in its name, else anything that isn't
+     *  a file manager. */
+    private fun galleryPackage(pm: PackageManager, intents: List<Intent>): String? {
+        val found = intents.flatMap { pm.queryIntentActivities(it, 0) }
+            .map { it.activityInfo.packageName to "${it.activityInfo.packageName} ${it.activityInfo.name}".lowercase() }
+            .distinctBy { it.first }
+        android.util.Log.i("TurboTextAttach", "picture pickers: ${found.joinToString { it.first }}")
+        return found.firstOrNull { (_, name) -> listOf("gallery", "photo", "album").any { it in name } }?.first
+            ?: found.firstOrNull { (_, name) ->
+                listOf("file", "document", "storage", "explorer", "manager").none { it in name }
+            }?.first
     }
 
     fun pickFile() {

@@ -364,7 +364,7 @@ class ComposeActivity : AppCompatActivity() {
         finish()
     }
 
-    /** Options > Send Later: like Send, at a time picked on the keypad. */
+    /** Options > Send Later: like Send, on a day and at a time picked on the keypad. */
     private fun scheduleMessage() {
         recipientController.confirmPending()
         inputController.confirmPending()
@@ -379,11 +379,7 @@ class ComposeActivity : AppCompatActivity() {
             Toast.makeText(this, "Write a message first", Toast.LENGTH_SHORT).show()
             return
         }
-        val start = java.util.Calendar.getInstance().apply { timeInMillis = System.currentTimeMillis() + 60 * 60 * 1000L }
-        KeypadTimeDialog(
-            this, "Send at", start.get(java.util.Calendar.HOUR_OF_DAY), start.get(java.util.Calendar.MINUTE)
-        ) { hour, minute ->
-            val at = ScheduledSends.nextTime(System.currentTimeMillis(), hour, minute)
+        SendLaterPicker.pick(this, null) { at ->
             val app = applicationContext
             sending = true
             Thread {
@@ -408,7 +404,7 @@ class ComposeActivity : AppCompatActivity() {
                     finish()
                 }
             }.start()
-        }.show()
+        }
     }
 
     private fun sendMessage() {

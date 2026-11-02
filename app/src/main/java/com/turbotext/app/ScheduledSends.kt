@@ -13,8 +13,8 @@ import java.io.File
 import java.util.Calendar
 
 /**
- * Send Later: messages written now and sent at a chosen time, at most a
- * day ahead (Options > Send Later while composing).
+ * Send Later: messages written now and sent at a chosen day and time, at
+ * most a week ahead (Options > Send Later while composing).
  *
  * Each one is kept in SharedPreferences, with copies of its attachments
  * under files/scheduled/<id>/ so they're still readable when it goes out.
@@ -65,19 +65,19 @@ object ScheduledSends {
         }
     }
 
-    /** The next [hour24]:[minute] after [now] — today if still ahead,
-     *  otherwise tomorrow — so it's never more than a day away. */
-    fun nextTime(now: Long, hour24: Int, minute: Int, zone: java.util.TimeZone = java.util.TimeZone.getDefault()): Long {
-        val cal = Calendar.getInstance(zone).apply {
+    /** Furthest ahead a message can be scheduled, in days. */
+    const val MAX_DAYS_AHEAD = 7
+
+    /** [hour24]:[minute] on the day [daysAhead] days after [now]'s day. */
+    fun timeOn(now: Long, daysAhead: Int, hour24: Int, minute: Int, zone: java.util.TimeZone = java.util.TimeZone.getDefault()): Long =
+        Calendar.getInstance(zone).apply {
             timeInMillis = now
+            add(Calendar.DAY_OF_YEAR, daysAhead)
             set(Calendar.HOUR_OF_DAY, hour24)
             set(Calendar.MINUTE, minute)
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
-        }
-        if (cal.timeInMillis <= now) cal.add(Calendar.DAY_OF_YEAR, 1)
-        return cal.timeInMillis
-    }
+        }.timeInMillis
 
     private val lock = Any()
 
@@ -259,16 +259,75 @@ class ScheduledSendReceiver : BroadcastReceiver() {
     }
 }
 
-/** How a scheduled time reads: "at 3:30 PM", or "tomorrow at 3:30 PM". */
+/** How a scheduled time reads: "today at 3:30 PM", "tomorrow at 3:30 PM",
+ *  "Fri 13 at 3:30 PM". */
 object ScheduleLabels {
-    fun isToday(at: Long, now: Long = System.currentTimeMillis()): Boolean {
-        val a = Calendar.getInstance().apply { timeInMillis = at }
-        val b = Calendar.getInstance().apply { timeInMillis = now }
-        return a.get(Calendar.YEAR) == b.get(Calendar.YEAR) && a.get(Calendar.DAY_OF_YEAR) == b.get(Calendar.DAY_OF_YEAR)
+    /** Whole days from [now]'s day to [at]'s day (0 = today). */
+    fun daysAhead(at: Long, now: Long = System.currentTimeMillis()): Int {
+        fun dayStart(t: Long) = Calendar.getInstance().apply {
+            timeInMillis = t
+            set(Calendar.HOUR_OF_DAY, 12) // noon: clear of daylight-saving hour shifts
+            set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        return Math.round((dayStart(at) - dayStart(now)) / (24 * 60 * 60 * 1000.0)).toInt()
+    }
+
+    fun isToday(at: Long, now: Long = System.currentTimeMillis()): Boolean = daysAhead(at, now) == 0
+
+    /** "Today", "Tomorrow", or the weekday and date, e.g. "Fri 13". */
+    fun dayName(at: Long, now: Long = System.currentTimeMillis()): String = when (daysAhead(at, now)) {
+        0 -> "Today"
+        1 -> "Tomorrow"
+        else -> java.text.SimpleDateFormat("EEE d", java.util.Locale.getDefault()).format(java.util.Date(at))
     }
 
     fun whenText(at: Long): String {
         val time = java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(at))
-        return if (isToday(at)) "at $time" else "tomorrow at $time"
+        return "${dayName(at).let { if (it == "Today" || it == "Tomorrow") it.lowercase() else it }} at $time"
+    }
+
+    /** The bubble's status: "Scheduled", "Scheduled for tomorrow", "Scheduled for Fri 13". */
+    fun bubbleStatus(at: Long): String = when (daysAhead(at)) {
+        0 -> "Scheduled"
+        1 -> "Scheduled for tomorrow"
+        else -> "Scheduled for ${dayName(at)}"
+    }
+}
+
+/**
+ * Send Later's choice of when: a day (today, tomorrow, then each weekday
+ * and date, up to a week ahead), then the hour/minute/AM-PM selector.
+ */
+object SendLaterPicker {
+    fun pick(activity: android.app.Activity, current: Long?, onPicked: (Long) -> Unit) {
+        val now = System.currentTimeMillis()
+        val days = (0..ScheduledSends.MAX_DAYS_AHEAD).toList()
+        val labels = days.map { ScheduleLabels.dayName(now + it * 24 * 60 * 60 * 1000L, now) }.toTypedArray()
+        val preset = current?.let { ScheduleLabels.daysAhead(it, now).coerceIn(0, days.last()) } ?: 0
+        androidx.appcompat.app.AlertDialog.Builder(activity)
+            .setTitle("Send on")
+            .setSingleChoiceItems(labels, preset) { dialog, which ->
+                dialog.dismiss()
+                pickTime(activity, days[which], current, onPicked)
+            }
+            .show()
+    }
+
+    private fun pickTime(activity: android.app.Activity, daysAhead: Int, current: Long?, onPicked: (Long) -> Unit) {
+        val start = Calendar.getInstance().apply {
+            timeInMillis = current ?: (System.currentTimeMillis() + 60 * 60 * 1000L)
+        }
+        KeypadTimeDialog(
+            activity, "Send at",
+            start.get(Calendar.HOUR_OF_DAY), start.get(Calendar.MINUTE)
+        ) { hour, minute ->
+            val at = ScheduledSends.timeOn(System.currentTimeMillis(), daysAhead, hour, minute)
+            if (at <= System.currentTimeMillis()) {
+                android.widget.Toast.makeText(activity, "That time has passed; pick a later one", android.widget.Toast.LENGTH_LONG).show()
+                pickTime(activity, daysAhead, at, onPicked)
+            } else {
+                onPicked(at)
+            }
+        }.show()
     }
 }

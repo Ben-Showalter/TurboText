@@ -817,7 +817,7 @@ class ConversationActivity : AppCompatActivity() {
     }
 
     /** Options > Send Later: the typed message (and attachments) goes out
-     *  at a time picked on the keypad, at most a day ahead (ScheduledSends). */
+     *  on a chosen day and time, at most a week ahead (ScheduledSends). */
     private fun scheduleCurrentMessage() {
         inputController.confirmPending()
         val body = SettingsHelper.applySignature(this, inputController.currentText().trim())
@@ -850,19 +850,9 @@ class ConversationActivity : AppCompatActivity() {
         }
     }
 
-    /** The hour/minute/AM-PM picker; [current] (millis) preselects a time,
-     *  otherwise an hour from now. Calls [onPicked] with the next such time. */
-    private fun pickSendTime(current: Long?, onPicked: (Long) -> Unit) {
-        val start = java.util.Calendar.getInstance().apply {
-            timeInMillis = current ?: (System.currentTimeMillis() + 60 * 60 * 1000L)
-        }
-        KeypadTimeDialog(
-            this, "Send at",
-            start.get(java.util.Calendar.HOUR_OF_DAY), start.get(java.util.Calendar.MINUTE)
-        ) { hour, minute ->
-            onPicked(ScheduledSends.nextTime(System.currentTimeMillis(), hour, minute))
-        }.show()
-    }
+    /** Day, then time (SendLaterPicker); [current] preselects them. */
+    private fun pickSendTime(current: Long?, onPicked: (Long) -> Unit) =
+        SendLaterPicker.pick(this, current, onPicked)
 
     /** A scheduled bubble's options. */
     private fun showScheduledOptions(message: Message, id: Long) {

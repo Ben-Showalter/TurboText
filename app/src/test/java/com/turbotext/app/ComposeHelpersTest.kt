@@ -25,14 +25,27 @@ class ComposeHelpersTest {
     }.timeInMillis
 
     @Test
-    fun sendLaterIsTodayWhenStillAheadOtherwiseTomorrow() {
+    fun sendLaterTimeIsOnThePickedDay() {
         val now = at(15, 0)
-        assertEquals(at(16, 30), ScheduledSends.nextTime(now, 16, 30, utc))
-        val tomorrow = ScheduledSends.nextTime(now, 9, 0, utc)
-        assertEquals(at(9, 0) + 24 * 60 * 60 * 1000L, tomorrow)
-        // The current minute itself counts as passed.
-        assertEquals(now + 24 * 60 * 60 * 1000L, ScheduledSends.nextTime(now, 15, 0, utc))
-        assertTrue(tomorrow - now <= 24 * 60 * 60 * 1000L)
+        assertEquals(at(16, 30), ScheduledSends.timeOn(now, 0, 16, 30, utc))
+        assertEquals(at(9, 0) + 24 * 60 * 60 * 1000L, ScheduledSends.timeOn(now, 1, 9, 0, utc))
+        assertEquals(at(20, 15) + 7 * 24 * 60 * 60 * 1000L, ScheduledSends.timeOn(now, 7, 20, 15, utc))
+    }
+
+    @Test
+    fun picturesSavedWithOnlyAWildcardTypeGetTheirRealType() {
+        assertFalse(MediaSaver.isSpecific("image/*"))
+        assertFalse(MediaSaver.isSpecific("application/octet-stream"))
+        assertTrue(MediaSaver.isSpecific("image/png"))
+        assertEquals("image/jpeg", MediaSaver.sniff(byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte())))
+        assertEquals("image/png", MediaSaver.sniff(byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A)))
+        val mp4 = byteArrayOf(0, 0, 0, 0x18) + "ftypisom".toByteArray()
+        assertEquals("video/mp4", MediaSaver.sniff(mp4))
+        val threeGp = byteArrayOf(0, 0, 0, 0x18) + "ftyp3gp4".toByteArray()
+        assertEquals("video/3gpp", MediaSaver.sniff(threeGp))
+        assertEquals(null, MediaSaver.sniff(byteArrayOf(1, 2, 3)))
+        // Nothing better known: a wildcard still saves as a viewable type.
+        assertEquals("image/jpeg" to "jpg", MediaSaver.normalize("image/*") { null })
     }
 
     @Test
