@@ -295,39 +295,42 @@ object ScheduleLabels {
 }
 
 /**
- * Send Later's choice of when: a day (today, tomorrow, then each weekday
- * and date, up to a week ahead), then the hour/minute/AM-PM selector.
+ * Send Later's one screen: Day, hour, minute and AM/PM side by side
+ * (KeypadTimeDialog with a Day column), opening on Tomorrow at the next
+ * half hour. The line under it spells out the date and time; a time
+ * already past is refused and the screen stays open.
  */
 object SendLaterPicker {
-    fun pick(activity: android.app.Activity, current: Long?, onPicked: (Long) -> Unit) {
-        val now = System.currentTimeMillis()
-        val days = (0..ScheduledSends.MAX_DAYS_AHEAD).toList()
-        val labels = days.map { ScheduleLabels.dayName(now + it * 24 * 60 * 60 * 1000L, now) }.toTypedArray()
-        val preset = current?.let { ScheduleLabels.daysAhead(it, now).coerceIn(0, days.last()) } ?: 0
-        androidx.appcompat.app.AlertDialog.Builder(activity)
-            .setTitle("Send on")
-            .setSingleChoiceItems(labels, preset) { dialog, which ->
-                dialog.dismiss()
-                pickTime(activity, days[which], current, onPicked)
-            }
-            .show()
+    /** The next whole or half hour after [now], as (hour24, minute). */
+    fun nextHalfHour(now: Long, zone: java.util.TimeZone = java.util.TimeZone.getDefault()): Pair<Int, Int> {
+        val cal = Calendar.getInstance(zone).apply {
+            timeInMillis = now
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+            val m = get(Calendar.MINUTE)
+            add(Calendar.MINUTE, if (m < 30) 30 - m else 60 - m)
+        }
+        return cal.get(Calendar.HOUR_OF_DAY) to cal.get(Calendar.MINUTE)
     }
 
-    private fun pickTime(activity: android.app.Activity, daysAhead: Int, current: Long?, onPicked: (Long) -> Unit) {
-        val start = Calendar.getInstance().apply {
-            timeInMillis = current ?: (System.currentTimeMillis() + 60 * 60 * 1000L)
-        }
+    fun pick(activity: android.app.Activity, current: Long?, onPicked: (Long) -> Unit) {
+        val now = System.currentTimeMillis()
+        val dayMs = 24 * 60 * 60 * 1000L
+        val labels = (0..ScheduledSends.MAX_DAYS_AHEAD).map { ScheduleLabels.dayName(now + it * dayMs, now) }
+        val (hour, minute) = current?.let {
+            val c = Calendar.getInstance().apply { timeInMillis = it }
+            c.get(Calendar.HOUR_OF_DAY) to c.get(Calendar.MINUTE)
+        } ?: nextHalfHour(now)
+        val day = current?.let { ScheduleLabels.daysAhead(it, now).coerceIn(0, labels.size - 1) } ?: 1
+        val full = java.text.SimpleDateFormat("EEE, MMM d", java.util.Locale.getDefault())
+        val time = java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT)
+        fun at(d: Int, h: Int, m: Int) = ScheduledSends.timeOn(System.currentTimeMillis(), d, h, m)
         KeypadTimeDialog(
-            activity, "Send at",
-            start.get(Calendar.HOUR_OF_DAY), start.get(Calendar.MINUTE)
-        ) { hour, minute ->
-            val at = ScheduledSends.timeOn(System.currentTimeMillis(), daysAhead, hour, minute)
-            if (at <= System.currentTimeMillis()) {
-                android.widget.Toast.makeText(activity, "That time has passed; pick a later one", android.widget.Toast.LENGTH_LONG).show()
-                pickTime(activity, daysAhead, at, onPicked)
-            } else {
-                onPicked(at)
-            }
-        }.show()
+            activity, "Send Later", hour, minute,
+            days = labels,
+            day = day,
+            describe = { d, h, m -> at(d, h, m).let { "${full.format(java.util.Date(it))} at ${time.format(java.util.Date(it))}" } },
+            check = { d, h, m -> if (at(d, h, m) <= System.currentTimeMillis()) "That time has passed; pick a later one" else null }
+        ) { d, h, m -> onPicked(at(d, h, m)) }.show()
     }
 }

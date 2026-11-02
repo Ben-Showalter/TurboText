@@ -39,8 +39,10 @@ class MainActivity : AppCompatActivity() {
     }
     private var observerRegistered = false
 
-    // WRITE/READ_EXTERNAL_STORAGE are declared in the manifest with
-    // maxSdkVersion="28" (scoped storage replaces them from API 29 on —
+    // WRITE_EXTERNAL_STORAGE is declared in the manifest with
+    // maxSdkVersion="28" (READ_EXTERNAL_STORAGE now goes to 32, but only
+    // the picture picker asks for it there — MediaPickerActivity)
+    // (scoped storage replaces them from API 29 on —
     // see MANAGE_EXTERNAL_STORAGE, requested separately via
     // NotificationSettingsActivity, for the one place this app still
     // needs broad storage access on newer versions). Above that level the

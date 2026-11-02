@@ -108,7 +108,7 @@ class ReportSettingsActivity : AppCompatActivity() {
     }
 
     private fun editTime() {
-        KeypadTimeDialog(this, "Send At", ReportSettings.getHour(this), ReportSettings.getMinute(this)) { hour, minute ->
+        KeypadTimeDialog(this, "Send At", ReportSettings.getHour(this), ReportSettings.getMinute(this)) { _, hour, minute ->
             ReportSettings.setTime(this, hour, minute)
             ReportSender.schedule(this)
             updateLabels()

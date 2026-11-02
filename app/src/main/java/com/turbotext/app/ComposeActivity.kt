@@ -212,8 +212,8 @@ class ComposeActivity : AppCompatActivity() {
         val options = arrayOf("Choose Contact") + when {
             editingRecipient -> emptyArray()
             !attachments.isEmpty() ->
-                arrayOf("Choose Picture or Video", "Take Photo", "Record Video", "Attach", "Remove Attachment", "Paste", "Send Later")
-            else -> arrayOf("Choose Picture or Video", "Take Photo", "Record Video", "Attach", "Paste", "Send Later")
+                arrayOf("Choose Picture or Video", "Take Photo", "Record Audio", "Attach", "Remove Attachment", "Paste", "Send Later")
+            else -> arrayOf("Choose Picture or Video", "Take Photo", "Record Audio", "Attach", "Paste", "Send Later")
         }
         AlertDialog.Builder(this)
             .setTitle("Options")
@@ -223,8 +223,8 @@ class ComposeActivity : AppCompatActivity() {
                     "Send Later" -> scheduleMessage()
                     "Choose Picture or Video" -> picker.pickFromGallery()
                     "Take Photo" -> picker.takePhoto()
-                    "Record Video" -> picker.recordVideo()
-                    "Attach" -> picker.showAttachMenu { startAudioMemoRecording() }
+                    "Record Audio" -> startAudioMemoRecording()
+                    "Attach" -> picker.showAttachMenu()
                     "Remove Attachment" -> {
                         attachments.clear()
                         Toast.makeText(this, "Attachment removed", Toast.LENGTH_SHORT).show()

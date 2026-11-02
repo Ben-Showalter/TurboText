@@ -38,7 +38,17 @@ object ThumbnailLoader {
         val ctx = view.context.applicationContext
         executor.execute {
             val bmp = try {
-                if (isVideo) videoFrame(ctx, Uri.parse(uri), sizePx) else decodeSampled(ctx, Uri.parse(uri), sizePx)
+                // The phone's own photo/video library keeps small previews:
+                // much faster than decoding a whole camera photo per cell
+                // (MediaPickerActivity's grid).
+                val stored = if (uri.startsWith("content://media/") &&
+                    android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q
+                ) try {
+                    ctx.contentResolver.loadThumbnail(Uri.parse(uri), android.util.Size(sizePx, sizePx), null)
+                } catch (e: Exception) {
+                    null
+                } else null
+                stored ?: if (isVideo) videoFrame(ctx, Uri.parse(uri), sizePx) else decodeSampled(ctx, Uri.parse(uri), sizePx)
             } catch (e: Exception) {
                 android.util.Log.w("TurboTextPerf", "thumbnail decode failed", e)
                 null

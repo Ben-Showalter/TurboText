@@ -33,6 +33,14 @@ class ComposeHelpersTest {
     }
 
     @Test
+    fun sendLaterStartsOnTheNextHalfHour() {
+        assertEquals(15 to 30, SendLaterPicker.nextHalfHour(at(15, 0), utc))
+        assertEquals(16 to 0, SendLaterPicker.nextHalfHour(at(15, 30), utc))
+        assertEquals(16 to 0, SendLaterPicker.nextHalfHour(at(15, 47), utc))
+        assertEquals(0 to 0, SendLaterPicker.nextHalfHour(at(23, 40), utc))
+    }
+
+    @Test
     fun picturesSavedWithOnlyAWildcardTypeGetTheirRealType() {
         assertFalse(MediaSaver.isSpecific("image/*"))
         assertFalse(MediaSaver.isSpecific("application/octet-stream"))

@@ -9,7 +9,12 @@
     <uses-permission android:name="android.permission.RECEIVE_MMS" />
     <uses-permission android:name="android.permission.RECEIVE_WAP_PUSH" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+    <!-- Reading the phone's pictures and videos for Choose Picture or
+         Video (MediaPickerActivity): READ_EXTERNAL_STORAGE up to Android
+         12, the READ_MEDIA_* pair from 13. -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <!-- The notification-sounds folder (and the archive export folder) live
          at the root of shared storage, not inside this app's own sandboxed
          directory — on Android 11+ that needs "All files access" specifically,
@@ -134,6 +139,10 @@
 
         <activity
             android:name=".MediaViewerActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".MediaPickerActivity"
             android:exported="false" />
 
         <activity

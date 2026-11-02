@@ -16,22 +16,37 @@ import android.widget.TextView
  * side by side. Up/Down changes the highlighted one (hold to keep
  * going), Left/Right moves between them, and the number keys can type
  * the hour or minute. OK saves; Clear or the left softkey cancels.
- * [onPicked] gets the 24-hour hour and the minute.
+ *
+ * With [days] (Send Later) a Day column comes first ("Today",
+ * "Tomorrow", "Wed 4"…), starting on [day]; [describe] writes the line
+ * under the selector (the full date and time), and [check] can refuse
+ * a choice with a message, keeping the dialog open.
+ * [onPicked] gets the day's index (0 without [days]), the 24-hour hour
+ * and the minute.
  */
 class KeypadTimeDialog(
     context: Context,
     title: String,
     hour24: Int,
     minute: Int,
-    private val onPicked: (hour24: Int, minute: Int) -> Unit
+    private val days: List<String>? = null,
+    day: Int = 0,
+    private val describe: ((day: Int, hour24: Int, minute: Int) -> String)? = null,
+    private val check: ((day: Int, hour24: Int, minute: Int) -> String?)? = null,
+    private val onPicked: (day: Int, hour24: Int, minute: Int) -> Unit
 ) : Dialog(context) {
 
     private val theme = ThemeHelper.getCurrentTheme(context)
     private var hour12 = if (hour24 % 12 == 0) 12 else hour24 % 12
     private var minute = minute
     private var pm = hour24 >= 12
+    private var dayIndex = day.coerceIn(0, ((days?.size ?: 1) - 1).coerceAtLeast(0))
+
+    /** Columns before the hour: 1 with a Day column, else 0. */
+    private val offset = if (days != null) 1 else 0
     private var column = 0
-    private val cells = List(3) { TextView(context) }
+    private val cells = List(3 + offset) { TextView(context) }
+    private val summary = TextView(context)
 
     /** Digits typed into the current column so far. */
     private var typed = ""
@@ -62,20 +77,30 @@ class KeypadTimeDialog(
             setPadding(0, pad, 0, pad)
         }
         cells.forEachIndexed { i, cell ->
-            cell.textSize = 26f
+            val isDay = i < offset
+            // Smaller with a Day column, so "Tomorrow 12:30 PM" fits 240px.
+            cell.textSize = if (days != null) (if (isDay) 17f else 20f) else 26f
             cell.gravity = Gravity.CENTER
             cell.setTextColor(theme.textPrimary)
-            cell.setPadding(dp(6), dp(4), dp(6), dp(4))
-            row.addView(cell, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            if (i == 0) {
+            cell.setPadding(dp(if (days != null) 3 else 6), dp(4), dp(if (days != null) 3 else 6), dp(4))
+            row.addView(cell, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, if (isDay) 2.2f else 1f))
+            if (i == offset) {
                 row.addView(TextView(context).apply {
                     text = ":"
-                    textSize = 26f
+                    textSize = if (days != null) 20f else 26f
                     setTextColor(theme.textPrimary)
                 })
             }
         }
         root.addView(row)
+        if (describe != null) {
+            root.addView(summary.apply {
+                setTextColor(theme.accent)
+                textSize = 14f
+                gravity = Gravity.CENTER
+                setPadding(0, 0, 0, dp(6))
+            })
+        }
         root.addView(TextView(context).apply {
             text = "▲▼ change   ◀▶ move"
             setTextColor(theme.textSecondary)
@@ -119,8 +144,8 @@ class KeypadTimeDialog(
         when (keyCode) {
             KeyEvent.KEYCODE_DPAD_UP -> step(+1)
             KeyEvent.KEYCODE_DPAD_DOWN -> step(-1)
-            KeyEvent.KEYCODE_DPAD_LEFT -> moveTo((column + 2) % 3)
-            KeyEvent.KEYCODE_DPAD_RIGHT -> moveTo((column + 1) % 3)
+            KeyEvent.KEYCODE_DPAD_LEFT -> moveTo((column + cells.size - 1) % cells.size)
+            KeyEvent.KEYCODE_DPAD_RIGHT -> moveTo((column + 1) % cells.size)
             in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9 -> typeDigit(keyCode - KeyEvent.KEYCODE_0)
         }
         render()
@@ -131,8 +156,14 @@ class KeypadTimeDialog(
     private fun onKeyReleased(keyCode: Int) {
         when (keyCode) {
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
+                val hour24 = ReportBuilder.to24Hour(hour12, pm)
+                val refused = check?.invoke(dayIndex, hour24, minute)
+                if (refused != null) {
+                    android.widget.Toast.makeText(context, refused, android.widget.Toast.LENGTH_LONG).show()
+                    return
+                }
                 dismiss()
-                onPicked(ReportBuilder.to24Hour(hour12, pm), minute)
+                onPicked(dayIndex, hour24, minute)
             }
             // This phone's Clear key sends BACK.
             KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_DEL, KeyEvent.KEYCODE_SOFT_LEFT -> dismiss()
@@ -146,7 +177,9 @@ class KeypadTimeDialog(
 
     private fun step(by: Int) {
         typed = ""
-        when (column) {
+        val count = days?.size ?: 1
+        when (column - offset) {
+            -1 -> dayIndex = (dayIndex + by + count) % count
             0 -> hour12 = (hour12 - 1 + by + 12) % 12 + 1
             1 -> minute = (minute + by + 60) % 60
             2 -> pm = !pm
@@ -156,15 +189,15 @@ class KeypadTimeDialog(
     /** Two digits make the hour or minute; a digit that can't start one
      *  (e.g. 7 for minutes) stands alone and moves on. */
     private fun typeDigit(d: Int) {
-        when (column) {
+        when (column - offset) {
             0 -> {
                 val value = (typed + d).toInt()
                 if (typed.isNotEmpty() && value in 1..12) {
                     hour12 = value
-                    moveTo(1)
+                    moveTo(offset + 1)
                 } else if (d in 2..9) {
                     hour12 = d
-                    moveTo(1)
+                    moveTo(offset + 1)
                 } else {
                     if (d >= 1) hour12 = d
                     typed = d.toString()
@@ -173,19 +206,21 @@ class KeypadTimeDialog(
             1 -> {
                 if (typed.isEmpty()) {
                     minute = d
-                    if (d <= 5) typed = d.toString() else moveTo(2)
+                    if (d <= 5) typed = d.toString() else moveTo(offset + 2)
                 } else {
                     minute = (typed + d).toInt()
-                    moveTo(2)
+                    moveTo(offset + 2)
                 }
             }
         }
     }
 
     private fun render() {
-        cells[0].text = hour12.toString()
-        cells[1].text = "%02d".format(minute)
-        cells[2].text = if (pm) "PM" else "AM"
+        days?.let { cells[0].text = it[dayIndex] }
+        cells[offset].text = hour12.toString()
+        cells[offset + 1].text = "%02d".format(minute)
+        cells[offset + 2].text = if (pm) "PM" else "AM"
+        describe?.let { summary.text = it(dayIndex, ReportBuilder.to24Hour(hour12, pm), minute) }
         cells.forEachIndexed { i, cell ->
             cell.background = if (i == column) GradientDrawable().apply {
                 setColor(theme.surface2)

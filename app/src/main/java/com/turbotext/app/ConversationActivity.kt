@@ -304,9 +304,9 @@ class ConversationActivity : AppCompatActivity() {
             return
         }
         val options = (if (!attachments.isEmpty()) {
-            arrayOf("Choose Picture or Video", "Take Photo", "Record Video", "Attach", "Remove Attachment", "Paste")
+            arrayOf("Choose Picture or Video", "Take Photo", "Record Audio", "Attach", "Remove Attachment", "Paste")
         } else {
-            arrayOf("Choose Picture or Video", "Take Photo", "Record Video", "Attach", "Paste")
+            arrayOf("Choose Picture or Video", "Take Photo", "Record Audio", "Attach", "Paste")
         }) + arrayOf("Send Later") + (if (address.contains(',')) arrayOf("Show Members") else emptyArray())
         AlertDialog.Builder(this)
             .setTitle("Options")
@@ -318,8 +318,8 @@ class ConversationActivity : AppCompatActivity() {
                         this, threadId, findViewById<TextView>(R.id.contactName).text.toString()
                     )
                     "Take Photo" -> picker.takePhoto()
-                    "Record Video" -> picker.recordVideo()
-                    "Attach" -> picker.showAttachMenu { startAudioMemoRecording() }
+                    "Record Audio" -> startAudioMemoRecording()
+                    "Attach" -> picker.showAttachMenu()
                     "Remove Attachment" -> {
                         attachments.clear()
                         Toast.makeText(this, "Attachment removed", Toast.LENGTH_SHORT).show()
