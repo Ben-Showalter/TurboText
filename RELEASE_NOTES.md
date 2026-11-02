@@ -19,7 +19,6 @@
 - Choose Picture or Video opens TurboText's own grid of every picture and video on the phone, newest first, instead of the phone's file browser. Videos show their length. Press # to mark several, then OK. The right softkey picks an album (Camera, Screenshots…). The first time, TurboText asks to read your photos.
 - Options now has Record Audio, where Record Video used to be. Record Video moved to Attach.
 - Saved pictures and files show in the Gallery right away and at the top. Pictures saved from the picture viewer used to be stored as ".bin" files, which the Gallery doesn't show. TurboText now reads the picture's real type from the file itself.
-- The phone's own Copy/Paste tool can paste into TurboText's message box and To: field. Before, the pasted text was wiped straight away.
 - Paste works again. Android only shows the clipboard to the screen in front, and Paste used to read it while the Options menu was still closing.
 - The conversation and Groups lists update as soon as a message arrives. Before, an older reload could finish last and put the old list back, and the Groups list only updated when you reopened it.
 - Group conversations: Options > Show Members lists everyone in the group with their numbers. It's handy once a group has a nickname. It's in the Groups list and in the group's own conversation.

@@ -131,43 +131,6 @@ class NoImeEditText @JvmOverloads constructor(
 
     override fun onCheckIsTextEditor(): Boolean = false
 
-    /**
-     * A paste asked for by the phone itself (its text menu, or a system
-     * copy/paste tool through Accessibility) rather than TurboText's own
-     * Options > Paste. The screen's T9InputController owns this box's text
-     * and redraws it from its own copy, so a paste done the platform's
-     * way would be wiped at once; these hand it to the screen instead.
-     */
-    var onPaste: (() -> Unit)? = null
-
-    /** A tool replacing the whole text (Accessibility "set text"). */
-    var onSetText: ((String) -> Unit)? = null
-
-    override fun onTextContextMenuItem(id: Int): Boolean {
-        if (id == android.R.id.paste || id == android.R.id.pasteAsPlainText) {
-            Log.i("TurboTextPaste", "system paste via the text menu")
-            onPaste?.let { it(); return true }
-        }
-        return super.onTextContextMenuItem(id)
-    }
-
-    override fun performAccessibilityAction(action: Int, arguments: android.os.Bundle?): Boolean {
-        when (action) {
-            android.view.accessibility.AccessibilityNodeInfo.ACTION_PASTE -> {
-                Log.i("TurboTextPaste", "system paste via accessibility")
-                onPaste?.let { it(); return true }
-            }
-            android.view.accessibility.AccessibilityNodeInfo.ACTION_SET_TEXT -> {
-                val text = arguments?.getCharSequence(
-                    android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE
-                )?.toString()
-                Log.i("TurboTextPaste", "system set-text via accessibility: ${text?.length ?: 0} chars")
-                if (text != null) onSetText?.let { it(text); return true }
-            }
-        }
-        return super.performAccessibilityAction(action, arguments)
-    }
-
     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
         super.onCreateInputConnection(outAttrs)
         return null
