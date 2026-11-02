@@ -212,6 +212,8 @@ class BootReceiver : BroadcastReceiver() {
                 failStuckPictureMessages(context.applicationContext)
                 // Messages waiting for service lost their alarm too.
                 SendRetry.retryAll(context.applicationContext)
+                // Send Later alarms are gone too.
+                Thread { ScheduledSends.rescheduleAll(context.applicationContext) }.start()
             }
         }
     }

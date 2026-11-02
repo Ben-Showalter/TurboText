@@ -31,25 +31,8 @@ enum class AppTheme(
     val fieldBackground: Int,
     val positiveGreen: Int
 ) {
-    CLASSIC_DARK(
-        "classic_dark", "Classic Dark",
-        isLight = false,
-        background = 0xFF000000.toInt(),
-        surface = 0xFF222222.toInt(),
-        surface2 = 0xFF333333.toInt(),
-        textPrimary = 0xFFFFFFFF.toInt(),
-        textSecondary = 0xFF888888.toInt(),
-        textTertiary = 0xFFAAAAAA.toInt(),
-        accent = 0xFF66CCFF.toInt(),
-        accentLight = 0xFF80D8FF.toInt(),
-        bubbleIncoming = 0xFF333333.toInt(),
-        bubbleOutgoing = 0xFF244A6D.toInt(),
-        bubbleText = 0xFFFFFFFF.toInt(),
-        fieldBackground = 0xFF1A1A1A.toInt(),
-        positiveGreen = 0xFF7CFC00.toInt()
-    ),
     MIDNIGHT(
-        "midnight", "Midnight Blue",
+        "midnight", "Dark",
         isLight = false,
         background = 0xFF0D1117.toInt(),
         surface = 0xFF161B22.toInt(),
@@ -65,25 +48,8 @@ enum class AppTheme(
         fieldBackground = 0xFF0D1117.toInt(),
         positiveGreen = 0xFF7EE787.toInt()
     ),
-    CLASSIC_LIGHT(
-        "classic_light", "Classic Light",
-        isLight = true,
-        background = 0xFFFFFFFF.toInt(),
-        surface = 0xFFF0F0F0.toInt(),
-        surface2 = 0xFFE0E0E0.toInt(),
-        textPrimary = 0xFF000000.toInt(),
-        textSecondary = 0xFF666666.toInt(),
-        textTertiary = 0xFF999999.toInt(),
-        accent = 0xFF0066CC.toInt(),
-        accentLight = 0xFF3399FF.toInt(),
-        bubbleIncoming = 0xFFE0E0E0.toInt(),
-        bubbleOutgoing = 0xFFCCE5FF.toInt(),
-        bubbleText = 0xFF000000.toInt(),
-        fieldBackground = 0xFFF5F5F5.toInt(),
-        positiveGreen = 0xFF2E8B57.toInt()
-    ),
     WARM_LIGHT(
-        "warm_light", "Warm Light",
+        "warm_light", "Light",
         isLight = true,
         background = 0xFFFAF3E8.toInt(),
         surface = 0xFFEFE4D0.toInt(),
@@ -101,6 +67,11 @@ enum class AppTheme(
     );
 
     companion object {
-        fun fromId(id: String): AppTheme = values().find { it.id == id } ?: CLASSIC_DARK
+        /** Only Dark (Midnight) and Light (Warm) are left; the removed
+         *  Classic themes map to the nearest of the two. */
+        fun fromId(id: String): AppTheme = when (id) {
+            "classic_light" -> WARM_LIGHT
+            else -> values().find { it.id == id } ?: MIDNIGHT
+        }
     }
 }

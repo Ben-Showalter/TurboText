@@ -103,7 +103,7 @@ object BroadcastSender {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
             val builder = NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_notification_minimal)
+                .setSmallIcon(R.drawable.ic_notification_turbotext)
                 .setContentTitle("Broadcast: ${list.name}")
                 .setContentText(text)
                 .setOngoing(ongoing)

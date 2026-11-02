@@ -37,6 +37,39 @@ data class OutgoingAttachment(
     override fun hashCode(): Int = (mime.hashCode() * 31 + name.hashCode()) * 31 + (uri?.hashCode() ?: 0)
 
     companion object {
+        /** Attachments as an Intent extra, for opening another screen
+         *  with them. Each is copied into the cache first, so it stays
+         *  readable there (another app's share grant may not carry over). */
+        fun toHandoff(context: Context, items: List<OutgoingAttachment>): ArrayList<String> {
+            val dir = java.io.File(context.cacheDir, "handoff").apply { mkdirs() }
+            val out = ArrayList<String>()
+            for (a in items) {
+                try {
+                    val file = java.io.File(dir, "${System.nanoTime()}-${a.name.replace(Regex("[^A-Za-z0-9._-]"), "_")}")
+                    when {
+                        a.bytes != null -> file.writeBytes(a.bytes)
+                        a.uri != null -> context.contentResolver.openInputStream(a.uri)?.use { input ->
+                            file.outputStream().use { input.copyTo(it) }
+                        } ?: continue
+                        else -> continue
+                    }
+                    out.add(org.json.JSONObject().put("mime", a.mime).put("name", a.name).put("path", file.path).toString())
+                } catch (e: Exception) {
+                    android.util.Log.w("TurboTextSend", "couldn't carry an attachment over", e)
+                }
+            }
+            return out
+        }
+
+        fun fromHandoff(extra: List<String>?): List<OutgoingAttachment> = extra.orEmpty().mapNotNull {
+            try {
+                val o = org.json.JSONObject(it)
+                OutgoingAttachment(o.getString("mime"), o.getString("name"), uri = Uri.fromFile(java.io.File(o.getString("path"))))
+            } catch (e: Exception) {
+                null
+            }
+        }
+
         /** Builds an attachment from a picked content:// URI, reading its
          *  real type and display name from the provider. */
         fun fromUri(context: Context, uri: Uri, fallbackMime: String = "application/octet-stream"): OutgoingAttachment {

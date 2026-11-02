@@ -95,7 +95,7 @@ object NotificationHelper {
         }
 
         val notification = NotificationCompat.Builder(context, INCOMING_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.sym_action_chat)
+            .setSmallIcon(R.drawable.ic_notification_turbotext)
             .setContentTitle(displayName)
             .setContentText(body)
             .setAutoCancel(true)
@@ -131,7 +131,7 @@ object NotificationHelper {
             android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
         )
         val notification = NotificationCompat.Builder(context, INCOMING_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.sym_action_chat)
+            .setSmallIcon(R.drawable.ic_notification_turbotext)
             .setContentTitle("Multimedia message")
             .setContentText("A multimedia message couldn't be downloaded")
             .setAutoCancel(true)
@@ -166,7 +166,7 @@ object NotificationHelper {
             )
         }
         val notification = NotificationCompat.Builder(context, INCOMING_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.sym_action_chat)
+            .setSmallIcon(R.drawable.ic_notification_turbotext)
             .setContentTitle("TurboText")
             .setContentText("The advanced features of TurboText have been activated successfully")
             .setAutoCancel(true)

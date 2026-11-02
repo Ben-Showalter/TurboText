@@ -317,8 +317,11 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private val refreshGate = RefreshGate()
+
     private fun refreshConversations() {
         val startedAt = System.currentTimeMillis()
+        val ticket = refreshGate.start()
         android.util.Log.i("TurboTextPerf", "refreshConversations() started")
 
         // Show whatever's cached from a previous load immediately —
@@ -345,6 +348,12 @@ class MainActivity : AppCompatActivity() {
                 android.util.Log.i("TurboTextPerf", "getConversations() done: ${System.currentTimeMillis() - startedAt}ms, got ${list.size}")
                 list
             }
+            // A newer reload started meanwhile: its result is the one to
+            // show and cache, not this (possibly older) one.
+            if (!refreshGate.isLatest(ticket)) {
+                android.util.Log.i("TurboTextPerf", "newer refresh running, dropping this result")
+                return@Thread
+            }
             ConversationListCache.put(conversations)
             // Skip the redundant re-render (and the full rebind/refocus
             // that comes with it) when the live result is identical to
@@ -356,7 +365,7 @@ class MainActivity : AppCompatActivity() {
                 return@Thread
             }
             runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (isFinishing || isDestroyed || !refreshGate.isLatest(ticket)) return@runOnUiThread
                 adapter.update(conversations, this)
                 findViewById<android.view.View>(R.id.emptyView).visibility =
                     if (conversations.isEmpty()) android.view.View.VISIBLE else android.view.View.GONE

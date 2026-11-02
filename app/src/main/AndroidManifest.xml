@@ -49,6 +49,24 @@
         android:name="android.hardware.touchscreen"
         android:required="false" />
 
+    <!-- Apps TurboText hands off to (Android 11+ hides others): the
+         gallery for pictures and videos, the file chooser, and the
+         contact picker. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.PICK" />
+            <data android:mimeType="image/*" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.GET_CONTENT" />
+            <data android:mimeType="*/*" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.PICK" />
+            <data android:mimeType="vnd.android.cursor.dir/phone_v2" />
+        </intent>
+    </queries>
+
     <application
         android:name=".TurboTextApplication"
         android:allowBackup="true"
@@ -224,6 +242,11 @@
         <!-- Result of an MMS sent by MmsTransmitter. -->
         <receiver
             android:name=".MmsSentReceiver"
+            android:exported="false" />
+
+        <!-- Send Later: a scheduled message's time has come (ScheduledSends). -->
+        <receiver
+            android:name=".ScheduledSendReceiver"
             android:exported="false" />
 
         <!-- Sends texts and pictures that were waiting for a signal (SendRetry). -->

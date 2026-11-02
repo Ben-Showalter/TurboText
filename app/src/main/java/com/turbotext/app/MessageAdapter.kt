@@ -62,7 +62,6 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
     /** Adapter position the scroll bar should mark: the selected message
      *  while browsing, otherwise the newest one. */
     fun scrollbarPosition(): Int? = selectedPosition ?: (itemCount - 1).takeIf { it >= 0 }
-    private var showAvatars = true
 
     /** Bubble background prototypes, one per (kind, side, selected)
      *  combination. Each view gets its own instance via newDrawable() —
@@ -133,7 +132,6 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
     private fun themeFor(context: Context): AppTheme =
         theme ?: ThemeHelper.getCurrentTheme(context).also {
             theme = it
-            showAvatars = SettingsHelper.isShowAvatars(context)
         }
 
     /** A rounded bubble — selection shows as a border around the
@@ -202,6 +200,7 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
         val statusWord = when (msg.sendStatus) {
             "sending" -> "Sending"
             "waiting" -> "Waiting for signal"
+            "scheduled" -> if (ScheduleLabels.isToday(msg.date)) "Scheduled" else "Scheduled for tomorrow"
             "sent" -> "Sent"
             "delivered" -> "Delivered"
             "partially_delivered" -> "Delivered to ${msg.deliveredTo} of ${msg.recipientCount}"
@@ -232,7 +231,7 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
         val spannable = android.text.SpannableString(sb.toString())
         senderRange?.let {
             // Same color as the sender's avatar, so the two read as a pair.
-            val color = if (showAvatars) AvatarLoader.colorFor(msg.address) else theme.accent
+            val color = AvatarLoader.colorFor(msg.address)
             spannable.setSpan(
                 android.text.style.ForegroundColorSpan(color),
                 it.first, it.last + 1, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
@@ -371,7 +370,7 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
 
         // Avatar next to incoming messages in group threads only — in a
         // one-to-one thread it'd just repeat the same face every row.
-        if (showAvatars && !msg.isOutgoing && msg.senderName != null) {
+        if (!msg.isOutgoing && msg.senderName != null) {
             holder.avatar.visibility = View.VISIBLE
             AvatarLoader.bind(holder.avatar, msg.address, msg.senderName)
         } else {
@@ -393,10 +392,8 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
     fun update(newItems: List<Message>, hasMore: Boolean = false, context: Context? = null) {
         if (context != null) {
             val t = ThemeHelper.getCurrentTheme(context)
-            val avatars = SettingsHelper.isShowAvatars(context)
-            if (t != theme || avatars != showAvatars) {
+            if (t != theme) {
                 theme = t
-                showAvatars = avatars
                 bubbleProtos.clear()
                 themeGeneration++
                 items = newItems

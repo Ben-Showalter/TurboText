@@ -26,6 +26,7 @@ class ComposeActivity : AppCompatActivity() {
          *  start the new message with. */
         const val EXTRA_PREFILL_ATTACHMENT_URI = "prefillAttachmentUri"
         const val EXTRA_PREFILL_ATTACHMENT_MIME = "prefillAttachmentMime"
+        private const val REQ_CONTACT = 620
     }
 
     private lateinit var repo: SmsRepository
@@ -41,17 +42,13 @@ class ComposeActivity : AppCompatActivity() {
     private lateinit var listeningIndicator: TextView
 
     private var editingRecipient = true
-    private var recipientMode = InputMode.WORD
+    private var recipientMode = InputMode.NUMBER
     private lateinit var attachments: PendingAttachments
     private lateinit var picker: AttachmentPicker
     private var sending = false
     private lateinit var audioMemoRecorder: AudioMemoRecorder
     private var isRecordingMemo = false
 
-    private data class ContactMatch(val name: String, val number: String)
-    private var allContacts: List<ContactMatch> = emptyList()
-    private var contactMatches: List<ContactMatch> = emptyList()
-    private var contactMatchIndex = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -82,14 +79,10 @@ class ComposeActivity : AppCompatActivity() {
             onSuggestionsChanged = { candidates, selected, windowSize ->
                 if (editingRecipient) renderSuggestions(candidates, selected, windowSize)
             },
-            // Starts in Word mode (T9 predictive / choose-from-contacts) —
-            // the default the user wants for the "To:" field. '*' cycles
-            // Word -> Number -> Abc -> (Emoji) -> Word; the raw-digits
-            // fallback candidate (see contactNameCandidatesFor) still keeps
-            // a typed number available even while browsing Word matches.
-            initialMode = InputMode.WORD,
-            candidateProvider = { digits -> contactNameCandidatesFor(digits) },
-            resolveWord = { candidate -> resolveRecipientWord(candidate) },
+            // A number is typed here; contacts come from the phone's own
+            // contact picker (askHowToAddress / Options > Choose Contact).
+            // '*' still reaches Abc for an email address.
+            initialMode = InputMode.NUMBER,
             learnsWords = false,
             previewRawDigits = true,
             suggestionsBarView = suggestionsBar
@@ -145,87 +138,8 @@ class ComposeActivity : AppCompatActivity() {
             attachments.add(listOf(OutgoingAttachment(mime, "forwarded_${System.currentTimeMillis()}.$ext", uri = Uri.parse(prefillUri))))
         }
 
-        Thread {
-            allContacts = loadAllContacts()
-        }.start()
+        if (savedInstanceState == null && !recipientController.hasContent()) askHowToAddress()
     }
-
-    private fun loadAllContacts(): List<ContactMatch> {
-        val results = mutableListOf<ContactMatch>()
-        try {
-            val phoneCursor = contentResolver.query(
-                android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-                arrayOf(
-                    android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
-                    android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER
-                ),
-                null, null, null
-            )
-            phoneCursor?.use {
-                while (it.moveToNext()) {
-                    val name = it.getString(0) ?: continue
-                    val number = it.getString(1) ?: continue
-                    results.add(ContactMatch(name, number))
-                }
-            }
-            val emailCursor = contentResolver.query(
-                android.provider.ContactsContract.CommonDataKinds.Email.CONTENT_URI,
-                arrayOf(
-                    android.provider.ContactsContract.CommonDataKinds.Email.DISPLAY_NAME,
-                    android.provider.ContactsContract.CommonDataKinds.Email.ADDRESS
-                ),
-                null, null, null
-            )
-            emailCursor?.use {
-                while (it.moveToNext()) {
-                    val name = it.getString(0) ?: continue
-                    val address = it.getString(1) ?: continue
-                    results.add(ContactMatch(name, address))
-                }
-            }
-        } catch (e: Exception) {
-            // Missing permission or other failure — plain number entry
-            // still works fine without contact matching.
-        }
-        return results
-    }
-
-    /** WORD mode's native candidate list for the recipient field — matches
-     *  typed digits against contact names by T9 digit code first (a full
-     *  "First Last" match, so picking it can resolve to that contact's
-     *  number/email below), then falls back to the same dictionary word
-     *  list the message body uses. That second part is what makes typing
-     *  an email address in Word mode possible at all — "gmail", "com",
-     *  etc. aren't contact names, just ordinary predictive words — with
-     *  the raw digit sequence always available as the very last fallback
-     *  candidate. */
-    private fun contactNameCandidatesFor(digits: String): List<String> {
-        val names = LinkedHashSet<String>()
-        for (contact in allContacts) {
-            for (word in contact.name.split(Regex("\\s+"))) {
-                if (engine.digitCodeFor(word).startsWith(digits)) {
-                    names.add(contact.name)
-                    break
-                }
-            }
-        }
-        val result = names.take(10).toMutableList()
-        for (word in engine.candidatesFor(digits)) {
-            if (result.size >= 15) break
-            if (!result.contains(word)) result.add(word)
-        }
-        if (!result.contains(digits)) result.add(digits)
-        return result
-    }
-
-    /** Turns a confirmed candidate into what actually gets sent — a
-     *  matched contact name resolves to that contact's number/email;
-     *  anything else (the raw-digits fallback, or digits typed with no
-     *  match at all) passes through unchanged. Ambiguous duplicate names
-     *  resolve to whichever contact was found first — a rare edge case,
-     *  not worth a disambiguation UI for. */
-    private fun resolveRecipientWord(candidate: String): String =
-        allContacts.firstOrNull { it.name == candidate }?.number ?: candidate
 
     private fun renderSuggestions(candidates: List<String>, selected: Int, windowSize: Int = 5) {
         if (candidates.isEmpty()) {
@@ -234,91 +148,6 @@ class ComposeActivity : AppCompatActivity() {
         }
         suggestionsBar.visibility = View.VISIBLE
         suggestionsBar.text = SuggestionRenderer.build(candidates, selected, this, windowSize)
-    }
-
-    /** Only relevant in MULTITAP (letters) mode now — WORD mode's own
-     *  native candidates (contactNameCandidatesFor above) handle name
-     *  search by digit code natively. This covers email specifically:
-     *  matches typed letters against contact names and email addresses
-     *  directly, since emails aren't reachable through T9 digit codes at
-     *  all. contactMatches stays empty outside MULTITAP mode, so the
-     *  Left/Right/Center handling in dispatchKeyEvent naturally falls
-     *  through to the recipientController's own native handling there.
-     *  Note this early-return deliberately skips renderContactMatches():
-     *  in WORD/NUMBER mode the suggestions bar is already being driven by
-     *  T9InputController's own onSuggestionsChanged callback (fired from
-     *  the onKeyDown call that runs right before this), so calling
-     *  renderContactMatches() here — which hides the bar whenever
-     *  contactMatches is empty, which it always is outside MULTITAP —
-     *  would immediately hide the WORD-mode contact dropdown that call
-     *  just showed. */
-    private fun updateContactMatches() {
-        if (recipientMode != InputMode.MULTITAP) {
-            contactMatches = emptyList()
-            return
-        }
-        contactMatches = contactsMatchingTypedText(recipientController.currentText())
-        contactMatchIndex = 0
-        renderContactMatches()
-    }
-
-    /** Same literal-text matching updateContactMatches() does for
-     *  MULTITAP, but usable regardless of the current mode — voice
-     *  dictation into the "To:" field (see stopVoiceRecordingAndSend)
-     *  inserts whatever was spoken as literal text via appendVoiceResult,
-     *  completely bypassing T9 digit-code entry (WORD mode's own
-     *  contactNameCandidatesFor), so it needs its own path to surface
-     *  matches — updateContactMatches()'s mode gate would otherwise
-     *  silently drop a dictated name with no dropdown at all whenever
-     *  WORD mode (the default for this field) is active. */
-    private fun updateContactMatchesFromVoice() {
-        contactMatches = contactsMatchingTypedText(recipientController.currentText())
-        contactMatchIndex = 0
-        renderContactMatches()
-    }
-
-    /** Matches spoken/typed text against contact names word-by-word rather
-     *  than as one literal phrase — voice dictation and MULTITAP both hand
-     *  this a whole name in one shot (e.g. "John Smith"), and no single
-     *  word in a contact's name is ever a prefix of that entire two-word
-     *  string. Each typed word just needs to prefix some later word in the
-     *  contact's name, in order (so "John Michael Smith" still matches
-     *  typing "john smith") — a single typed word still matches as before. */
-    private fun contactsMatchingTypedText(typed: String): List<ContactMatch> {
-        if (typed.isBlank()) return emptyList()
-        val typedWords = typed.trim().lowercase().split(Regex("\\s+"))
-        return allContacts.filter { contact ->
-            if (contact.number.lowercase().startsWith(typed.lowercase())) return@filter true
-            val nameWords = contact.name.lowercase().split(Regex("\\s+"))
-            var searchFrom = 0
-            for (word in typedWords) {
-                val foundAt = (searchFrom until nameWords.size).firstOrNull { nameWords[it].startsWith(word) }
-                    ?: return@filter false
-                searchFrom = foundAt + 1
-            }
-            true
-        }.take(10)
-    }
-
-    private fun renderContactMatches() {
-        if (contactMatches.isEmpty()) {
-            suggestionsBar.visibility = View.GONE
-            return
-        }
-        suggestionsBar.visibility = View.VISIBLE
-        // Marks email options so two matches sharing the same contact
-        // name (one phone, one email) aren't indistinguishable.
-        val labels = contactMatches.map { if (it.number.contains("@")) "${it.name} ✉" else it.name }
-        suggestionsBar.text = SuggestionRenderer.build(labels, contactMatchIndex, this)
-    }
-
-    /** Fills in the recipient field from a chosen contact — doesn't
-     *  advance to the compose box on its own; Down (or Center again, with
-     *  the dropdown now cleared) does that separately. */
-    private fun selectContact(contact: ContactMatch) {
-        recipientController.setText(contact.number)
-        contactMatches = emptyList()
-        suggestionsBar.visibility = View.GONE
     }
 
     private fun startVoiceRecording() {
@@ -348,12 +177,6 @@ class ComposeActivity : AppCompatActivity() {
                 if (text.isNotEmpty()) {
                     if (recipientStage) {
                         recipientController.appendVoiceResult(text)
-                        // Not updateContactMatches() — that only matches in
-                        // MULTITAP mode (WORD mode's own T9 digit-code
-                        // candidates handle typing there instead), but
-                        // dictation inserts literal text regardless of
-                        // mode, so it needs the mode-independent path.
-                        updateContactMatchesFromVoice()
                     } else {
                         inputController.appendVoiceResult(text)
                     }
@@ -386,16 +209,19 @@ class ComposeActivity : AppCompatActivity() {
     }
 
     private fun showOptions() {
-        if (editingRecipient) return
-        val options = if (!attachments.isEmpty()) {
-            arrayOf("Take Photo", "Record Video", "Attach", "Remove Attachment", "Paste")
-        } else {
-            arrayOf("Take Photo", "Record Video", "Attach", "Paste")
+        val options = arrayOf("Choose Contact") + when {
+            editingRecipient -> emptyArray()
+            !attachments.isEmpty() ->
+                arrayOf("Choose Picture or Video", "Take Photo", "Record Video", "Attach", "Remove Attachment", "Paste", "Send Later")
+            else -> arrayOf("Choose Picture or Video", "Take Photo", "Record Video", "Attach", "Paste", "Send Later")
         }
         AlertDialog.Builder(this)
             .setTitle("Options")
             .setItems(options) { _, which ->
                 when (options[which]) {
+                    "Choose Contact" -> chooseContact()
+                    "Send Later" -> scheduleMessage()
+                    "Choose Picture or Video" -> picker.pickFromGallery()
                     "Take Photo" -> picker.takePhoto()
                     "Record Video" -> picker.recordVideo()
                     "Attach" -> picker.showAttachMenu { startAudioMemoRecording() }
@@ -436,24 +262,153 @@ class ComposeActivity : AppCompatActivity() {
         }
     }
 
+    /** Waits for this screen to have focus again (ClipboardPaste) —
+     *  Android won't hand the clipboard over while the menu is closing. */
     private fun pasteFromClipboard() {
-        val clipboard = getSystemService(android.content.ClipboardManager::class.java)
-        val clip = clipboard.primaryClip
-        if (clip == null || clip.itemCount == 0) {
-            Toast.makeText(this, "Clipboard is empty", Toast.LENGTH_SHORT).show()
-            return
-        }
-        val text = clip.getItemAt(0).coerceToText(this).toString()
-        if (text.isEmpty()) {
-            Toast.makeText(this, "Clipboard is empty", Toast.LENGTH_SHORT).show()
-            return
-        }
-        inputController.appendVoiceResult(text)
+        ClipboardPaste.request(this) { text -> inputController.appendVoiceResult(text) }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) ClipboardPaste.onWindowFocus(this)
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_CONTACT) {
+            val uri = data?.data
+            if (resultCode == android.app.Activity.RESULT_OK && uri != null) {
+                val number = try {
+                    contentResolver.query(
+                        uri, arrayOf(android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER), null, null, null
+                    )?.use { if (it.moveToFirst()) it.getString(0) else null }
+                } catch (e: Exception) {
+                    null
+                }
+                if (number.isNullOrBlank()) {
+                    Toast.makeText(this, "Couldn't read that contact's number", Toast.LENGTH_SHORT).show()
+                } else {
+                    recipientController.setText(number)
+                    advanceToBody()
+                }
+            }
+            return
+        }
         picker.handleResult(requestCode, resultCode, data)
+    }
+
+    /** New Message starts by asking how to pick who it's to. Backing out
+     *  of the question closes New Message. */
+    private fun askHowToAddress() {
+        AlertDialog.Builder(this)
+            .setTitle("New Message")
+            .setItems(arrayOf("Choose Contact", "Type Number")) { _, which ->
+                if (which == 0) chooseContact()
+            }
+            .setOnCancelListener { finish() }
+            .show()
+    }
+
+    /** The phone's own contact picker, one number. */
+    private fun chooseContact() {
+        val intent = android.content.Intent(
+            android.content.Intent.ACTION_PICK, android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI
+        )
+        try {
+            startActivityForResult(intent, REQ_CONTACT)
+        } catch (e: Exception) {
+            Toast.makeText(this, "No contacts app found; type the number", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /**
+     * From the "To:" field to the message. If this person already has a
+     * conversation, it opens instead, so the message is written there,
+     * taking along anything already typed or attached.
+     */
+    private fun advanceToBody() {
+        val address = recipientController.currentText().trim()
+        val app = applicationContext
+        Thread {
+            val threadId = MessageSender.threadIdFor(app, listOf(address))
+            val existing = threadId >= 0 && repo.threadHasMessages(threadId)
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (existing) {
+                    openThread(threadId, address)
+                } else {
+                    editingRecipient = false
+                    recipientController.stopCursorBlink()
+                    inputController.startCursorBlink()
+                    softLeftLabel.text = inputController.currentLabel()
+                    composeText.post { composeText.requestFocus() }
+                }
+            }
+        }.start()
+    }
+
+    /** Opens [threadId] with this screen's text and attachments in its
+     *  compose box, and closes this one. */
+    private fun openThread(threadId: Long, address: String) {
+        inputController.confirmPending()
+        val text = inputController.currentText()
+        val handoff = OutgoingAttachment.toHandoff(this, attachments.items)
+        startActivity(
+            android.content.Intent(this, ConversationActivity::class.java)
+                .putExtra("threadId", threadId)
+                .putExtra("address", address)
+                .putExtra("displayName", MessageSender.displayNameFor(this, listOf(address)))
+                .putExtra(ConversationActivity.EXTRA_PREFILL_TEXT, text)
+                .putStringArrayListExtra(ConversationActivity.EXTRA_PREFILL_ATTACHMENTS, handoff)
+        )
+        finish()
+    }
+
+    /** Options > Send Later: like Send, at a time picked on the keypad. */
+    private fun scheduleMessage() {
+        recipientController.confirmPending()
+        inputController.confirmPending()
+        val address = recipientController.currentText().trim()
+        val body = SettingsHelper.applySignature(this, inputController.currentText().trim())
+        val toSchedule = attachments.items
+        if (address.isEmpty()) {
+            Toast.makeText(this, "Enter a recipient first", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (body.isEmpty() && toSchedule.isEmpty()) {
+            Toast.makeText(this, "Write a message first", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val start = java.util.Calendar.getInstance().apply { timeInMillis = System.currentTimeMillis() + 60 * 60 * 1000L }
+        KeypadTimeDialog(
+            this, "Send at", start.get(java.util.Calendar.HOUR_OF_DAY), start.get(java.util.Calendar.MINUTE)
+        ) { hour, minute ->
+            val at = ScheduledSends.nextTime(System.currentTimeMillis(), hour, minute)
+            val app = applicationContext
+            sending = true
+            Thread {
+                val recipients = listOf(address)
+                val threadId = MessageSender.threadIdFor(app, recipients)
+                val entry = if (threadId >= 0) ScheduledSends.schedule(app, threadId, recipients, body, toSchedule, at) else null
+                val name = MessageSender.displayNameFor(app, recipients)
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    sending = false
+                    if (entry == null) {
+                        Toast.makeText(this, "Couldn't schedule that message", Toast.LENGTH_LONG).show()
+                        return@runOnUiThread
+                    }
+                    Toast.makeText(this, "Will send ${ScheduleLabels.whenText(at)}", Toast.LENGTH_SHORT).show()
+                    startActivity(
+                        android.content.Intent(this, ConversationActivity::class.java)
+                            .putExtra("threadId", threadId)
+                            .putExtra("address", address)
+                            .putExtra("displayName", name)
+                    )
+                    finish()
+                }
+            }.start()
+        }.show()
     }
 
     private fun sendMessage() {
@@ -536,31 +491,8 @@ class ComposeActivity : AppCompatActivity() {
 
             if (editingRecipient) {
                 when (event.keyCode) {
-                    KeyEvent.KEYCODE_DPAD_LEFT -> {
-                        // The punctuation picker (open via '1') needs Left
-                        // to browse its own marks — checked first so it
-                        // isn't shadowed by a leftover contact dropdown
-                        // (contactMatches isn't cleared just because the
-                        // picker opened on top of it).
-                        if (recipientController.isPunctuationPickerActive()) {
-                            recipientController.onKeyDown(event.keyCode, event)
-                        } else if (contactMatches.isNotEmpty()) {
-                            contactMatchIndex = (contactMatchIndex - 1 + contactMatches.size) % contactMatches.size
-                            renderContactMatches()
-                        } else {
-                            recipientController.onKeyDown(event.keyCode, event)
-                        }
-                        return true
-                    }
-                    KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                        if (recipientController.isPunctuationPickerActive()) {
-                            recipientController.onKeyDown(event.keyCode, event)
-                        } else if (contactMatches.isNotEmpty()) {
-                            contactMatchIndex = (contactMatchIndex + 1) % contactMatches.size
-                            renderContactMatches()
-                        } else {
-                            recipientController.onKeyDown(event.keyCode, event)
-                        }
+                    KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                        recipientController.onKeyDown(event.keyCode, event)
                         return true
                     }
                     KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
@@ -572,7 +504,6 @@ class ComposeActivity : AppCompatActivity() {
                         // inserting the mark.
                         if (recipientController.isPunctuationPickerActive()) {
                             recipientController.onKeyDown(event.keyCode, event)
-                            updateContactMatches()
                             return true
                         }
                         // Handled directly rather than delegated —
@@ -584,15 +515,7 @@ class ComposeActivity : AppCompatActivity() {
                         // candidate still only in preview isn't silently
                         // dropped.
                         recipientController.confirmPending()
-                        if (contactMatches.isNotEmpty()) {
-                            selectContact(contactMatches[contactMatchIndex])
-                        } else if (recipientController.hasContent()) {
-                            editingRecipient = false
-                            recipientController.stopCursorBlink()
-                            inputController.startCursorBlink()
-                            softLeftLabel.text = inputController.currentLabel()
-                            composeText.post { composeText.requestFocus() }
-                        }
+                        if (recipientController.hasContent()) advanceToBody()
                         return true
                     }
                     KeyEvent.KEYCODE_DPAD_DOWN -> {
@@ -602,18 +525,8 @@ class ComposeActivity : AppCompatActivity() {
                             recipientController.onKeyDown(event.keyCode, event)
                             return true
                         }
-                        // Always just commits whatever's currently entered
-                        // — a selected contact's address, or raw typed
-                        // text — regardless of whether a dropdown is
-                        // still showing.
                         recipientController.confirmPending()
-                        if (recipientController.hasContent()) {
-                            editingRecipient = false
-                            recipientController.stopCursorBlink()
-                            inputController.startCursorBlink()
-                            softLeftLabel.text = inputController.currentLabel()
-                            composeText.post { composeText.requestFocus() }
-                        }
+                        if (recipientController.hasContent()) advanceToBody()
                         return true
                     }
                     // This phone's physical Clear key sends KEYCODE_BACK,
@@ -621,7 +534,6 @@ class ComposeActivity : AppCompatActivity() {
                     KeyEvent.KEYCODE_DEL, KeyEvent.KEYCODE_BACK -> {
                         if (recipientController.hasContent()) {
                             recipientController.onKeyDown(KeyEvent.KEYCODE_DEL, event)
-                            updateContactMatches()
                         } else {
                             finish()
                         }
@@ -632,10 +544,7 @@ class ComposeActivity : AppCompatActivity() {
                         // else T9InputController recognizes — handles both
                         // phone-number digit entry (NUMBER mode) and email
                         // letter entry (MULTITAP mode, reached by pressing *).
-                        if (recipientController.onKeyDown(event.keyCode, event)) {
-                            updateContactMatches()
-                            return true
-                        }
+                        if (recipientController.onKeyDown(event.keyCode, event)) return true
                     }
                 }
                 return super.dispatchKeyEvent(event)

@@ -73,7 +73,7 @@ class KeepAliveService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification_minimal)
+            .setSmallIcon(R.drawable.ic_notification_turbotext)
             .setContentTitle("TurboText is running")
             .setContentText("Turn on Background Helper in Settings > Advanced to hide this.")
             .setPriority(NotificationCompat.PRIORITY_MIN)

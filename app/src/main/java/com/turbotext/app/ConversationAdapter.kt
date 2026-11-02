@@ -36,7 +36,6 @@ class ConversationAdapter(
 
     override fun onAttachedToRecyclerView(rv: RecyclerView) { recyclerView = rv }
     override fun onDetachedFromRecyclerView(rv: RecyclerView) { recyclerView = null }
-    private var showAvatars = true
     /** Focused-row background (tint + accent strip), built once per theme. */
     private var focusProto: android.graphics.drawable.Drawable? = null
 
@@ -89,7 +88,6 @@ class ConversationAdapter(
     private fun themeFor(context: Context): AppTheme =
         theme ?: ThemeHelper.getCurrentTheme(context).also {
             theme = it
-            showAvatars = SettingsHelper.isShowAvatars(context)
         }
 
     /** MatChat-style focus: the row tinted, with a 6dp accent strip
@@ -137,12 +135,8 @@ class ConversationAdapter(
         holder.snippet.text = convo.snippet.replace('\n', ' ')
         holder.time.text = formatTime(convo.date)
 
-        if (showAvatars) {
-            holder.avatar.visibility = View.VISIBLE
-            AvatarLoader.bind(holder.avatar, convo.address, convo.displayName)
-        } else {
-            holder.avatar.visibility = View.GONE
-        }
+        holder.avatar.visibility = View.VISIBLE
+        AvatarLoader.bind(holder.avatar, convo.address, convo.displayName)
 
         applyFocus(holder, holder.itemView.hasFocus())
 
@@ -172,11 +166,9 @@ class ConversationAdapter(
         val ctx = context
         if (ctx != null) {
             val newTheme = ThemeHelper.getCurrentTheme(ctx)
-            val newAvatars = SettingsHelper.isShowAvatars(ctx)
-            if (newTheme != theme || newAvatars != showAvatars) {
+            if (newTheme != theme) {
                 focusProto = null
                 theme = newTheme
-                showAvatars = newAvatars
                 notifyDataSetChanged()
                 return
             }

@@ -14,6 +14,17 @@
 - Options > Mark All as Read, on the conversation and group lists.
 - Picture and group messages are received again. TurboText now asks for Android's "receive picture messages" permission at startup. It could be missing, and then Android silently dropped every incoming picture message, group message and picture delivery report.
 - No signal? Texts and picture messages now wait and are sent again on their own once the phone has service. Their bubble says "Waiting for signal". If there's still no signal after a day, the message shows "Failed" and a notification tells you.
+- New: Send Later. While writing a message, choose Options > Send Later and pick a time (up to a day ahead). Until it goes out, it shows in the conversation as "Scheduled", and you can choose Send Now, Change Time or Cancel.
+- New Message first asks "Choose Contact" (the phone's own contact list) or "Type Number". If you already have a conversation with that person, it opens and you write the message there. Anything you already typed or attached comes along. Options > Choose Contact is always there too.
+- Adding a picture opens the phone's Gallery directly, for pictures and videos: Options > Choose Picture or Video, or Attach > Choose Picture or Video.
+- Saved pictures and files show in the Gallery right away and at the top. Some pictures, for example ones from a phone that labels them "image/jpg", didn't save at all; they do now.
+- Paste works again. Android only shows the clipboard to the screen in front, and Paste used to read it while the Options menu was still closing.
+- The conversation and Groups lists update as soon as a message arrives. Before, an older reload could finish last and put the old list back, and the Groups list only updated when you reopened it.
+- Group conversations: Options > Show Members lists everyone in the group with their numbers. It's handy once a group has a nickname. It's in the Groups list and in the group's own conversation.
+- The punctuation picker ('1') puts the marks you use most at the front, and learns as you go.
+- Notifications use the TurboText chat-bubble icon, the same one as the outer screen.
+- Themes: just Dark and Light. If you were using one of the removed themes, you're switched to the closest of these two.
+- Avatars are always shown, and the Show Avatars setting is gone.
 - New: Resend, at the top of a message's options for any message you sent, whether it was sent, delivered, not delivered or failed. It sends the text and any picture, video or file again as a new message. Resending a failed message replaces it.
 - New: Settings > Advanced > Save Bug Report. It saves TurboText's log, with crashes and errors, to the Download folder, so a problem can be looked into without a computer cable or adb. It lists phone numbers and contact names, but not what messages say.
 - Picture messages go through more reliably:

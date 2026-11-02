@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TurboText's mark for notifications: the same chat bubble as the outer
+     screen's icon (tools/gen_cover_icon.py, from ic_launcher_square.xml),
+     solid with its three dots cut out. Android draws a notification icon
+     from its shape only, so it's white on transparent. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="72"
+    android:viewportHeight="72">
+    <group
+        android:translateX="-18"
+        android:translateY="-21">
+        <path
+            android:fillColor="#FFFFFF"
+            android:fillType="evenOdd"
+            android:pathData="M20,30 L88,30 L88,70 L50,70 L36,84 L36,70 L20,70 Z M32,46 L40,46 L40,54 L32,54 Z M50,46 L58,46 L58,54 L50,54 Z M68,46 L76,46 L76,54 L68,54 Z" />
+    </group>
+</vector>

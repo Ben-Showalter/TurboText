@@ -1218,6 +1218,21 @@ class SmsRepository(private val context: Context) {
         smsManager.sendMultipartTextMessage(address, null, parts, sentIntents, deliveredIntents)
     }
 
+    /** True when [threadId] has at least one text or picture message —
+     *  an existing conversation, not one just made by looking it up. */
+    fun threadHasMessages(threadId: Long): Boolean = try {
+        val sms = context.contentResolver.query(
+            Telephony.Sms.CONTENT_URI, arrayOf(Telephony.Sms._ID),
+            "${Telephony.Sms.THREAD_ID} = ?", arrayOf(threadId.toString()), "${Telephony.Sms._ID} LIMIT 1"
+        )?.use { it.count > 0 } ?: false
+        sms || (context.contentResolver.query(
+            Telephony.Mms.CONTENT_URI, arrayOf(Telephony.Mms._ID),
+            "${Telephony.Mms.THREAD_ID} = ? AND $NOT_A_REPORT", arrayOf(threadId.toString()), "${Telephony.Mms._ID} LIMIT 1"
+        )?.use { it.count > 0 } ?: false)
+    } catch (e: Exception) {
+        false
+    }
+
     /** Marks every unread text and picture message read, in one update
      *  per table. Returns the threads that had something unread, so the
      *  caller can clear their alerts. */

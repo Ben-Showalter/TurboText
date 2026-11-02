@@ -18,6 +18,13 @@ import androidx.recyclerview.widget.RecyclerView
 
 class ConversationActivity : AppCompatActivity() {
 
+    companion object {
+        /** New Message opening this thread: text and attachments
+         *  (OutgoingAttachment.toHandoff) to put in the compose box. */
+        const val EXTRA_PREFILL_TEXT = "prefill_text"
+        const val EXTRA_PREFILL_ATTACHMENTS = "prefill_attachments"
+    }
+
     private lateinit var repo: SmsRepository
     private lateinit var engine: T9Engine
     private lateinit var inputController: T9InputController
@@ -106,11 +113,17 @@ class ConversationActivity : AppCompatActivity() {
         val draft = DraftHelper.getDraft(this, address)
         android.util.Log.i("TurboTextDraft", "onCreate restore: address=\"$address\" draft=${draft?.let { "${it.length} chars" } ?: "none"}")
         draft?.let { inputController.setText(it) }
+        // Started from New Message for someone with a conversation already.
+        intent.getStringExtra(EXTRA_PREFILL_TEXT)?.takeIf { it.isNotBlank() }?.let { text ->
+            inputController.setText(if (draft.isNullOrBlank()) text else "$draft $text")
+        }
 
         voiceHelper = GroqVoiceInputHelper(this)
         audioMemoRecorder = AudioMemoRecorder(this)
         attachments = PendingAttachments(this, attachmentIndicator)
         picker = AttachmentPicker(this) { attachments.add(it) }
+        OutgoingAttachment.fromHandoff(intent.getStringArrayListExtra(EXTRA_PREFILL_ATTACHMENTS))
+            .takeIf { it.isNotEmpty() }?.let { attachments.add(it) }
 
         // Not loaded here — onResume() always fires immediately after
         // onCreate() and handles the initial load itself, since it also
@@ -188,7 +201,9 @@ class ConversationActivity : AppCompatActivity() {
      *  the list when [ScrollRules] says so — a reload never pulls the
      *  user away from a message they scrolled back to. */
     private fun showMessages(messages: List<Message>) {
-        val merged = PendingSends.merge(threadId, messages)
+        // Messages set to send later go last, in time order.
+        val merged = PendingSends.merge(threadId, messages) +
+            ScheduledSends.bubblesFor(this, threadId).sortedBy { it.date }
         if (merged == messageAdapter.currentItems()) return
         val wasEmpty = messageAdapter.currentItems().isEmpty()
         val wasAtBottom = !messageList.canScrollVertically(1)
@@ -288,15 +303,20 @@ class ConversationActivity : AppCompatActivity() {
             showMessageOptions(message)
             return
         }
-        val options = if (!attachments.isEmpty()) {
-            arrayOf("Take Photo", "Record Video", "Attach", "Remove Attachment", "Paste")
+        val options = (if (!attachments.isEmpty()) {
+            arrayOf("Choose Picture or Video", "Take Photo", "Record Video", "Attach", "Remove Attachment", "Paste")
         } else {
-            arrayOf("Take Photo", "Record Video", "Attach", "Paste")
-        }
+            arrayOf("Choose Picture or Video", "Take Photo", "Record Video", "Attach", "Paste")
+        }) + arrayOf("Send Later") + (if (address.contains(',')) arrayOf("Show Members") else emptyArray())
         AlertDialog.Builder(this)
             .setTitle("Options")
             .setItems(options) { _, which ->
                 when (options[which]) {
+                    "Choose Picture or Video" -> picker.pickFromGallery()
+                    "Send Later" -> scheduleCurrentMessage()
+                    "Show Members" -> GroupMembers.show(
+                        this, threadId, findViewById<TextView>(R.id.contactName).text.toString()
+                    )
                     "Take Photo" -> picker.takePhoto()
                     "Record Video" -> picker.recordVideo()
                     "Attach" -> picker.showAttachMenu { startAudioMemoRecording() }
@@ -338,6 +358,10 @@ class ConversationActivity : AppCompatActivity() {
     }
 
     private fun showMessageOptions(message: Message) {
+        ScheduledSends.idForBubble(message)?.let { id ->
+            showScheduledOptions(message, id)
+            return
+        }
         val options = mutableListOf("Copy Text to Clipboard", "Forward Message", "Translate to English")
         // Any message of ours that's done sending, sent or failed.
         if (message.isOutgoing && message.id >= 0 && message.sendStatus !in setOf("sending", "waiting")) {
@@ -449,19 +473,15 @@ class ConversationActivity : AppCompatActivity() {
         Toast.makeText(this, "Copied to clipboard", Toast.LENGTH_SHORT).show()
     }
 
+    /** Waits for this screen to have focus again (ClipboardPaste) —
+     *  Android won't hand the clipboard over while the menu is closing. */
     private fun pasteFromClipboard() {
-        val clipboard = getSystemService(android.content.ClipboardManager::class.java)
-        val clip = clipboard.primaryClip
-        if (clip == null || clip.itemCount == 0) {
-            Toast.makeText(this, "Clipboard is empty", Toast.LENGTH_SHORT).show()
-            return
-        }
-        val text = clip.getItemAt(0).coerceToText(this).toString()
-        if (text.isEmpty()) {
-            Toast.makeText(this, "Clipboard is empty", Toast.LENGTH_SHORT).show()
-            return
-        }
-        inputController.appendVoiceResult(text)
+        ClipboardPaste.request(this) { text -> inputController.appendVoiceResult(text) }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) ClipboardPaste.onWindowFocus(this)
     }
 
     /**
@@ -796,6 +816,85 @@ class ConversationActivity : AppCompatActivity() {
         )
     }
 
+    /** Options > Send Later: the typed message (and attachments) goes out
+     *  at a time picked on the keypad, at most a day ahead (ScheduledSends). */
+    private fun scheduleCurrentMessage() {
+        inputController.confirmPending()
+        val body = SettingsHelper.applySignature(this, inputController.currentText().trim())
+        val toSchedule = attachments.items
+        if (body.isEmpty() && toSchedule.isEmpty()) {
+            Toast.makeText(this, "Write a message first", Toast.LENGTH_SHORT).show()
+            return
+        }
+        pickSendTime(null) { at ->
+            inputController.setText("")
+            attachments.clear()
+            DraftHelper.clearDraft(this, address)
+            val app = applicationContext
+            Thread {
+                val entry = ScheduledSends.schedule(app, threadId, address.split(","), body, toSchedule, at)
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    if (entry == null) {
+                        // Couldn't keep an attachment: put it all back.
+                        inputController.setText(body)
+                        attachments.restore(toSchedule)
+                        Toast.makeText(this, "Couldn't schedule that message", Toast.LENGTH_LONG).show()
+                    } else {
+                        stickAfterSend = true
+                        Toast.makeText(this, "Will send ${ScheduleLabels.whenText(at)}", Toast.LENGTH_SHORT).show()
+                        loadMessages()
+                    }
+                }
+            }.start()
+        }
+    }
+
+    /** The hour/minute/AM-PM picker; [current] (millis) preselects a time,
+     *  otherwise an hour from now. Calls [onPicked] with the next such time. */
+    private fun pickSendTime(current: Long?, onPicked: (Long) -> Unit) {
+        val start = java.util.Calendar.getInstance().apply {
+            timeInMillis = current ?: (System.currentTimeMillis() + 60 * 60 * 1000L)
+        }
+        KeypadTimeDialog(
+            this, "Send at",
+            start.get(java.util.Calendar.HOUR_OF_DAY), start.get(java.util.Calendar.MINUTE)
+        ) { hour, minute ->
+            onPicked(ScheduledSends.nextTime(System.currentTimeMillis(), hour, minute))
+        }.show()
+    }
+
+    /** A scheduled bubble's options. */
+    private fun showScheduledOptions(message: Message, id: Long) {
+        val options = arrayOf("Send Now", "Change Time", "Cancel Scheduled Message", "Copy Text to Clipboard")
+        AlertDialog.Builder(this)
+            .setTitle("Scheduled ${ScheduleLabels.whenText(message.date)}")
+            .setItems(options) { _, which ->
+                when (options[which]) {
+                    "Send Now" -> {
+                        exitSelectionMode()
+                        stickAfterSend = true
+                        ScheduledSends.send(this, id)
+                    }
+                    "Change Time" -> pickSendTime(message.date) { at ->
+                        ScheduledSends.reschedule(this, id, at)
+                        Toast.makeText(this, "Will send ${ScheduleLabels.whenText(at)}", Toast.LENGTH_SHORT).show()
+                    }
+                    "Cancel Scheduled Message" -> {
+                        exitSelectionMode()
+                        val entry = ScheduledSends.cancel(this, id) ?: return@setItems
+                        // Back in the compose box, to edit or send.
+                        if (inputController.currentText().isEmpty()) inputController.setText(entry.body)
+                        attachments.restore(entry.attachments.map {
+                            OutgoingAttachment(it.mime, it.name, uri = Uri.fromFile(java.io.File(it.path)))
+                        })
+                    }
+                    "Copy Text to Clipboard" -> copyMessageText(message)
+                }
+            }
+            .show()
+    }
+
     /** Puts the text (and attachments) of a send that failed — here or
      *  from New Message — back in the compose box to try again. */
     private fun restoreFailedSends() {
@@ -938,11 +1037,6 @@ class ConversationActivity : AppCompatActivity() {
      *  so the colour matches; that lookup runs off the main thread. */
     private fun bindTitleAvatar(displayName: String) {
         val avatarView = findViewById<android.widget.ImageView>(R.id.contactAvatar)
-        if (!SettingsHelper.isShowAvatars(this)) {
-            avatarView.visibility = View.GONE
-            return
-        }
-        avatarView.visibility = View.VISIBLE
         if (!address.contains(',') && !address.contains(';')) {
             AvatarLoader.bind(avatarView, address, displayName)
             return

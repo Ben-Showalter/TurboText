@@ -12,7 +12,7 @@ object SettingsHelper {
     private val REMOVED_KEYS = listOf(
         "read_aloud_mode", "read_aloud_voice", "tts_engine",
         "native_tts_voice", "native_tts_rate", "native_tts_engine_package",
-        "voice_input_bluetooth_mic", "prediction_engine"
+        "voice_input_bluetooth_mic", "prediction_engine", "show_avatars"
     )
 
     fun clearRemovedSettings(context: Context) {
@@ -92,18 +92,10 @@ object SettingsHelper {
         prefs(context).edit().putBoolean("hide_message_on_cover", hide).apply()
     }
 
-    /** Contact photo / initials circle on conversation rows and next to
-     *  group-thread senders. On by default. */
-    fun isShowAvatars(context: Context): Boolean =
-        prefs(context).getBoolean("show_avatars", true)
-
-    fun setShowAvatars(context: Context, show: Boolean) {
-        prefs(context).edit().putBoolean("show_avatars", show).apply()
-    }
 
 
     fun getThemeId(context: Context): String =
-        prefs(context).getString("theme_id", "classic_dark") ?: "classic_dark"
+        prefs(context).getString("theme_id", "midnight") ?: "midnight"
 
     fun setThemeId(context: Context, id: String) {
         prefs(context).edit().putString("theme_id", id).apply()

@@ -51,9 +51,43 @@ class GroupMessagesActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         loadGroups()
+        registerMessageObserver()
     }
 
+    override fun onPause() {
+        super.onPause()
+        if (observerRegistered) {
+            contentResolver.unregisterContentObserver(messageObserver)
+            observerRegistered = false
+        }
+        reloadHandler.removeCallbacks(reloadRunnable)
+    }
+
+    // Reloads when a message arrives or changes while this list is open —
+    // it used to update only when reopened. Same three URIs and debounce
+    // as the main list (MainActivity).
+    private val reloadHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val reloadRunnable = Runnable { if (!isFinishing && !isDestroyed) loadGroups() }
+    private val messageObserver = object : android.database.ContentObserver(reloadHandler) {
+        override fun onChange(selfChange: Boolean) {
+            reloadHandler.removeCallbacks(reloadRunnable)
+            reloadHandler.postDelayed(reloadRunnable, 800)
+        }
+    }
+    private var observerRegistered = false
+
+    private fun registerMessageObserver() {
+        if (observerRegistered) return
+        for (uri in listOf("content://mms-sms/", "content://sms", "content://mms")) {
+            contentResolver.registerContentObserver(android.net.Uri.parse(uri), true, messageObserver)
+        }
+        observerRegistered = true
+    }
+
+    private val refreshGate = RefreshGate()
+
     private fun loadGroups() {
+        val ticket = refreshGate.start()
         val cached = GroupThreadsCache.get()
         if (cached != null) {
             adapter.update(cached, this)
@@ -66,12 +100,14 @@ class GroupMessagesActivity : AppCompatActivity() {
                 val unreadIds = repo.unreadThreadIds()
                 val patched = cached.map { it.copy(unread = it.threadId in unreadIds) }
                 if (patched != cached) runOnUiThread {
-                    if (!isFinishing && !isDestroyed) adapter.update(patched, this)
+                    if (!isFinishing && !isDestroyed && refreshGate.isLatest(ticket)) adapter.update(patched, this)
                 }
             }.start()
         }
         Thread {
             val groups = repo.getGroupThreads()
+            // A newer reload started meanwhile: let that one decide.
+            if (!refreshGate.isLatest(ticket)) return@Thread
             GroupThreadsCache.put(groups)
             // Skip the redundant re-render (and the full rebind/refocus
             // that comes with it) when nothing actually changed since the
@@ -80,7 +116,7 @@ class GroupMessagesActivity : AppCompatActivity() {
             // cache-then-live flow that never got the same treatment.
             if (groups == cached) return@Thread
             runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (isFinishing || isDestroyed || !refreshGate.isLatest(ticket)) return@runOnUiThread
                 adapter.update(groups, this)
                 emptyView.visibility = if (groups.isEmpty()) View.VISIBLE else View.GONE
             }
@@ -259,7 +295,7 @@ class GroupMessagesActivity : AppCompatActivity() {
     private fun showOptions() {
         val group = focusedGroup
         val options = if (group != null) {
-            arrayOf("Nickname Group", "Add Person to Group", "Mark All as Read", "Archive All Groups", "Move to Trash")
+            arrayOf("Show Members", "Nickname Group", "Add Person to Group", "Mark All as Read", "Archive All Groups", "Move to Trash")
         } else {
             arrayOf("New Group Message", "Mark All as Read", "Archive All Groups")
         }
@@ -267,6 +303,7 @@ class GroupMessagesActivity : AppCompatActivity() {
             .setTitle("Options")
             .setItems(options) { _, which ->
                 when (options[which]) {
+                    "Show Members" -> group?.let { GroupMembers.show(this, it.threadId, it.displayName) }
                     "Nickname Group" -> group?.let { promptNickname(it) }
                     "Add Person to Group" -> group?.let { addPersonToGroup(it) }
                     "Mark All as Read" -> ReadAll.run(this) { loadGroups() }

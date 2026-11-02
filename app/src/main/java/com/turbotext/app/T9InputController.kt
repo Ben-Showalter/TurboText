@@ -125,10 +125,9 @@ class T9InputController(
     // Punctuation picker — entered via '1' (outside Number mode), not a
     // persistent mode, just a temporary overlay: confirms whatever word is
     // pending first, then lets you browse marks with Left/Right.
-    private val punctuationList = listOf(
-        ".", ",", "'", "?", "!", "-", ":", ";", "@", "(", ")", "\"", "/",
-        "#", "$", "%", "&", "*", "+", "=", "_", "~", "<", ">"
-    )
+    /** Most-used first (PunctuationUsage); re-read each time the picker
+     *  opens, never while it's showing. */
+    private var punctuationList = PunctuationUsage.DEFAULT
     private var punctuationPickerActive = false
     private var punctuationIndex = 0
     private val handler = Handler(Looper.getMainLooper())
@@ -209,7 +208,7 @@ class T9InputController(
      *  punctuation picker counts too: its highlighted mark goes in. */
     fun confirmPending() {
         if (punctuationPickerActive) {
-            insertAtCursor(punctuationList[punctuationIndex])
+            insertPunctuation(punctuationList[punctuationIndex])
             punctuationPickerActive = false
             render()
         }
@@ -295,7 +294,7 @@ class T9InputController(
                 // long-press timer below even gets a chance to fire —
                 // ending up with both the mark and the held digit inserted.
                 if (event.repeatCount == 0) {
-                    insertAtCursor(punctuationList[punctuationIndex])
+                    insertPunctuation(punctuationList[punctuationIndex])
                     punctuationPickerActive = false
                     render()
                 }
@@ -303,7 +302,7 @@ class T9InputController(
             }
             punctuationPickerActive && keyCode == KeyEvent.KEYCODE_POUND -> {
                 if (event.repeatCount == 0) {
-                    insertAtCursor(punctuationList[punctuationIndex])
+                    insertPunctuation(punctuationList[punctuationIndex])
                     insertAtCursor(" ")
                     punctuationPickerActive = false
                     render()
@@ -525,6 +524,7 @@ class T9InputController(
         // pending WORD-mode sequence never reaches here — handled above.
         if (digit == '1' && mode != InputMode.NUMBER) {
             if (mode == InputMode.MULTITAP && multiTapKey != null) commitMultiTapChar()
+            punctuationList = PunctuationUsage.order(outputView.context)
             punctuationPickerActive = true
             punctuationIndex = guessPunctuationIndex()
             render()
@@ -549,6 +549,12 @@ class T9InputController(
                 }
             }
         }
+    }
+
+    /** Puts a mark chosen in the picker in, and counts it for the order. */
+    private fun insertPunctuation(mark: String) {
+        insertAtCursor(mark)
+        PunctuationUsage.recordUse(outputView.context, mark)
     }
 
     /** A rough guess at the most likely punctuation mark for whatever's

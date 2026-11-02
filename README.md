@@ -10,6 +10,10 @@ Key features:
 
 •	Broadcast lists: text the same announcement to many people, each getting their own private text. Lists can be imported from a CSV file (one phone number per row, with an optional name column). Copy the file to the phone (for example to Download), then use Broadcast Lists > + New List from CSV.
 
+•	Send Later: schedule a message for a time up to a day ahead (Options > Send Later while writing).
+
+•	New Message lets you pick from the phone's contacts or type a number. If you already have a conversation with that person, it opens there.
+
 •	Translation to English of incoming texts to most languages.
 
 •	Archives all conversations with a click of a button. 

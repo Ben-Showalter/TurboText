@@ -49,12 +49,12 @@ class AttachmentPicker(
     /** "Attach" submenu. [onAudio] starts the screen's own voice-memo
      *  recorder. */
     fun showAttachMenu(onAudio: () -> Unit) {
-        val options = arrayOf("Photo or Video from Gallery", "Audio Recording", "Contact", "File")
+        val options = arrayOf("Choose Picture or Video", "Audio Recording", "Contact", "File")
         AlertDialog.Builder(activity)
             .setTitle("Attach")
             .setItems(options) { _, which ->
                 when (options[which]) {
-                    "Photo or Video from Gallery" -> pickFromGallery()
+                    "Choose Picture or Video" -> pickFromGallery()
                     "Audio Recording" -> onAudio()
                     "Contact" -> pickContact()
                     "File" -> pickFile()
@@ -114,16 +114,50 @@ class AttachmentPicker(
         launch(intent, REQ_VIDEO, "camera")
     }
 
+    /**
+     * Opens the phone's own gallery to choose pictures or videos — not a
+     * chooser or the file browser. The gallery is the app that handles
+     * ACTION_PICK for images; it's asked first for both pictures and
+     * videos, then for the forms it may understand better, and the file
+     * browser is only the last resort.
+     */
     fun pickFromGallery() {
+        val pm = activity.packageManager
+        val gallery = Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+            .resolveActivity(pm)?.packageName
+        val tries = ArrayList<Pair<String, Intent>>()
+        if (gallery != null) {
+            tries.add("gallery $gallery (pictures and videos)" to Intent(Intent.ACTION_GET_CONTENT).apply {
+                type = "*/*"
+                putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*"))
+                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                addCategory(Intent.CATEGORY_OPENABLE)
+                setPackage(gallery)
+            })
+            tries.add("gallery $gallery (pick)" to Intent(Intent.ACTION_PICK).apply {
+                type = "image/* video/*"
+                setPackage(gallery)
+            })
+        }
+        tries.add("pictures" to Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI))
+        for ((label, intent) in tries) {
+            if (intent.resolveActivity(pm) == null) continue
+            try {
+                activity.startActivityForResult(intent, REQ_GALLERY)
+                android.util.Log.i("TurboTextAttach", "choosing from $label")
+                return
+            } catch (e: Exception) {
+                android.util.Log.w("TurboTextAttach", "couldn't open $label", e)
+            }
+        }
+        android.util.Log.i("TurboTextAttach", "no gallery found; using the file chooser")
         val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
             type = "*/*"
             putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*"))
-            // Pickers that support it let you choose several; the rest
-            // still return one, and Attach can be used again to add more.
             putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
             addCategory(Intent.CATEGORY_OPENABLE)
         }
-        activity.startActivityForResult(Intent.createChooser(intent, "Choose Photos or Videos"), REQ_GALLERY)
+        activity.startActivityForResult(Intent.createChooser(intent, "Choose Picture or Video"), REQ_GALLERY)
     }
 
     fun pickFile() {

@@ -330,7 +330,7 @@ object SendRetry {
             manager.notify(
                 NOTIFICATION_ID,
                 NotificationCompat.Builder(context, CHANNEL_ID)
-                    .setSmallIcon(R.drawable.ic_notification_minimal)
+                    .setSmallIcon(R.drawable.ic_notification_turbotext)
                     .setContentTitle("Message not sent")
                     .setContentText("No signal for a day. Open the conversation to try again.")
                     .setAutoCancel(true)
