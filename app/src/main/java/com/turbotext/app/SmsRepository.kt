@@ -343,6 +343,7 @@ class SmsRepository(private val context: Context) {
     }
 
     fun getGroupThreads(): List<Conversation> {
+        val startedAt = System.currentTimeMillis()
         val result = mutableListOf<Conversation>()
         // Per-thread unread state read straight from the individual
         // Sms/Mms rows (READ=0), not the conversations view's aggregate
@@ -411,18 +412,71 @@ class SmsRepository(private val context: Context) {
         // with a stale snippet. The conversations view's own "date DESC"
         // isn't honored by every OEM provider, so re-derive each thread's
         // real timestamp from its newest surviving message and sort here.
-        // Only the newest few messages per group are read (the whole
-        // history, pictures included, took seconds — so a new message took
-        // that long to move its group to the top). The full history is
-        // read only if every one of those few is in the trash.
+        // Each group's newest message, from one pass over each table
+        // rather than reading every group's messages — that took seconds,
+        // so a new message took that long to move its group to the top.
+        // A group whose messages are all in the trash drops out.
+        val newest = newestPerThread(result.map { it.threadId }.toSet())
         return result
             .mapNotNull { convo ->
-                val newest = getRecentMessages(convo.threadId, 5).lastOrNull()
-                    ?: getMessages(convo.threadId).lastOrNull()
-                    ?: return@mapNotNull null
-                convo.copy(date = newest.date, snippet = snippetFor(newest, convo.snippet))
+                val (date, snippet) = newest[convo.threadId] ?: return@mapNotNull null
+                convo.copy(date = date, snippet = snippet.ifEmpty { convo.snippet })
             }
             .sortedByDescending { it.date }
+            .also { android.util.Log.i("TurboTextPerf", "getGroupThreads: ${it.size} groups in ${System.currentTimeMillis() - startedAt}ms") }
+    }
+
+    /** For each of [threadIds]: its newest message that isn't in the
+     *  trash, as (date in ms, list preview). One query per table, reading
+     *  only ids and dates; only each thread's newest picture message has
+     *  its parts read, for the preview. */
+    private fun newestPerThread(threadIds: Set<Long>): Map<Long, Pair<Long, String>> {
+        if (threadIds.isEmpty()) return emptyMap()
+        val trashed = TrashHelper.allTrashedKeys(context)
+        val inList = threadIds.joinToString(",")
+        val best = HashMap<Long, Pair<Long, String>>()
+        try {
+            context.contentResolver.query(
+                Telephony.Sms.CONTENT_URI,
+                arrayOf(Telephony.Sms._ID, Telephony.Sms.THREAD_ID, Telephony.Sms.DATE, Telephony.Sms.BODY),
+                "${Telephony.Sms.THREAD_ID} IN ($inList)", null, "${Telephony.Sms.DATE} DESC"
+            )?.use { c ->
+                while (c.moveToNext()) {
+                    val thread = c.getLong(1)
+                    if (thread in best || "sms:${c.getLong(0)}" in trashed) continue
+                    best[thread] = c.getLong(2) to (c.getString(3) ?: "")
+                }
+            }
+            val mmsNewest = HashMap<Long, Pair<Long, Long>>() // thread -> (date ms, id)
+            context.contentResolver.query(
+                Telephony.Mms.CONTENT_URI,
+                arrayOf(Telephony.Mms._ID, Telephony.Mms.THREAD_ID, Telephony.Mms.DATE),
+                "${Telephony.Mms.THREAD_ID} IN ($inList) AND $NOT_A_REPORT", null, "${Telephony.Mms.DATE} DESC"
+            )?.use { c ->
+                while (c.moveToNext()) {
+                    val thread = c.getLong(1)
+                    if (thread in mmsNewest || "mms:${c.getLong(0)}" in trashed) continue
+                    mmsNewest[thread] = c.getLong(2) * 1000L to c.getLong(0)
+                }
+            }
+            for ((thread, pair) in mmsNewest) {
+                val (date, id) = pair
+                if ((best[thread]?.first ?: -1L) >= date) continue
+                val parts = readMmsParts(id)
+                best[thread] = date to when {
+                    parts.text.isNotEmpty() -> parts.text
+                    parts.imageUri != null -> "Picture message"
+                    parts.audioUri != null -> "Voice message"
+                    parts.vcardUri != null -> "Contact card"
+                    parts.videoUri != null -> "Video"
+                    parts.fileUri != null -> "File: ${parts.fileName ?: parts.fileMime}"
+                    else -> "Multimedia message"
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("TurboTextGroup", "newest-message scan failed", e)
+        }
+        return best
     }
 
     private fun lookupCanonicalAddress(id: String): String? {
@@ -577,18 +631,6 @@ class SmsRepository(private val context: Context) {
             .filterNot { groupThreadIds.contains(it.threadId) }
             .sortedByDescending { it.date }
         return if (limit != null) sorted.take(limit + 1) else sorted
-    }
-
-    /** A list row's preview for [message]: its text, or what it carries. */
-    fun snippetFor(message: Message, fallback: String = ""): String = when {
-        message.body.isNotBlank() -> message.body
-        message.imageUri != null -> "Picture message"
-        message.audioUri != null -> "Voice message"
-        message.vcardUri != null -> "Contact card"
-        message.videoUri != null -> "Video"
-        message.fileUri != null -> "File: ${message.fileName ?: message.fileMime}"
-        message.isMms -> "Multimedia message"
-        else -> fallback
     }
 
     fun getMessages(threadId: Long): List<Message> {

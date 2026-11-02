@@ -52,10 +52,12 @@ class GroupMessagesActivity : AppCompatActivity() {
         super.onResume()
         loadGroups()
         registerMessageObserver()
+        MessageEvents.addListener(messageEvents)
     }
 
     override fun onPause() {
         super.onPause()
+        MessageEvents.removeListener(messageEvents)
         if (observerRegistered) {
             contentResolver.unregisterContentObserver(messageObserver)
             observerRegistered = false
@@ -76,6 +78,25 @@ class GroupMessagesActivity : AppCompatActivity() {
     }
     private var observerRegistered = false
 
+    /** A new message: the receiver has already moved its group to the top
+     *  of GroupThreadsCache, so show that at once, with no query. The
+     *  observer's full reload still follows. */
+    private val messageEvents = MessageEvents.Listener {
+        val cached = GroupThreadsCache.get() ?: return@Listener
+        if (isFinishing || isDestroyed || cached == shownGroups) return@Listener
+        show(cached)
+        emptyView.visibility = if (cached.isEmpty()) View.VISIBLE else View.GONE
+        android.util.Log.i("TurboTextPerf", "groups list re-rendered from cache")
+    }
+
+    /** What the list shows now, so an unchanged cache isn't redrawn. */
+    private var shownGroups: List<Conversation>? = null
+
+    private fun show(groups: List<Conversation>) {
+        shownGroups = groups
+        adapter.update(groups, this)
+    }
+
     private fun registerMessageObserver() {
         if (observerRegistered) return
         for (uri in listOf("content://mms-sms/", "content://sms", "content://mms")) {
@@ -90,7 +111,7 @@ class GroupMessagesActivity : AppCompatActivity() {
         val ticket = refreshGate.start()
         val cached = GroupThreadsCache.get()
         if (cached != null) {
-            adapter.update(cached, this)
+            show(cached)
             emptyView.visibility = if (cached.isEmpty()) View.VISIBLE else View.GONE
             // Fast pass: getGroupThreads() below takes seconds, so a thread
             // that was just opened and read would keep its ● / accent
@@ -100,7 +121,7 @@ class GroupMessagesActivity : AppCompatActivity() {
                 val unreadIds = repo.unreadThreadIds()
                 val patched = cached.map { it.copy(unread = it.threadId in unreadIds) }
                 if (patched != cached) runOnUiThread {
-                    if (!isFinishing && !isDestroyed && refreshGate.isLatest(ticket)) adapter.update(patched, this)
+                    if (!isFinishing && !isDestroyed && refreshGate.isLatest(ticket)) show(patched)
                 }
             }.start()
         }
@@ -117,7 +138,8 @@ class GroupMessagesActivity : AppCompatActivity() {
             if (groups == cached) return@Thread
             runOnUiThread {
                 if (isFinishing || isDestroyed || !refreshGate.isLatest(ticket)) return@runOnUiThread
-                adapter.update(groups, this)
+                show(groups)
+                android.util.Log.i("TurboTextPerf", "groups list re-rendered from query")
                 emptyView.visibility = if (groups.isEmpty()) View.VISIBLE else View.GONE
             }
         }.start()
@@ -168,7 +190,7 @@ class GroupMessagesActivity : AppCompatActivity() {
                 Thread {
                     val groups = repo.getGroupThreads()
                     runOnUiThread {
-                        if (!isFinishing && !isDestroyed) adapter.update(groups, this)
+                        if (!isFinishing && !isDestroyed) show(groups)
                     }
                 }.start()
             }
@@ -338,7 +360,7 @@ class GroupMessagesActivity : AppCompatActivity() {
                 Toast.makeText(this, "Moved to trash", Toast.LENGTH_SHORT).show()
                 Thread {
                     val groups = repo.getGroupThreads()
-                    runOnUiThread { if (!isFinishing && !isDestroyed) adapter.update(groups, this) }
+                    runOnUiThread { if (!isFinishing && !isDestroyed) show(groups) }
                 }.start()
             }
         }.start()

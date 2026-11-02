@@ -55,9 +55,8 @@ object MmsReceivePostProcessor {
     private fun handle(context: Context, id: Long) {
         if (!handled.add(id)) return
         try {
-            // A group message may tell us our own number at last, and fix
-            // which thread this (and earlier) messages belong in.
-            OwnNumber.learnFrom(context, id)
+            val started = System.currentTimeMillis()
+            fun took() = "${System.currentTimeMillis() - started}ms"
             // The provider can lag a moment behind the library's insert
             // before the row has its thread id — retry briefly.
             var threadId: Long? = null
@@ -69,27 +68,17 @@ object MmsReceivePostProcessor {
             }
             val sender = senderOf(context, id) ?: "Unknown"
             val repo = SmsRepository(context)
-            // The carrier's notice for this message should be gone now;
-            // make sure it doesn't linger as a "press OK to download" twin.
-            repo.removeStaleMmsNotices()
             val preview = repo.mmsPreview(id)
-
             ProviderChangeTracker.bump()
             val tid = threadId
-            if (tid != null) {
-                try {
-                    MessageCache.put(tid, repo.getMessages(tid))
-                    MessageEvents.changed(tid)
-                } catch (e: Exception) {
-                    Log.w(TAG, "failed to refresh cache for new MMS", e)
-                }
-            }
-
             val participants = if (tid != null) repo.getThreadParticipants(tid) else emptyList()
             val isGroup = participants.size > 1
-            // The Groups list shows it at the top at once; its full reload
-            // follows (ContentObserver).
+            // First what's visible: the group to the top of the Groups list
+            // (and an open thread told) before any slow housekeeping below.
             if (isGroup && tid != null) GroupThreadsCache.bump(tid, System.currentTimeMillis(), preview)
+            if (tid != null) MessageEvents.changed(tid)
+            Log.i("TurboTextPerf", "new MMS $id: thread known and lists told after ${took()}")
+
             val displayName = if (isGroup) {
                 GroupNicknameHelper.getNickname(context, tid ?: -1)
                     ?: participants.joinToString(", ") { ContactHelper.lookupName(context, it) ?: it }
@@ -110,6 +99,24 @@ object MmsReceivePostProcessor {
             // An MMS came through, so an earlier "couldn't be downloaded"
             // notice is out of date (it was most likely this message).
             NotificationHelper.cancelMmsDownloadFailed(context)
+            Log.i("TurboTextPerf", "new MMS $id: notified after ${took()}")
+
+            // Slower housekeeping, after the user has seen and heard it.
+            // A group message may tell us our own number at last, and fix
+            // which thread this (and earlier) messages belong in.
+            OwnNumber.learnFrom(context, id)
+            // The carrier's notice for this message should be gone now;
+            // make sure it doesn't linger as a "press OK to download" twin.
+            repo.removeStaleMmsNotices()
+            if (tid != null) {
+                try {
+                    MessageCache.put(tid, repo.getMessages(tid))
+                    MessageEvents.changed(tid)
+                } catch (e: Exception) {
+                    Log.w(TAG, "failed to refresh cache for new MMS", e)
+                }
+            }
+            Log.i("TurboTextPerf", "new MMS $id: housekeeping done after ${took()}")
             Log.i(TAG, "processed MMS id=$id thread=$tid from=$sender group=$isGroup")
             // Which numbers the message named and which we took for ours
             // (last 4 digits only), to see where a group message went.
