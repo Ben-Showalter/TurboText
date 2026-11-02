@@ -87,6 +87,12 @@ class ConversationActivity : AppCompatActivity() {
         messageList.addFocusScrollbar { messageAdapter.scrollbarPosition() }
 
         composeText = findViewById(R.id.composeText)
+        // The phone's own Paste (its copy/paste tool) goes through the same
+        // path as Options > Paste, into the T9 typing.
+        (composeText as? NoImeEditText)?.apply {
+            onPaste = { pasteFromClipboard() }
+            onSetText = { text -> inputController.setText(text) }
+        }
         composeText.movementMethod = android.text.method.ScrollingMovementMethod()
         composeText.setShowSoftInputOnFocus(false)
         composeText.hint = HintHelper.dictateHint(composeText)

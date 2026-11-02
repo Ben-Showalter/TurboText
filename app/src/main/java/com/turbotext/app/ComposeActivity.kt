@@ -60,6 +60,16 @@ class ComposeActivity : AppCompatActivity() {
         toText = findViewById(R.id.toText)
         toText.setShowSoftInputOnFocus(false)
         composeText = findViewById(R.id.composeText)
+        // The phone's own Paste (its copy/paste tool) goes into the T9
+        // typing of whichever box it targets.
+        (composeText as? NoImeEditText)?.apply {
+            onPaste = { pasteFromClipboard() }
+            onSetText = { text -> inputController.setText(text) }
+        }
+        (toText as? NoImeEditText)?.apply {
+            onPaste = { ClipboardPaste.request(this@ComposeActivity) { text -> recipientController.appendVoiceResult(text) } }
+            onSetText = { text -> recipientController.setText(text) }
+        }
         composeText.movementMethod = android.text.method.ScrollingMovementMethod()
         composeText.setShowSoftInputOnFocus(false)
         composeText.hint = HintHelper.dictateHint(composeText)
