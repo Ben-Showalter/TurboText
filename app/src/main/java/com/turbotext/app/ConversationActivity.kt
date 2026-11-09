@@ -99,7 +99,8 @@ class ConversationActivity : AppCompatActivity() {
         inputController = T9InputController(
             engine = engine,
             outputView = composeText,
-            onModeChanged = { label -> softLeftLabel.text = label },
+            // While a message is selected this softkey is Search instead.
+            onModeChanged = { label -> if (selectedMessageIndex == null) softLeftLabel.text = label },
             onSuggestionsChanged = { candidates, selected, windowSize -> renderSuggestions(candidates, selected, windowSize) },
             suggestionsBarView = suggestionsBar
         )
@@ -307,14 +308,13 @@ class ConversationActivity : AppCompatActivity() {
             arrayOf("Choose Picture or Video", "Take Photo", "Record Audio", "Attach", "Remove Attachment", "Paste")
         } else {
             arrayOf("Choose Picture or Video", "Take Photo", "Record Audio", "Attach", "Paste")
-        }) + arrayOf("Search Messages", "Send Later") + (if (address.contains(',')) arrayOf("Show Members") else emptyArray())
+        }) + arrayOf("Send Later") + (if (address.contains(',')) arrayOf("Show Members") else emptyArray())
         AlertDialog.Builder(this)
             .setTitle("Options")
             .setItems(options) { _, which ->
                 when (options[which]) {
                     "Choose Picture or Video" -> picker.pickFromGallery()
                     "Send Later" -> scheduleCurrentMessage()
-                    "Search Messages" -> askSearch()
                     "Show Members" -> GroupMembers.show(
                         this, threadId, findViewById<TextView>(R.id.contactName).text.toString()
                     )
@@ -468,7 +468,27 @@ class ConversationActivity : AppCompatActivity() {
         )
     }
 
+    /** The left softkey's label while a message is selected: the
+     *  magnifying glass (ic_search) and "Search". */
+    private fun searchSoftkeyLabel(): CharSequence {
+        val label = android.text.SpannableString("  Search")
+        androidx.core.content.ContextCompat.getDrawable(this, R.drawable.ic_search)?.mutate()?.let { icon ->
+            val size = (softLeftLabel.textSize * 1.1f).toInt()
+            icon.setBounds(0, 0, size, size)
+            icon.setTint(softLeftLabel.currentTextColor)
+            label.setSpan(
+                android.text.style.ImageSpan(icon, android.text.style.DynamicDrawableSpan.ALIGN_BOTTOM),
+                0, 1, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+        }
+        return label
+    }
+
     private fun copyMessageText(message: Message) {
+        if (message.body.isBlank()) {
+            Toast.makeText(this, "No text to copy", Toast.LENGTH_SHORT).show()
+            return
+        }
         val clipboard = getSystemService(android.content.ClipboardManager::class.java)
         clipboard.setPrimaryClip(android.content.ClipData.newPlainText("message", message.body))
         Toast.makeText(this, "Copied to clipboard", Toast.LENGTH_SHORT).show()
@@ -713,7 +733,9 @@ class ConversationActivity : AppCompatActivity() {
     private fun setComposeAreaVisible(visible: Boolean) {
         val vis = if (visible) View.VISIBLE else View.GONE
         composeText.visibility = vis
-        softLeftLabel.visibility = vis
+        // The left softkey: the typing mode while composing, Search while
+        // a message is selected.
+        softLeftLabel.text = if (visible) inputController.currentLabel() else searchSoftkeyLabel()
     }
 
     /** While a message (or the Load More row) is selected, only these
@@ -736,7 +758,18 @@ class ConversationActivity : AppCompatActivity() {
                 return true
             }
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
-                activateSelectedMessage(index)
+                // Acted on at release: a short press opens the message, a
+                // long one (held until the key repeats) copies its text.
+                if (event.repeatCount == 0) {
+                    okLongPressed = false
+                } else if (!okLongPressed) {
+                    okLongPressed = true
+                    selectedMessage(index)?.let { copyMessageText(it) }
+                }
+                return true
+            }
+            KeyEvent.KEYCODE_SOFT_LEFT -> {
+                askSearch()
                 return true
             }
             KeyEvent.KEYCODE_SOFT_RIGHT -> {
@@ -750,6 +783,27 @@ class ConversationActivity : AppCompatActivity() {
             }
             else -> return true
         }
+    }
+
+    /** OK was held long enough to copy (handleSelectionModeKey); its
+     *  release then does nothing more. */
+    private var okLongPressed = false
+    private var pressedOkInSelection = false
+
+    /** OK released on a selected message: open it, unless it was held. */
+    private fun onSelectionOkReleased(): Boolean {
+        val index = selectedMessageIndex ?: return false
+        if (okLongPressed) {
+            okLongPressed = false
+            return true
+        }
+        activateSelectedMessage(index)
+        return true
+    }
+
+    private fun selectedMessage(adapterIndex: Int): Message? {
+        val realIndex = if (messageAdapter.hasLoadMoreRow()) adapterIndex - 1 else adapterIndex
+        return messageAdapter.currentItems().getOrNull(realIndex)
     }
 
     /** Center-key ("OK") on a focused message: do the obvious thing for
@@ -1010,6 +1064,12 @@ class ConversationActivity : AppCompatActivity() {
                 return true
             }
             if (selectedMessageIndex != null) {
+                if (event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || event.keyCode == KeyEvent.KEYCODE_ENTER) {
+                    // Only a release whose press came while a message was
+                    // selected opens it (not the release of the OK that
+                    // closed a menu over this screen).
+                    if (event.repeatCount == 0) pressedOkInSelection = true
+                }
                 return handleSelectionModeKey(event)
             }
             when (event.keyCode) {
@@ -1090,6 +1150,12 @@ class ConversationActivity : AppCompatActivity() {
             if (event.keyCode in MicButtonKeyCodes.CODES) {
                 stopVoiceRecordingAndSend()
                 return true
+            }
+            if ((event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || event.keyCode == KeyEvent.KEYCODE_ENTER) &&
+                selectedMessageIndex != null && pressedOkInSelection
+            ) {
+                pressedOkInSelection = false
+                return onSelectionOkReleased()
             }
             if (inputController.onKeyUp(event.keyCode)) return true
         }
