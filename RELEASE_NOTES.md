@@ -29,6 +29,9 @@
 - Avatars are always shown, and the Show Avatars setting is gone.
 - New: Resend, at the top of a message's options for any message you sent, whether it was sent, delivered, not delivered or failed. It sends the text and any picture, video or file again as a new message. Resending a failed message replaces it.
 - New: Settings > Advanced > Save Bug Report. It saves TurboText's log, with crashes and errors, to the Download folder, so a problem can be looked into without a computer cable or adb. It lists phone numbers and contact names, but not what messages say.
+- Picture messages no longer get stuck on "Sending". If the phone's own picture-message sender never answers, TurboText tries again 6 minutes later, up to 3 tries, and then marks it Failed so you can Resend. If handing the picture to the phone fails, it's retried too. Before, it stayed on "Sending" until the phone or app restarted.
+- Much less work after TurboText starts. It used to keep the phone's message storage busy for several minutes, which held up opening conversations, the Groups list and sending. Delivery reports are now worked out once and reused, and group names are looked up in one go.
+- Save Bug Report now covers everything up to the moment you save it. The phone's log kept breaking off and TurboText stopped copying it. Every picture send and its result is also written straight to the report.
 - Picture messages go through more reliably:
   - If sending fails because of a weak signal or no data connection, TurboText tries again twice: after 20 seconds and after 90 seconds.
   - If the carrier refuses a picture, it shows "Failed" instead of "Sent".

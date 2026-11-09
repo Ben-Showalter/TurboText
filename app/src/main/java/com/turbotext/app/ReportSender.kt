@@ -198,7 +198,7 @@ class BootReceiver : BroadcastReceiver() {
                 "${Telephony.Mms.MESSAGE_BOX} = ${Telephony.Mms.MESSAGE_BOX_OUTBOX} AND ${Telephony.Mms.DATE} < $before$notWaiting",
                 null
             )
-            if (n > 0) android.util.Log.i("TurboTextMms", "marked $n stuck picture message(s) as failed")
+            if (n > 0) AppLog.event("Mms", "marked $n stuck picture message(s) as failed at restart")
         } catch (e: Exception) {
             android.util.Log.w("TurboTextMms", "couldn't check for stuck picture messages", e)
         }

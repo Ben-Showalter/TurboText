@@ -35,8 +35,13 @@ class SmsRepository(private val context: Context) {
         private val DELIVERED_STATUSES = setOf(0x81, 0x86)
         private val UNDELIVERED_STATUSES = setOf(0x80, 0x82, 0x84, 0x87)
 
-        /** Last delivery-match line logged per sent message (logDeliveryMatch). */
-        private val loggedDeliveryLines = HashMap<Long, String>()
+        /** Delivery reports, built once and shared by every thread load
+         *  (deliveryReports): reports never change, only new ones arrive. */
+        private val reportLock = Any()
+        private var reportSignature: Pair<Int, Long>? = null
+        private var reportMap: Map<String, Map<String, Int>> = emptyMap()
+        /** Report row id -> its recipient's key; each looked up once. */
+        private val reportRecipients = HashMap<Long, String>()
     }
 
     /** Moves MMS notices stuck on [PLACEHOLDER_THREAD_ID] (a download
@@ -375,6 +380,10 @@ class SmsRepository(private val context: Context) {
         } catch (e: Exception) {
             android.util.Log.w("TurboTextGroup", "group unread scan failed", e)
         }
+        // Every member's number and every contact's name in one query
+        // each, rather than two queries per member (40 groups took 6–17 s).
+        val canonical = allCanonicalAddresses()
+        val contacts = ContactIndex.load(context)
         try {
             val cursor = context.contentResolver.query(
                 android.net.Uri.parse("content://mms-sms/conversations?simple=true"),
@@ -389,8 +398,8 @@ class SmsRepository(private val context: Context) {
                     val threadId = it.getLong(it.getColumnIndexOrThrow("_id"))
                     val snippet = it.getString(it.getColumnIndexOrThrow("snippet")) ?: ""
                     val date = it.getLong(it.getColumnIndexOrThrow("date"))
-                    val addresses = ids.mapNotNull { id -> lookupCanonicalAddress(id) }
-                    val names = addresses.map { addr -> lookupContactName(addr) ?: addr }
+                    val addresses = ids.mapNotNull { id -> canonical[id] ?: lookupCanonicalAddress(id) }
+                    val names = addresses.map { addr -> contacts.nameFor(addr) ?: addr }
                     val displayName = GroupNicknameHelper.getNickname(context, threadId) ?: names.joinToString(", ")
                     result.add(
                         Conversation(
@@ -477,6 +486,24 @@ class SmsRepository(private val context: Context) {
             android.util.Log.w("TurboTextGroup", "newest-message scan failed", e)
         }
         return best
+    }
+
+    /** The whole canonical-address table (recipient id -> number), in one
+     *  query; empty if this phone's provider doesn't offer it. */
+    private fun allCanonicalAddresses(): Map<String, String> = try {
+        context.contentResolver.query(
+            android.net.Uri.parse("content://mms-sms/canonical-addresses"), null, null, null, null
+        )?.use { c ->
+            val idCol = c.getColumnIndex("_id")
+            val addrCol = c.getColumnIndex("address")
+            if (idCol < 0 || addrCol < 0) return@use emptyMap<String, String>()
+            val map = HashMap<String, String>(c.count)
+            while (c.moveToNext()) c.getString(addrCol)?.let { map[c.getLong(idCol).toString()] = it }
+            map
+        } ?: emptyMap()
+    } catch (e: Exception) {
+        android.util.Log.w("TurboTextGroup", "canonical-address table not readable", e)
+        emptyMap()
     }
 
     private fun lookupCanonicalAddress(id: String): String? {
@@ -800,7 +827,6 @@ class SmsRepository(private val context: Context) {
                         val byRecipient = mId?.let { m ->
                             reports[com.android.mms.transaction.PushReceiver.normalizeMessageId(m)]
                         }
-                        logDeliveryMatch(threadId, id, mId, reports, byRecipient)
                         if (byRecipient == null) {
                             "sent"
                         } else {
@@ -855,50 +881,75 @@ class SmsRepository(private val context: Context) {
         return result
     }
 
-    /** Delivery reports (m-delivery-ind) saved in [threadId], as
-     *  sent message's Message-ID → (recipient → latest status, but a
-     *  delivered status is never replaced). mmslib's
-     *  PushReceiver stores each report as its own row in the thread. */
+    /**
+     * Every delivery report (m-delivery-ind), as sent message's Message-ID
+     * → (recipient → latest status, but a delivered status is never
+     * replaced). mmslib's PushReceiver stores each report as its own row,
+     * not always in the right thread, so all of them are read — keyed by
+     * Message-ID, only a thread's own sent messages can match anyway.
+     *
+     * Built once and reused until a report is added or removed: it used
+     * to be rebuilt for every thread loaded, each time with a query per
+     * report for its recipient, which kept the phone's message store busy
+     * for minutes after TurboText started.
+     */
+    @Suppress("UNUSED_PARAMETER")
     private fun deliveryReports(threadId: Long): Map<String, Map<String, Int>> {
-        val result = HashMap<String, HashMap<String, Int>>()
         try {
-            // Reports from the last 30 days in any thread, not only this
-            // one: a report saved by the phone itself, or before its sent
-            // message's Message-ID was known, can sit in another thread
-            // (or none). They're keyed by Message-ID, so only this thread's
-            // own sent messages can match them anyway.
-            val since = System.currentTimeMillis() / 1000 - 30L * 24 * 60 * 60
-            context.contentResolver.query(
-                Telephony.Mms.CONTENT_URI,
-                arrayOf(Telephony.Mms._ID, Telephony.Mms.MESSAGE_ID, Telephony.Mms.STATUS, Telephony.Mms.THREAD_ID),
-                "${Telephony.Mms.MESSAGE_TYPE} = $M_TYPE_DELIVERY_IND AND " +
-                    "(${Telephony.Mms.THREAD_ID} = ? OR ${Telephony.Mms.DATE} > $since)",
-                arrayOf(threadId.toString()),
-                "${Telephony.Mms.DATE} ASC" // later reports win, except over "delivered"
-            )?.use { c ->
-                while (c.moveToNext()) {
-                    // Compared loosely, as PushReceiver matches them: the
-                    // carrier may quote or bracket the ID in one place only.
-                    val mId = com.android.mms.transaction.PushReceiver.normalizeMessageId(c.getString(1) ?: continue)
-                    val status = c.getInt(2)
-                    logReportRow(c.getLong(3), c.getLong(0), c.getString(1), status)
-                    // The recipient this report is about (its To address).
-                    val recipient = context.contentResolver.query(
-                        android.net.Uri.parse("content://mms/${c.getLong(0)}/addr"),
-                        arrayOf("address"), "type = 151", null, null
-                    )?.use { a -> if (a.moveToFirst()) a.getString(0) else null }
-                    val key = recipientKey(recipient)
-                    val forMessage = result.getOrPut(mId) { HashMap() }
-                    // Once a recipient's phone has downloaded the message,
-                    // it stays delivered: carriers still send "Expired"
-                    // days later when that phone never confirmed it.
-                    if (forMessage[key] !in DELIVERED_STATUSES) forMessage[key] = status
+            val signature = context.contentResolver.query(
+                Telephony.Mms.CONTENT_URI, arrayOf(Telephony.Mms._ID),
+                "${Telephony.Mms.MESSAGE_TYPE} = $M_TYPE_DELIVERY_IND", null, "${Telephony.Mms._ID} DESC"
+            )?.use { c -> c.count to (if (c.moveToFirst()) c.getLong(0) else 0L) } ?: return emptyMap()
+            synchronized(reportLock) {
+                if (signature == reportSignature) return reportMap
+                // Recipients found before, kept across restarts too.
+                val saved = context.getSharedPreferences("report_recipients", android.content.Context.MODE_PRIVATE)
+                if (reportRecipients.isEmpty()) {
+                    saved.all.forEach { (k, v) -> k.toLongOrNull()?.let { id -> (v as? String)?.let { reportRecipients[id] = it } } }
                 }
+                val added = HashMap<Long, String>()
+                val result = HashMap<String, HashMap<String, Int>>()
+                context.contentResolver.query(
+                    Telephony.Mms.CONTENT_URI,
+                    arrayOf(Telephony.Mms._ID, Telephony.Mms.MESSAGE_ID, Telephony.Mms.STATUS),
+                    "${Telephony.Mms.MESSAGE_TYPE} = $M_TYPE_DELIVERY_IND", null,
+                    "${Telephony.Mms.DATE} ASC" // later reports win, except over "delivered"
+                )?.use { c ->
+                    while (c.moveToNext()) {
+                        // Compared loosely, as PushReceiver matches them: the
+                        // carrier may quote or bracket the ID in one place only.
+                        val mId = com.android.mms.transaction.PushReceiver.normalizeMessageId(c.getString(1) ?: continue)
+                        val status = c.getInt(2)
+                        val rowId = c.getLong(0)
+                        // The recipient this report is about (its To address).
+                        val key = reportRecipients.getOrPut(rowId) {
+                            recipientKey(
+                                context.contentResolver.query(
+                                    android.net.Uri.parse("content://mms/$rowId/addr"),
+                                    arrayOf("address"), "type = 151", null, null
+                                )?.use { a -> if (a.moveToFirst()) a.getString(0) else null }
+                            ).also { added[rowId] = it }
+                        }
+                        val forMessage = result.getOrPut(mId) { HashMap() }
+                        // Once a recipient's phone has downloaded the message,
+                        // it stays delivered: carriers still send "Expired"
+                        // days later when that phone never confirmed it.
+                        if (forMessage[key] !in DELIVERED_STATUSES) forMessage[key] = status
+                    }
+                }
+                if (added.isNotEmpty()) {
+                    val edit = saved.edit()
+                    added.forEach { (id, key) -> edit.putString(id.toString(), key) }
+                    edit.apply()
+                }
+                reportSignature = signature
+                reportMap = result
+                return result
             }
         } catch (e: Exception) {
-            android.util.Log.w("TurboTextMms", "couldn't read delivery reports for thread $threadId", e)
+            android.util.Log.w("TurboTextMms", "couldn't read delivery reports", e)
+            return synchronized(reportLock) { reportMap }
         }
-        return result
     }
 
     /** One recipient's key in [deliveryReports]: a phone number's last
@@ -908,51 +959,6 @@ class SmsRepository(private val context: Context) {
         if (address.isNullOrBlank()) return "?"
         if (isEmailAddress(address.trim())) return address.trim().lowercase()
         return address.filter { it.isDigit() }.takeLast(10).ifEmpty { "?" }
-    }
-
-    /** Logs each saved delivery report once: its full ID, status and
-     *  date, so they can be lined up with the sent messages' IDs. */
-    private fun logReportRow(threadId: Long, rowId: Long, mId: String?, status: Int) {
-        synchronized(loggedDeliveryLines) {
-            if (loggedDeliveryLines.containsKey(-rowId - 1)) return
-            loggedDeliveryLines[-rowId - 1] = ""
-        }
-        val date = try {
-            context.contentResolver.query(
-                android.net.Uri.parse("content://mms/$rowId"), arrayOf(Telephony.Mms.DATE), null, null, null
-            )?.use { if (it.moveToFirst()) it.getLong(0) else null }
-        } catch (e: Exception) {
-            null
-        }
-        android.util.Log.i(
-            "TurboTextMmsReport",
-            "saved report $rowId (thread $threadId) id=${com.android.mms.transaction.PushReceiver.idForLog(mId?.toByteArray())} " +
-                "status=$status date=$date"
-        )
-    }
-
-    /** Logs, once per change, how a sent picture message matched its
-     *  delivery reports (TurboTextMmsReport; IDs shortened, no content). */
-    private fun logDeliveryMatch(
-        threadId: Long, id: Long, mId: String?, reports: Map<String, Map<String, Int>>, matched: Map<String, Int>?
-    ) {
-        val idLog = com.android.mms.transaction.PushReceiver.idForLog(mId?.toByteArray())
-        val sentDate = try {
-            context.contentResolver.query(
-                android.net.Uri.parse("content://mms/$id"), arrayOf(Telephony.Mms.DATE), null, null, null
-            )?.use { if (it.moveToFirst()) it.getLong(0) else null }
-        } catch (e: Exception) {
-            null
-        }
-        val line = "thread $threadId sent message $id date=$sentDate id=$idLog: " +
-            if (matched != null) "reports ${matched.values}" else
-                "no report matched (reports from the last 30 days: " +
-                    reports.keys.joinToString { com.android.mms.transaction.PushReceiver.idForLog(it.toByteArray()) } + ")"
-        synchronized(loggedDeliveryLines) {
-            if (loggedDeliveryLines[id] == line) return
-            loggedDeliveryLines[id] = line
-        }
-        android.util.Log.i("TurboTextMmsReport", line)
     }
 
     /** How many people a sent MMS went to (its To, Cc and Bcc addresses),

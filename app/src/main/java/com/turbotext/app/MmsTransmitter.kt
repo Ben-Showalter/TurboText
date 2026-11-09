@@ -39,7 +39,6 @@ import com.android.mms.dom.smil.parser.SmilXmlSerializer
 import com.google.android.mms.ContentType
 import com.google.android.mms.InvalidHeaderValueException
 import com.google.android.mms.MMSPart
-import com.google.android.mms.MmsException
 import com.google.android.mms.pdu_alt.CharacterSets
 import com.google.android.mms.pdu_alt.EncodedStringValue
 import com.google.android.mms.pdu_alt.GenericPdu
@@ -131,16 +130,24 @@ object MmsTransmitter {
         val persister = PduPersister.getPduPersister(context)
 
         val messageUri = persister.persist(sendReq, MMS_OUTBOX, true, groupMms, null, subscriptionId)
-        Log.i(TAG, "MmsTransmitter: persisted $messageUri group=$groupMms subId=$subscriptionId")
-
-        SqliteWrapper.update(
-            context,
-            context.contentResolver,
-            messageUri,
-            ContentValues(1).apply { put(Telephony.Mms.MESSAGE_BOX, Telephony.Mms.MESSAGE_BOX_OUTBOX) },
-            null,
-            null
+        AppLog.event(
+            "Mms", "${messageUri.lastPathSegment}: saved to ${recipients.size} recipient(s), group=$groupMms, " +
+                "parts=${ordered.joinToString { "${it.mimeType} ${it.data?.size ?: 0}B" }}"
         )
+
+        try {
+            SqliteWrapper.update(
+                context,
+                context.contentResolver,
+                messageUri,
+                ContentValues(1).apply { put(Telephony.Mms.MESSAGE_BOX, Telephony.Mms.MESSAGE_BOX_OUTBOX) },
+                null,
+                null
+            )
+        } catch (e: Exception) {
+            // Saved straight into the outbox already; this only repeats it.
+            Log.w(TAG, "MmsTransmitter: couldn't re-mark the outbox row", e)
+        }
 
         val (messageId, resolvedSubId) = readRow(context, messageUri, subscriptionId)
 
@@ -148,14 +155,42 @@ object MmsTransmitter {
         // what was saved.
         val persistedPdu: GenericPdu = try {
             persister.load(messageUri)
-        } catch (e: MmsException) {
+        } catch (e: Exception) {
             Log.e(TAG, "MmsTransmitter: unable to reload persisted PDU", e)
+            AppLog.event("Mms", "${messageUri.lastPathSegment}: FAILED (couldn't read it back: ${e.javaClass.simpleName})")
             markFailed(context, messageUri)
             return null
         }
 
-        val fileName = "send.${UUID.randomUUID()}.dat"
-        val pduFile = File(context.cacheDir, fileName)
+        // From here on the message is in the outbox ("Sending"). Anything
+        // going wrong must not leave it there: it used to stay on "Sending"
+        // until a restart marked it failed, and was never tried again.
+        val pduFile = File(context.cacheDir, "send.${UUID.randomUUID()}.dat")
+        try {
+            handOff(context, messageUri, persistedPdu, pduFile, messageId, resolvedSubId, groupMms)
+        } catch (e: Exception) {
+            Log.e(TAG, "MmsTransmitter: hand-off failed", e)
+            AppLog.event("Mms", "${messageUri.lastPathSegment}: hand-off to the phone failed: ${e.javaClass.simpleName}: ${e.message}")
+            if (!pduFile.exists() ||
+                !MmsSentReceiver.scheduleRetry(context, messageUri, pduFile.path, resolvedSubId, groupMms, 2)
+            ) {
+                pduFile.delete()
+                markFailed(context, messageUri)
+                AppLog.event("Mms", "${messageUri.lastPathSegment}: FAILED (hand-off)")
+            }
+        }
+        // The row itself shows Sending / Failed from here, so the screen
+        // treats it as handed over either way.
+        return messageUri
+    }
+
+    /** Writes the PDU to [pduFile] and gives it to the phone's MMS
+     *  service; [pduFile] is kept for a retry if this throws. */
+    private fun handOff(
+        context: Context, messageUri: Uri, persistedPdu: GenericPdu, pduFile: File,
+        messageId: Int, resolvedSubId: Int, groupMms: Boolean
+    ) {
+        val fileName = pduFile.name
         val contentUri = Uri.Builder()
             .authority(context.packageName + ".MmsFileProvider")
             .path(fileName)
@@ -183,13 +218,11 @@ object MmsTransmitter {
         SmsManagerFactory.createSmsManager(resolvedSubId)
             .sendMultimediaMessage(context, contentUri, null, configOverrides, pendingIntent)
 
-        Log.i(TAG, "MmsTransmitter: handed to platform uri=$messageUri id=$messageId subId=$resolvedSubId")
-        Log.i(
-            "TurboTextMmsReport",
-            "sent message $messageId asks for a delivery report: " +
-                ((persistedPdu as? com.google.android.mms.pdu_alt.SendReq)?.deliveryReport == PduHeaders.VALUE_YES)
+        AppLog.event("Mms", "$messageId: handed to the phone (${pduFile.length()}B, sim $resolvedSubId)")
+        MmsSentReceiver.schedule(
+            context, MmsSentReceiver.ACTION_WATCHDOG, messageUri, pduFile.path, resolvedSubId, groupMms, 1,
+            MmsSentReceiver.WATCHDOG_MS
         )
-        return messageUri
     }
 
     /**
@@ -220,7 +253,11 @@ object MmsTransmitter {
         val configOverrides = Bundle().apply { putBoolean(SmsManager.MMS_CONFIG_GROUP_MMS_ENABLED, groupMms) }
         SmsManagerFactory.createSmsManager(subId)
             .sendMultimediaMessage(context, contentUri, null, configOverrides, pendingIntent)
-        Log.i(TAG, "MmsTransmitter: attempt $attempt for $messageUri")
+        AppLog.event("Mms", "${messageUri.lastPathSegment}: try $attempt handed to the phone")
+        MmsSentReceiver.schedule(
+            context, MmsSentReceiver.ACTION_WATCHDOG, messageUri, pduPath, subId, groupMms, attempt,
+            MmsSentReceiver.WATCHDOG_MS
+        )
         return true
     }
 

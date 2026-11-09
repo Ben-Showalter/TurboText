@@ -163,7 +163,7 @@ object SendRetry {
             save(context, q)
             e.tries
         }
-        Log.i(TAG, "${entry.kind} ${Uri.parse(entry.uri).lastPathSegment} waiting for service (try ${tries + 1})")
+        AppLog.event("Retry", "${entry.kind} ${Uri.parse(entry.uri).lastPathSegment} waiting for service (try ${tries + 1})")
         refresh(context, entry.uri)
         scheduleAlarm(context, tries)
     }
@@ -259,7 +259,7 @@ object SendRetry {
 
     private fun giveUp(context: Context, e: Entry) {
         val uri = Uri.parse(e.uri)
-        Log.w(TAG, "${e.kind} ${uri.lastPathSegment} gave up after waiting a day for service")
+        AppLog.event("Retry", "${e.kind} ${uri.lastPathSegment} FAILED after waiting a day for service")
         try {
             if (e.kind == "sms") setSmsType(context, uri, Telephony.Sms.MESSAGE_TYPE_FAILED)
             else {

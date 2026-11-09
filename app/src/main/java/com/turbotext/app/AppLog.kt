@@ -47,27 +47,68 @@ object AppLog {
         }
     }
 
-    /** Streams this process's logcat lines into the file until the
-     *  process ends. Restarts the stream if logcat itself stops. */
+    /** Streams this process's logcat lines into the file for as long as
+     *  the process runs. On this phone the stream keeps breaking ("read:
+     *  unexpected EOF!"); it used to be given up after 5 breaks, and the
+     *  bug report then missed everything after. Now it's always restarted
+     *  — from the time of the last line copied, so nothing is lost — and
+     *  each restart is noted in the file. */
     private fun copyLogcat(logs: File) {
         val pid = android.os.Process.myPid()
         append("---- TurboText started (pid $pid, v$version) ----")
-        var tries = 0
-        while (tries < 5) {
-            tries++
+        var lastStamp: String? = null
+        var delayMs = 2_000L
+        while (true) {
+            val startedAt = System.currentTimeMillis()
+            // Lines up to here were copied before the break; the restarted
+            // stream repeats them.
+            val copiedUntil = lastStamp
             try {
-                // -T 1: only from now on, so a restarted stream doesn't
-                // copy the same lines twice.
-                val proc = ProcessBuilder("logcat", "-v", "threadtime", "--pid=$pid", "-T", "1")
+                val from = copiedUntil ?: "1" // first time: from now on
+                val proc = ProcessBuilder("logcat", "-v", "threadtime", "--pid=$pid", "-T", from)
                     .redirectErrorStream(true).start()
                 proc.inputStream.bufferedReader().useLines { lines ->
-                    lines.forEach { append(it) }
+                    lines.forEach { line ->
+                        val stamp = stampOf(line)
+                        when {
+                            line.startsWith("read: unexpected EOF") || line.startsWith("--------- beginning of") -> {}
+                            // Written to the file directly already (event).
+                            line.contains(" $EVENT_TAG: ") -> stamp?.let { lastStamp = it }
+                            // The restart repeats lines up to its start time.
+                            stamp != null && copiedUntil != null && stamp <= copiedUntil -> {}
+                            else -> {
+                                append(line)
+                                if (stamp != null) lastStamp = stamp
+                            }
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "logcat copy stopped", e)
             }
-            Thread.sleep(2_000)
+            restarts++
+            // A stream that keeps dying at once is retried more slowly.
+            delayMs = if (System.currentTimeMillis() - startedAt < 10_000) (delayMs * 2).coerceAtMost(30_000) else 2_000
+            append("${stamp()} ---- log stream restarted ($restarts) ----")
+            Thread.sleep(delayMs)
         }
+    }
+
+    @Volatile private var restarts = 0
+    private const val EVENT_TAG = "TurboTextEvent"
+
+    /** "MM-dd HH:mm:ss.SSS" at the start of a threadtime line, or null.
+     *  Compares correctly as text within a year. */
+    internal fun stampOf(line: String): String? =
+        if (line.length >= 18 && line[2] == '-' && line[5] == ' ' && line[8] == ':' && line[14] == '.') line.substring(0, 18) else null
+
+    /**
+     * Something worth keeping even if the log copy breaks (a send and its
+     * result): written straight to the file, and to logcat as usual.
+     */
+    fun event(tag: String, text: String) {
+        Log.i(EVENT_TAG, "$tag: $text")
+        append("${stamp()} $EVENT_TAG $tag: $text")
     }
 
     private fun append(line: String) {
@@ -113,6 +154,7 @@ object AppLog {
             appendLine("Phone: ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
             appendLine("Default texting app: ${if (DefaultSmsRoleHelper.isDefault(context)) "yes" else "NO"}")
             appendLine("Background Helper: ${if (AccessibilityHelper.isServiceEnabled(context)) "on" else "off"}")
+            appendLine("Log: stream restarted $restarts time(s) since TurboText started")
             appendLine("In service: ${if (SendRetry.inService(context)) "yes" else "NO"}; waiting to send: ${SendRetry.waitingCount(context)}")
             for (p in listOf(
                 "READ_SMS", "SEND_SMS", "RECEIVE_SMS", "RECEIVE_MMS", "RECEIVE_WAP_PUSH",

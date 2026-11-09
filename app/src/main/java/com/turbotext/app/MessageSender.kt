@@ -92,9 +92,11 @@ object MessageSender {
                 }
             }.also { makeNamesUnique(it) }
         } catch (e: AttachmentPolicy.TooLargeException) {
+            AppLog.event("Attach", "not sent: ${e.message}")
             return e.message ?: "Attachment too large"
         } catch (e: Exception) {
             Log.e(TAG, "couldn't prepare attachment", e)
+            AppLog.event("Attach", "not sent: couldn't prepare the attachment: ${e.javaClass.simpleName}: ${e.message}")
             return "Couldn't prepare the attachment: ${e.message}"
         }
 

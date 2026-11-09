@@ -8,7 +8,10 @@ import android.os.Bundle
  *  MessageCache at startup. Bounded because this runs sequentially and a
  *  real log capture on a low-end device (Kyocera E4610, 157 conversations)
  *  showed it still running 90+ seconds in, contending with real usage. */
-private const val PREWARM_THREAD_LIMIT = 25
+/** Threads (and groups) whose messages are loaded ahead at startup. Was
+ *  25 each; on the E4810 that kept the message store busy for minutes,
+ *  holding up anything the user did, sending included. */
+private const val PREWARM_THREAD_LIMIT = 10
 
 /**
  * Parsing the ~3,000-word T9 dictionary takes real time on this phone's
@@ -214,8 +217,10 @@ class TurboTextApplication : Application() {
                 // cap still open fine, just via a normal (not instant)
                 // load instead of a cache hit. Already sorted most-recent
                 // first, so this keeps the head start where it matters.
+                // Behind anything the user is doing.
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
                 for (convo in conversations.take(PREWARM_THREAD_LIMIT)) {
-                    MessageCache.put(convo.threadId, repo.getMessages(convo.threadId))
+                    prewarmThread(repo, convo.threadId)
                     count++
                 }
                 android.util.Log.i("TurboTextPerf", "prewarmed $count conversation threads: ${System.currentTimeMillis() - t2}ms")
@@ -224,12 +229,20 @@ class TurboTextApplication : Application() {
                 val groups = repo.getGroupThreads()
                 GroupThreadsCache.put(groups)
                 for (group in groups.take(PREWARM_THREAD_LIMIT)) {
-                    MessageCache.put(group.threadId, repo.getMessages(group.threadId))
+                    prewarmThread(repo, group.threadId)
                 }
                 android.util.Log.i("TurboTextPerf", "prewarmed ${minOf(groups.size, PREWARM_THREAD_LIMIT)} group threads: ${System.currentTimeMillis() - t3}ms")
             } catch (e: Exception) {
                 android.util.Log.w("TurboTextPerf", "thread prewarm failed (harmless, just means no head start)", e)
             }
         }.start()
+    }
+
+    /** Loads one thread into MessageCache, noting it in the log if slow. */
+    private fun prewarmThread(repo: SmsRepository, threadId: Long) {
+        val t = System.currentTimeMillis()
+        MessageCache.put(threadId, repo.getMessages(threadId))
+        val took = System.currentTimeMillis() - t
+        if (took > 2_000) android.util.Log.i("TurboTextPerf", "prewarm: thread $threadId took ${took}ms")
     }
 }

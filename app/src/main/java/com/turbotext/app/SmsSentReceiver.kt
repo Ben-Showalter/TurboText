@@ -79,7 +79,7 @@ class SmsSentReceiver : android.content.BroadcastReceiver() {
         val newType = partResult(rowUriString, partIndex, partCount, resultCode == Activity.RESULT_OK)
             ?: return // more parts still to report
         if (newType == Telephony.Sms.MESSAGE_TYPE_FAILED) {
-            Log.w("TurboTextSend", "text ${rowUri.lastPathSegment} failed: result $resultCode")
+            AppLog.event("Sms", "text ${rowUri.lastPathSegment} failed: result $resultCode")
             // No signal: wait for it and send again (SendRetry) rather
             // than leave it failed.
             if (isNoService(context, resultCode)) {

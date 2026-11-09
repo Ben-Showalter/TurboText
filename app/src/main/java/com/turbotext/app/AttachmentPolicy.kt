@@ -155,7 +155,7 @@ object AttachmentPolicy {
         }
         bitmap.recycle()
         if (data.size > budget) throw TooLargeException("Couldn't shrink the picture enough to send")
-        Log.i(TAG, "picture ready: ${data.size}B at q$quality (budget ${budget}B)")
+        AppLog.event("Attach", "picture ready: ${data.size}B at q$quality (budget ${budget}B)")
         return part("image_${System.currentTimeMillis()}.jpg", "image/jpeg", data)
     }
 
