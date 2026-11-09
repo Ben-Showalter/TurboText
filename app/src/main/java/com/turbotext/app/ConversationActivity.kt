@@ -23,6 +23,7 @@ class ConversationActivity : AppCompatActivity() {
          *  (OutgoingAttachment.toHandoff) to put in the compose box. */
         const val EXTRA_PREFILL_TEXT = "prefill_text"
         const val EXTRA_PREFILL_ATTACHMENTS = "prefill_attachments"
+        private const val REQ_SEARCH = 630
     }
 
     private lateinit var repo: SmsRepository
@@ -307,13 +308,14 @@ class ConversationActivity : AppCompatActivity() {
             arrayOf("Choose Picture or Video", "Take Photo", "Record Audio", "Attach", "Remove Attachment", "Paste")
         } else {
             arrayOf("Choose Picture or Video", "Take Photo", "Record Audio", "Attach", "Paste")
-        }) + arrayOf("Send Later") + (if (address.contains(',')) arrayOf("Show Members") else emptyArray())
+        }) + arrayOf("Search Messages", "Send Later") + (if (address.contains(',')) arrayOf("Show Members") else emptyArray())
         AlertDialog.Builder(this)
             .setTitle("Options")
             .setItems(options) { _, which ->
                 when (options[which]) {
                     "Choose Picture or Video" -> picker.pickFromGallery()
                     "Send Later" -> scheduleCurrentMessage()
+                    "Search Messages" -> askSearch()
                     "Show Members" -> GroupMembers.show(
                         this, threadId, findViewById<TextView>(R.id.contactName).text.toString()
                     )
@@ -695,6 +697,7 @@ class ConversationActivity : AppCompatActivity() {
     }
 
     private fun exitSelectionMode() {
+        endSearch()
         selectedMessageIndex = null
         messageAdapter.setSelectedPosition(null)
         inputController.startCursorBlink()
@@ -721,6 +724,10 @@ class ConversationActivity : AppCompatActivity() {
     private fun handleSelectionModeKey(event: KeyEvent): Boolean {
         val index = selectedMessageIndex ?: return true
         when (event.keyCode) {
+            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                if (searchQuery != null) stepSearch(older = event.keyCode == KeyEvent.KEYCODE_DPAD_LEFT)
+                return true
+            }
             KeyEvent.KEYCODE_DPAD_UP -> {
                 stepSelection(-1)
                 return true
@@ -738,7 +745,8 @@ class ConversationActivity : AppCompatActivity() {
                 return true
             }
             KeyEvent.KEYCODE_DEL, KeyEvent.KEYCODE_BACK -> {
-                finish()
+                // Clear first ends a search, back to typing.
+                if (searchQuery != null) exitSelectionMode() else finish()
                 return true
             }
             else -> return true
@@ -765,7 +773,92 @@ class ConversationActivity : AppCompatActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_SEARCH) {
+            val query = data?.getStringExtra(TextEntryActivity.EXTRA_RESULT_TEXT)?.trim()
+            if (resultCode == android.app.Activity.RESULT_OK && !query.isNullOrEmpty()) startSearch(query)
+            return
+        }
         picker.handleResult(requestCode, resultCode, data)
+    }
+
+    // ---- Search Messages ----
+
+    /** The words being searched for, and the matching messages' ids,
+     *  newest first; [searchAt] is the one shown. Null when not searching. */
+    private var searchQuery: String? = null
+    private var searchMatches: List<Long> = emptyList()
+    private var searchAt = 0
+
+    private fun askSearch() {
+        val intent = android.content.Intent(this, TextEntryActivity::class.java)
+        intent.putExtra(TextEntryActivity.EXTRA_TITLE, "Search this conversation")
+        intent.putExtra(TextEntryActivity.EXTRA_INITIAL_TEXT, searchQuery ?: "")
+        startActivityForResult(intent, REQ_SEARCH)
+    }
+
+    /** Finds [query] in this conversation's messages (any case) and jumps
+     *  to the newest one; Left/Right then step to older/newer matches. */
+    private fun startSearch(query: String) {
+        // The whole history, not only what's on screen: a conversation
+        // first shows its newest messages while the rest loads.
+        if (MessageCache.get(threadId) == null) {
+            Toast.makeText(this, "Searching…", Toast.LENGTH_SHORT).show()
+            Thread {
+                val full = repo.getMessages(threadId)
+                MessageCache.put(threadId, full)
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    showMessages(full)
+                    if (MessageCache.get(threadId) != null) startSearch(query)
+                }
+            }.start()
+            return
+        }
+        val items = messageAdapter.currentItems()
+        val matches = MessageSearch.matches(items, query)
+        if (matches.isEmpty()) {
+            endSearch()
+            Toast.makeText(this, "No messages with \"$query\"", Toast.LENGTH_SHORT).show()
+            return
+        }
+        searchQuery = query
+        searchMatches = matches
+        searchAt = 0
+        showSearchMatch()
+    }
+
+    /** Selects and scrolls to match [searchAt], and says which it is. */
+    private fun showSearchMatch() {
+        val id = searchMatches.getOrNull(searchAt) ?: return
+        val real = messageAdapter.currentItems().indexOfFirst { it.id == id }
+        if (real < 0) return
+        val position = if (messageAdapter.hasLoadMoreRow()) real + 1 else real
+        inputController.stopCursorBlink()
+        setComposeAreaVisible(false)
+        selectedMessageIndex = position
+        messageAdapter.setSelectedPosition(position)
+        messageList.scrollToPosition(position)
+        listeningIndicator.text = "🔍 \"$searchQuery\": ${searchAt + 1} of ${searchMatches.size}  ◀ older  newer ▶"
+        listeningIndicator.visibility = View.VISIBLE
+    }
+
+    /** Left (older) / Right (newer) while a search is showing. */
+    private fun stepSearch(older: Boolean) {
+        if (searchMatches.isEmpty()) return
+        val next = if (older) searchAt + 1 else searchAt - 1
+        if (next !in searchMatches.indices) {
+            Toast.makeText(this, if (older) "No older matches" else "No newer matches", Toast.LENGTH_SHORT).show()
+            return
+        }
+        searchAt = next
+        showSearchMatch()
+    }
+
+    private fun endSearch() {
+        if (searchQuery == null) return
+        searchQuery = null
+        searchMatches = emptyList()
+        listeningIndicator.visibility = View.GONE
     }
 
     private fun sendCurrentMessage() {
