@@ -848,9 +848,10 @@ class ConversationActivity : AppCompatActivity() {
     }
 
     /** The line under the messages: the magnifying glass (ic_search),
-     *  then '"dinner"  2 of 5   ◀ older   newer ▶'. */
+     *  then '"dinner"  2 of 5', and '◀ older   newer ▶' under it. */
     private fun searchLine(): CharSequence {
-        val text = "  \"$searchQuery\"  ${searchAt + 1} of ${searchMatches.size}   ◀ older   newer ▶"
+        // Two lines, so the keys' hint never wraps in the middle.
+        val text = "  \"$searchQuery\"  ${searchAt + 1} of ${searchMatches.size}\n◀ older      newer ▶"
         val line = android.text.SpannableString(text)
         androidx.core.content.ContextCompat.getDrawable(this, R.drawable.ic_search)?.mutate()?.let { icon ->
             val size = (listeningIndicator.textSize * 1.1f).toInt()
