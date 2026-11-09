@@ -150,7 +150,36 @@ class ConversationActivity : AppCompatActivity() {
     // these queries were the main cause of the app feeling slow/freezing,
     // especially switching between screens.
 
+    /** Only the newest of overlapping loads/refreshes is shown. */
+    private val loadGate = RefreshGate()
+
+    /**
+     * A message arrived or changed (sent, delivered…): read only the
+     * thread's newest messages and merge them in (MessageCache.refreshRecent)
+     * — under a second, where re-reading the whole history took up to
+     * 19 s on a long thread and the new message waited for it. A thread
+     * not loaded yet gets the full load.
+     */
+    private fun refreshLatest() {
+        if (MessageCache.get(threadId) == null) {
+            loadMessages()
+            return
+        }
+        val ticket = loadGate.start()
+        val started = System.currentTimeMillis()
+        val app = applicationContext
+        Thread {
+            val merged = MessageCache.refreshRecent(app, threadId) ?: return@Thread
+            runOnUiThread {
+                if (isFinishing || isDestroyed || !loadGate.isLatest(ticket)) return@runOnUiThread
+                showMessages(merged)
+                android.util.Log.i("TurboTextPerf", "live refresh: ${merged.size} messages in ${System.currentTimeMillis() - started}ms")
+            }
+        }.start()
+    }
+
     private fun loadMessages() {
+        val ticket = loadGate.start()
         val openedAt = System.currentTimeMillis()
         android.util.Log.i("TurboTextPerf", "loadMessages() started, threadId=$threadId")
 
@@ -172,7 +201,7 @@ class ConversationActivity : AppCompatActivity() {
                 val recent = repo.getRecentMessages(threadId, 12)
                 android.util.Log.i("TurboTextPerf", "fast query done: ${System.currentTimeMillis() - openedAt}ms, got ${recent.size} messages")
                 runOnUiThread {
-                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    if (isFinishing || isDestroyed || !loadGate.isLatest(ticket)) return@runOnUiThread
                     showMessages(recent)
                 }
             }
@@ -183,11 +212,21 @@ class ConversationActivity : AppCompatActivity() {
             // query regardless of how much it returns, so loading in
             // smaller batches didn't meaningfully help and just added an
             // extra tap.)
-            val full = repo.getMessages(threadId)
-            android.util.Log.i("TurboTextPerf", "full query done: ${System.currentTimeMillis() - openedAt}ms, got ${full.size} messages")
+            val read = repo.getMessages(threadId)
+            android.util.Log.i("TurboTextPerf", "full query done: ${System.currentTimeMillis() - openedAt}ms, got ${read.size} messages")
+            // A long read can miss what arrived while it ran: fold the
+            // newest messages in again before showing it.
+            val full = MessageMerge.merge(read, repo.getRecentMessages(threadId, 30))
+            if (!loadGate.isLatest(ticket)) {
+                // A live refresh ran meanwhile; keep its newest messages too.
+                MessageCache.get(threadId)?.let { newer ->
+                    MessageCache.put(threadId, MessageMerge.merge(full, newer.takeLast(30)))
+                } ?: MessageCache.put(threadId, full)
+                return@Thread
+            }
             MessageCache.put(threadId, full)
             runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (isFinishing || isDestroyed || !loadGate.isLatest(ticket)) return@runOnUiThread
                 showMessages(full)
                 android.util.Log.i("TurboTextPerf", "rendered: ${System.currentTimeMillis() - openedAt}ms")
             }
@@ -1177,7 +1216,7 @@ class ConversationActivity : AppCompatActivity() {
     private var messageObserver: android.database.ContentObserver? = null
     private val reloadHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val reloadRunnable = Runnable {
-        loadMessages()
+        refreshLatest()
         SoundNotificationHelper.acknowledge(this, notificationKey())
     }
 

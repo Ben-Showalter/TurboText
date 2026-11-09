@@ -175,8 +175,10 @@ class MmsSentReceiver : BroadcastReceiver() {
                 val threadId = context.contentResolver.query(uri, arrayOf(Telephony.Mms.THREAD_ID), null, null, null)
                     ?.use { if (it.moveToFirst()) it.getLong(0) else null }
                 if (threadId != null) {
-                    MessageCache.put(threadId, SmsRepository(context).getMessages(threadId))
+                    // Told first; then only the newest messages are read into
+                    // the cache (a long thread's whole history took seconds).
                     MessageEvents.changed(threadId)
+                    MessageCache.refreshRecent(context, threadId)
                 }
                 ProviderChangeTracker.bump()
             } catch (e: Exception) {

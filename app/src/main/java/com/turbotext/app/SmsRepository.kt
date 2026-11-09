@@ -1229,8 +1229,10 @@ class SmsRepository(private val context: Context) {
         }
 
         if (threadId != null) {
-            MessageCache.put(threadId, getMessages(threadId))
+            // Told first; then only the newest messages are read into
+            // the cache (a long thread's whole history took seconds).
             MessageEvents.changed(threadId)
+            MessageCache.refreshRecent(context, threadId)
         }
         return rowUri
     }

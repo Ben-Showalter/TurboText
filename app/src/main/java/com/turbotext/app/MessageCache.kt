@@ -19,4 +19,29 @@ object MessageCache {
     fun remove(threadId: Long) {
         cache.remove(threadId)
     }
+
+    /** How many of the newest messages a live update reads. */
+    private const val RECENT = 30
+
+    /**
+     * Brings a cached thread up to date by reading only its newest
+     * messages and merging them in (MessageMerge) — well under a second,
+     * where reading a long thread's whole history took up to 19 s and a
+     * new message only appeared after it. Returns the merged list, or
+     * null if the thread isn't cached (it's read in full when opened).
+     * Off the main thread.
+     */
+    fun refreshRecent(context: android.content.Context, threadId: Long): List<Message>? {
+        val existing = cache[threadId] ?: return null
+        val recent = SmsRepository(context).getRecentMessages(threadId, RECENT)
+        val merged = MessageMerge.merge(existing, recent)
+        // Another refresh may have stored a newer list meanwhile; merging
+        // into whatever is there now keeps both.
+        synchronized(cache) {
+            val now = cache[threadId] ?: return merged
+            val result = if (now === existing) merged else MessageMerge.merge(now, recent)
+            cache[threadId] = result
+            return result
+        }
+    }
 }

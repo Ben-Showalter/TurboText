@@ -110,8 +110,10 @@ object MmsReceivePostProcessor {
             repo.removeStaleMmsNotices()
             if (tid != null) {
                 try {
-                    MessageCache.put(tid, repo.getMessages(tid))
+                    // Told first; then only the newest messages are read into
+                    // the cache (a long thread's whole history took seconds).
                     MessageEvents.changed(tid)
+                    MessageCache.refreshRecent(context, tid)
                 } catch (e: Exception) {
                     Log.w(TAG, "failed to refresh cache for new MMS", e)
                 }
