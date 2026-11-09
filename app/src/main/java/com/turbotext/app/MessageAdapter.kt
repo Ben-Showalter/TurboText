@@ -54,6 +54,31 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
     private var playingAudioId: Long? = null
 
     private var theme: AppTheme? = null
+
+    /** Words of the search being shown (Search Messages), highlighted in
+     *  every bubble's text; empty when not searching. */
+    var searchWords: List<String> = emptyList()
+        set(value) {
+            if (field == value) return
+            field = value
+            notifyDataSetChanged()
+        }
+
+    /** [text] with every search word marked: the accent as background,
+     *  bold, in the bubble's own colour so it stands out. */
+    private fun highlight(text: CharSequence, theme: AppTheme): CharSequence {
+        if (searchWords.isEmpty()) return text
+        val ranges = MessageSearch.ranges(text, searchWords)
+        if (ranges.isEmpty()) return text
+        val span = android.text.SpannableString(text)
+        for (range in ranges) {
+            val end = range.last + 1
+            span.setSpan(android.text.style.BackgroundColorSpan(theme.accent), range.first, end, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+            span.setSpan(android.text.style.ForegroundColorSpan(theme.background), range.first, end, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+            span.setSpan(android.text.style.StyleSpan(android.graphics.Typeface.BOLD), range.first, end, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        return span
+    }
     private var attachedTo: RecyclerView? = null
 
     override fun onAttachedToRecyclerView(rv: RecyclerView) { attachedTo = rv }
@@ -308,7 +333,7 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
                     holder.morePhotosBadge.visibility = View.VISIBLE
                 }
                 holder.text.visibility = if (msg.body.isNotEmpty()) View.VISIBLE else View.GONE
-                holder.text.text = msg.body
+                holder.text.text = highlight(msg.body, theme)
             }
             msg.videoUri != null -> {
                 holder.imageFrame.visibility = View.VISIBLE
@@ -316,7 +341,7 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
                 val px = (180 * context.resources.displayMetrics.density).toInt()
                 ThumbnailLoader.load(holder.image, msg.videoUri, px, isVideo = true)
                 holder.text.visibility = if (msg.body.isNotEmpty()) View.VISIBLE else View.GONE
-                holder.text.text = msg.body
+                holder.text.text = highlight(msg.body, theme)
             }
             msg.audioUri != null -> {
                 holder.imageFrame.visibility = View.GONE
@@ -333,14 +358,14 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
                     android.text.style.RelativeSizeSpan(2.0f),
                     0, symbol.length, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
                 )
-                holder.text.text = span
+                holder.text.text = highlight(span, theme)
             }
             msg.fileUri != null -> {
                 holder.imageFrame.visibility = View.GONE
                 holder.text.visibility = View.VISIBLE
                 val name = msg.fileName ?: msg.fileMime ?: "File"
                 val caption = if (msg.body.isNotEmpty()) "\n${msg.body}" else ""
-                holder.text.text = "📎 $name\nOK to open$caption"
+                holder.text.text = highlight("📎 $name\nOK to open$caption", theme)
             }
             msg.mmsDownloadPending -> {
                 holder.imageFrame.visibility = View.GONE
@@ -360,7 +385,7 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
             else -> {
                 holder.imageFrame.visibility = View.GONE
                 holder.text.visibility = View.VISIBLE
-                holder.text.text = msg.body
+                holder.text.text = highlight(msg.body, theme)
             }
         }
 

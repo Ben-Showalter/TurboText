@@ -23,7 +23,6 @@ class ConversationActivity : AppCompatActivity() {
          *  (OutgoingAttachment.toHandoff) to put in the compose box. */
         const val EXTRA_PREFILL_TEXT = "prefill_text"
         const val EXTRA_PREFILL_ATTACHMENTS = "prefill_attachments"
-        private const val REQ_SEARCH = 630
     }
 
     private lateinit var repo: SmsRepository
@@ -773,11 +772,6 @@ class ConversationActivity : AppCompatActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQ_SEARCH) {
-            val query = data?.getStringExtra(TextEntryActivity.EXTRA_RESULT_TEXT)?.trim()
-            if (resultCode == android.app.Activity.RESULT_OK && !query.isNullOrEmpty()) startSearch(query)
-            return
-        }
         picker.handleResult(requestCode, resultCode, data)
     }
 
@@ -789,11 +783,9 @@ class ConversationActivity : AppCompatActivity() {
     private var searchMatches: List<Long> = emptyList()
     private var searchAt = 0
 
+    /** The small search box over the conversation (SearchBoxDialog). */
     private fun askSearch() {
-        val intent = android.content.Intent(this, TextEntryActivity::class.java)
-        intent.putExtra(TextEntryActivity.EXTRA_TITLE, "Search this conversation")
-        intent.putExtra(TextEntryActivity.EXTRA_INITIAL_TEXT, searchQuery ?: "")
-        startActivityForResult(intent, REQ_SEARCH)
+        SearchBoxDialog(this, searchQuery ?: "") { query -> startSearch(query) }.show()
     }
 
     /** Finds [query] in this conversation's messages (any case) and jumps
@@ -824,6 +816,7 @@ class ConversationActivity : AppCompatActivity() {
         searchQuery = query
         searchMatches = matches
         searchAt = 0
+        messageAdapter.searchWords = MessageSearch.words(query)
         showSearchMatch()
     }
 
@@ -838,7 +831,7 @@ class ConversationActivity : AppCompatActivity() {
         selectedMessageIndex = position
         messageAdapter.setSelectedPosition(position)
         messageList.scrollToPosition(position)
-        listeningIndicator.text = "🔍 \"$searchQuery\": ${searchAt + 1} of ${searchMatches.size}  ◀ older  newer ▶"
+        listeningIndicator.text = searchLine()
         listeningIndicator.visibility = View.VISIBLE
     }
 
@@ -854,10 +847,28 @@ class ConversationActivity : AppCompatActivity() {
         showSearchMatch()
     }
 
+    /** The line under the messages: the magnifying glass (ic_search),
+     *  then '"dinner"  2 of 5   ◀ older   newer ▶'. */
+    private fun searchLine(): CharSequence {
+        val text = "  \"$searchQuery\"  ${searchAt + 1} of ${searchMatches.size}   ◀ older   newer ▶"
+        val line = android.text.SpannableString(text)
+        androidx.core.content.ContextCompat.getDrawable(this, R.drawable.ic_search)?.mutate()?.let { icon ->
+            val size = (listeningIndicator.textSize * 1.1f).toInt()
+            icon.setBounds(0, 0, size, size)
+            icon.setTint(ThemeHelper.getCurrentTheme(this).accent)
+            line.setSpan(
+                android.text.style.ImageSpan(icon, android.text.style.DynamicDrawableSpan.ALIGN_BOTTOM),
+                0, 1, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+        }
+        return line
+    }
+
     private fun endSearch() {
         if (searchQuery == null) return
         searchQuery = null
         searchMatches = emptyList()
+        messageAdapter.searchWords = emptyList()
         listeningIndicator.visibility = View.GONE
     }
 

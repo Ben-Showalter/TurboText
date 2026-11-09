@@ -18,4 +18,16 @@ class MessageSearchTest {
         assertEquals(listOf(2L), MessageSearch.matches(messages, "plans"))
         assertEquals(emptyList<Long>(), MessageSearch.matches(messages, "   "))
     }
+
+    @Test
+    fun highlightRangesAnyCaseJoinedAndRepeated() {
+        assertEquals(listOf(0..5, 10..15), MessageSearch.ranges("Dinner at DINNER", listOf("dinner")))
+        // "sun" and "sunday" overlap: one highlight.
+        assertEquals(listOf(0..5), MessageSearch.ranges("Sunday", listOf("sun", "sunday")))
+        // Touching words join; separate ones don't.
+        assertEquals(listOf(0..3, 5..7), MessageSearch.ranges("abcd efg", listOf("ab", "cd", "efg")))
+        assertEquals(emptyList<IntRange>(), MessageSearch.ranges("", listOf("a")))
+        assertEquals(emptyList<IntRange>(), MessageSearch.ranges("abc", emptyList()))
+        assertEquals(listOf("dinner", "sunday"), MessageSearch.words("  Dinner   SUNDAY "))
+    }
 }
