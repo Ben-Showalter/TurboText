@@ -115,7 +115,7 @@ class NotificationSettingsActivity : AppCompatActivity() {
 
     /** Every sound from [source]. Each one plays as the highlight moves
      *  onto it while scrolling; picking one (OK) makes it the sound. The
-     *  list stays open to try others; Done or Clear closes it, keeping
+     *  list stays open to try others; Back (Clear) closes it, keeping
      *  the last one picked. */
     private fun soundList(source: NotificationSounds.Source) {
         val sounds = NotificationSounds.all(this, source)
@@ -132,7 +132,6 @@ class NotificationSettingsActivity : AppCompatActivity() {
                 SoundNotificationHelper.preview(this, chosen.ref)
                 updateSoundRowLabel()
             }
-            .setPositiveButton("Done", null)
             .setOnDismissListener { previewHandler.removeCallbacksAndMessages(null); SoundNotificationHelper.stopPreview() }
             .create()
         // Play each sound as the D-pad highlight reaches it, after a short
