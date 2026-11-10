@@ -33,7 +33,7 @@ There are two methods for entering the API key into the app.
 
 2.	Copy and paste the key into the text file found in: Internal storage/Turbo key/
 3.	You can set the key remotely by sending it from a Phone number that matches what you enter in step 1.-c Above. The API key needs encoded using Base64 format (base64encode.org) then prefixed like follows: TURBOVOICE_SETUP:put your encoded api key here. Send this encoded and prefixed text to the phone that you are setting up, TurboText will read it and the Speech-to-text and translation should start working. (You should not see the text come into the phone. The app scraps it and does not let you see it.)
-4.	There are half a dozen sounds for the notifications by default, but you can add more also: Internal storage/notifications . (.mp3 and .ogg files are supported.) 
+4.	Notification sounds (options/settings/Notifications): pick from the phone's own sounds, 75 sounds built into TurboText (the Android Open Source Project's notification sounds, Apache License 2.0, see app/src/main/assets/sounds/NOTICE.txt), or your own files in Internal storage/notifications (.mp3, .ogg and .wav). 
 
 Updates:
 

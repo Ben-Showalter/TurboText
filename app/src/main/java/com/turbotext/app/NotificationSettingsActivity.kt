@@ -87,27 +87,51 @@ class NotificationSettingsActivity : AppCompatActivity() {
         notificationSoundRow.text = if (path == null) {
             "Notification Sound: No Sound"
         } else {
-            "Notification Sound: ${File(path).nameWithoutExtension}"
+            "Notification Sound: ${NotificationSounds.nameOf(this, path)}"
         }
     }
 
+    /** First where from: the phone's own sounds, TurboText's built-in
+     *  ones, or your own files — then the sounds there (soundList). */
     private fun showSoundPicker() {
-        if (promptForAllFilesAccess()) return
-        val sounds = SoundNotificationHelper.listAvailableSounds()
-        val options = mutableListOf("No Sound")
-        options.addAll(sounds.map { it.nameWithoutExtension })
+        val sources = NotificationSounds.Source.values()
+        val counts = sources.map { NotificationSounds.all(this, it).size }
+        val options = listOf("No Sound") + sources.mapIndexed { i, src -> "${src.label} (${counts[i]})" }
         AlertDialog.Builder(this)
             .setTitle("Notification Sound")
             .setItems(options.toTypedArray()) { _, which ->
                 if (which == 0) {
                     SettingsHelper.setNotificationSoundPath(this, null)
+                    updateSoundRowLabel()
                 } else {
-                    val chosen = sounds[which - 1]
-                    SettingsHelper.setNotificationSoundPath(this, chosen.absolutePath)
-                    SoundNotificationHelper.playSound(this, chosen.absolutePath)
+                    val source = sources[which - 1]
+                    // Only your own folder needs "All files access".
+                    if (source == NotificationSounds.Source.MY_FILES && promptForAllFilesAccess()) return@setItems
+                    soundList(source)
                 }
+            }
+            .show()
+    }
+
+    /** Every sound from [source]. Picking one plays it and makes it the
+     *  sound right away, and the list stays open to try others; Clear
+     *  closes it, keeping the last one picked. */
+    private fun soundList(source: NotificationSounds.Source) {
+        val sounds = NotificationSounds.all(this, source)
+        if (sounds.isEmpty()) {
+            android.widget.Toast.makeText(this, "No sounds there", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        val current = SettingsHelper.getNotificationSoundPath(this)
+        AlertDialog.Builder(this)
+            .setTitle(source.label)
+            .setSingleChoiceItems(sounds.map { it.name }.toTypedArray(), sounds.indexOfFirst { it.ref == current }) { _, which ->
+                val chosen = sounds[which]
+                SettingsHelper.setNotificationSoundPath(this, chosen.ref)
+                SoundNotificationHelper.playSound(this, chosen.ref)
                 updateSoundRowLabel()
             }
+            .setPositiveButton("Done", null)
             .show()
     }
 

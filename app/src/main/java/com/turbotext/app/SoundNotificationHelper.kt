@@ -93,10 +93,10 @@ object SoundNotificationHelper {
         CoverScreenNotifier.notify(context, address.hashCode(), coverText)
 
         if (soundPath != null && level == DndHelper.Level.FULL) {
-            if (File(soundPath).exists()) {
+            if (NotificationSounds.exists(context, soundPath)) {
                 playSoundWithWakeup(context, soundPath)
             } else {
-                Log.w(TAG, "configured sound file no longer exists: $soundPath")
+                Log.w(TAG, "configured sound no longer exists: $soundPath")
             }
         }
         if (vibratePattern != null && level != DndHelper.Level.SILENT) {
@@ -184,7 +184,8 @@ object SoundNotificationHelper {
                         .build()
                 )
             }
-            mp.setDataSource(path)
+            // A file, a built-in sound or one of the phone's own.
+            NotificationSounds.setDataSource(context, mp, path)
             mp.setOnCompletionListener { it.release() }
             mp.setOnErrorListener { player, _, _ -> player.release(); true }
             mp.prepare()
