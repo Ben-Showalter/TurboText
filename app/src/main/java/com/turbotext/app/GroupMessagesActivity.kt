@@ -317,9 +317,9 @@ class GroupMessagesActivity : AppCompatActivity() {
     private fun showOptions() {
         val group = focusedGroup
         val options = if (group != null) {
-            arrayOf("Show Members", "Nickname Group", "Add Person to Group", "Mark All as Read", "Archive All Groups", "Move to Trash")
+            arrayOf("Show Members", "Nickname Group", "Add Person to Group", "Mark All as Read", "Move to Trash")
         } else {
-            arrayOf("New Group Message", "Mark All as Read", "Archive All Groups")
+            arrayOf("New Group Message", "Mark All as Read")
         }
         AlertDialog.Builder(this)
             .setTitle("Options")
@@ -329,7 +329,6 @@ class GroupMessagesActivity : AppCompatActivity() {
                     "Nickname Group" -> group?.let { promptNickname(it) }
                     "Add Person to Group" -> group?.let { addPersonToGroup(it) }
                     "Mark All as Read" -> ReadAll.run(this) { loadGroups() }
-                    "Archive All Groups" -> archiveAllGroups()
                     "Move to Trash" -> group?.let { trashGroup(it) }
                     "New Group Message" -> startNewGroup()
                 }
@@ -362,51 +361,6 @@ class GroupMessagesActivity : AppCompatActivity() {
                     val groups = repo.getGroupThreads()
                     runOnUiThread { if (!isFinishing && !isDestroyed) show(groups) }
                 }.start()
-            }
-        }.start()
-    }
-
-    /** Same mechanism as the main conversation list's archive-all — one
-     *  combined plain-text file covering every group conversation, in
-     *  Internal Storage/Documents/Archived conversations/, browsable
-     *  outside the app. */
-    private fun archiveAllGroups() {
-        Thread {
-            try {
-                val groups = repo.getGroupThreads()
-                val documentsDir = android.os.Environment.getExternalStoragePublicDirectory(
-                    android.os.Environment.DIRECTORY_DOCUMENTS
-                )
-                val dir = java.io.File(documentsDir, "Archived conversations")
-                dir.mkdirs()
-                for (group in groups) {
-                    val messages = repo.getMessages(group.threadId)
-                    val safeName = group.displayName.replace(Regex("[^A-Za-z0-9]"), "_")
-                    val file = java.io.File(dir, "${safeName}_${System.currentTimeMillis()}.txt")
-                    val sb = StringBuilder()
-                    sb.append("Group conversation: ${group.displayName} (${group.address})\n")
-                    sb.append("Archived: ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date())}\n\n")
-                    for (msg in messages) {
-                        val who = if (msg.isOutgoing) "Me" else (msg.senderName ?: group.displayName)
-                        val time = java.text.DateFormat.getDateTimeInstance(
-                            java.text.DateFormat.SHORT, java.text.DateFormat.SHORT
-                        ).format(java.util.Date(msg.date))
-                        sb.append("[$time] $who: ${msg.body}\n")
-                        if (msg.imageUri != null) sb.append("  [Picture attached — not included in this text archive]\n")
-                    }
-                    file.writeText(sb.toString())
-                }
-                runOnUiThread {
-                    if (!isFinishing && !isDestroyed) {
-                        Toast.makeText(this, "Archived ${groups.size} groups to ${dir.absolutePath}", Toast.LENGTH_LONG).show()
-                    }
-                }
-            } catch (e: Exception) {
-                runOnUiThread {
-                    if (!isFinishing && !isDestroyed) {
-                        Toast.makeText(this, "Archive failed: ${e.message}", Toast.LENGTH_LONG).show()
-                    }
-                }
             }
         }.start()
     }

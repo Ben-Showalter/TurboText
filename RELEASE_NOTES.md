@@ -14,6 +14,11 @@
 - Options > Mark All as Read, on the conversation and group lists.
 - Picture and group messages are received again. TurboText now asks for Android's "receive picture messages" permission at startup. It could be missing, and then Android silently dropped every incoming picture message, group message and picture delivery report.
 - No signal? Texts and picture messages now wait and are sent again on their own once the phone has service. Their bubble says "Waiting for signal". If there's still no signal after a day, the message shows "Failed" and a notification tells you.
+- New: Settings > Archive Options.
+  - **Archive All Conversations** (moved from the conversation and Groups lists) saves every conversation, groups included, to `Documents/Archived conversations/<date time>`.
+    - Pictures, videos, voice messages and files are saved too, in `media/`.
+    - On a PC, open `Open me.html` to read every conversation as message bubbles with the pictures shown, or the plain-text copies in `conversations/`.
+  - **Import Archived Conversations** puts an archive back exactly: numbers, dates, sent and received, and picture messages with their pictures. Anything already on the phone is skipped, so importing twice adds nothing. Archives made before this version can't be imported.
 - New: Contact Options, in the conversation list's Options. Highlight a conversation and choose:
   - **Add to Contacts:** moved here from the main Options list.
   - **Special Notification Sound:** a sound for just that person or group. It also plays on repeats. "Use default sound" removes it.

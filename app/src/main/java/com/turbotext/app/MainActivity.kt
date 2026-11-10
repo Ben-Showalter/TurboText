@@ -394,9 +394,9 @@ class MainActivity : AppCompatActivity() {
         // move the highlight, center/OK selects) — no touch needed.
         val convo = focusedConversation
         val options = if (convo != null) {
-            arrayOf("Mark All as Read", "Move to Trash", "Archive All Conversations", "Contact Options", "Trash Bin", "Settings")
+            arrayOf("Mark All as Read", "Move to Trash", "Contact Options", "Trash Bin", "Settings")
         } else {
-            arrayOf("Mark All as Read", "Archive All Conversations", "Trash Bin", "Settings")
+            arrayOf("Mark All as Read", "Trash Bin", "Settings")
         }
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Options")
@@ -405,7 +405,6 @@ class MainActivity : AppCompatActivity() {
                 when (choice) {
                     "Mark All as Read" -> ReadAll.run(this) { refreshConversations() }
                     "Move to Trash" -> convo?.let { trashConversation(it) }
-                    "Archive All Conversations" -> archiveAllConversations()
                     "Contact Options" -> convo?.let { showContactOptions(it) }
                     "Trash Bin" -> startActivity(Intent(this, TrashBinActivity::class.java))
                     "Settings" -> startActivity(Intent(this, SettingsActivity::class.java))
@@ -492,44 +491,7 @@ class MainActivity : AppCompatActivity() {
      *  own sandboxed storage. Each run gets its own dated subfolder so
      *  archiving again later doesn't mix this batch's files in with an
      *  earlier one. */
-    private fun archiveAllConversations() {
-        Thread {
-            try {
-                val conversations = repo.getConversations()
-                val documentsDir = android.os.Environment.getExternalStoragePublicDirectory(
-                    android.os.Environment.DIRECTORY_DOCUMENTS
-                )
-                val todayFolder = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
-                    .format(java.util.Date())
-                val dir = java.io.File(java.io.File(documentsDir, "Archived conversations"), todayFolder)
-                dir.mkdirs()
-                for (convo in conversations) {
-                    val messages = repo.getMessages(convo.threadId)
-                    val safeName = convo.displayName.replace(Regex("[^A-Za-z0-9]"), "_")
-                    val file = java.io.File(dir, "${safeName}_${System.currentTimeMillis()}.txt")
-                    val sb = StringBuilder()
-                    sb.append("Conversation with ${convo.displayName} (${convo.address})\n")
-                    sb.append("Archived: ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date())}\n\n")
-                    for (msg in messages) {
-                        val who = if (msg.isOutgoing) "Me" else convo.displayName
-                        val time = java.text.DateFormat.getDateTimeInstance(
-                            java.text.DateFormat.SHORT, java.text.DateFormat.SHORT
-                        ).format(java.util.Date(msg.date))
-                        sb.append("[$time] $who: ${msg.body}\n")
-                        if (msg.imageUri != null) sb.append("  [Picture attached — not included in this text archive]\n")
-                    }
-                    file.writeText(sb.toString())
-                }
-                runOnUiThread {
-                    android.widget.Toast.makeText(this, "Archived ${conversations.size} conversations to ${dir.absolutePath}", android.widget.Toast.LENGTH_LONG).show()
-                }
-            } catch (e: Exception) {
-                runOnUiThread {
-                    android.widget.Toast.makeText(this, "Archive failed: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
-                }
-            }
-        }.start()
-    }
+    // Archiving moved to Settings > Archive Options (ArchiveManager).
 
     // Physical softkeys on most feature-style Android phones map to these keycodes.
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {

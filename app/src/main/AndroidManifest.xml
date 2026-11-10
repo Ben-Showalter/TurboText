@@ -8,7 +8,10 @@
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.RECEIVE_MMS" />
     <uses-permission android:name="android.permission.RECEIVE_WAP_PUSH" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+    <!-- Writing archives (Settings > Archive Options) to Documents: up to
+         Android 10, with requestLegacyExternalStorage below; Android 11+
+         uses All files access. -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
     <!-- Reading the phone's pictures and videos for Choose Picture or
          Video (MediaPickerActivity): READ_EXTERNAL_STORAGE up to Android
          12, the READ_MEDIA_* pair from 13. -->
@@ -77,7 +80,8 @@
         android:allowBackup="true"
         android:label="@string/app_name"
         android:icon="@drawable/ic_launcher_square"
-        android:theme="@style/Theme.TurboText">
+        android:theme="@style/Theme.TurboText"
+        android:requestLegacyExternalStorage="true">
 
         <!-- Conversation list: also the entry point when picked as default SMS handler.
              singleTask (not singleTop) so re-launching from outside the app — the

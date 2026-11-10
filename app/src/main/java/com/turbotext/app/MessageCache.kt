@@ -20,6 +20,10 @@ object MessageCache {
         cache.remove(threadId)
     }
 
+    fun clear() {
+        cache.clear()
+    }
+
     /** How many of the newest messages a live update reads. */
     private const val RECENT = 30
 

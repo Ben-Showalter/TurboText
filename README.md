@@ -16,7 +16,7 @@ Key features:
 
 •	Translation to English of incoming texts to most languages.
 
-•	Archives all conversations with a click of a button. 
+•	Archive Options (options/settings/Archive Options): saves every conversation, with pictures, to Documents/Archived conversations, readable on a PC ("Open me.html"), and imports an archive back onto a phone.
 
 •	Outer-screen alerts like MatChat's: who it's from and the message, scrolling across the outer screen until you read it.
 
