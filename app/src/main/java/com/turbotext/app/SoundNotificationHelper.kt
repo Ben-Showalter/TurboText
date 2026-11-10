@@ -173,6 +173,42 @@ object SoundNotificationHelper {
         }
     }
 
+    /** The sound being previewed in the sound list, if any. */
+    private var previewPlayer: MediaPlayer? = null
+
+    /** Plays [ref] as a preview, stopping the previous one first, so
+     *  scrolling through the sound list plays only the one highlighted. */
+    fun preview(context: Context, ref: String) {
+        stopPreview()
+        try {
+            val mp = MediaPlayer()
+            mp.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
+            )
+            NotificationSounds.setDataSource(context, mp, ref)
+            mp.setOnCompletionListener { if (previewPlayer === it) previewPlayer = null; it.release() }
+            mp.setOnErrorListener { player, _, _ -> if (previewPlayer === player) previewPlayer = null; player.release(); true }
+            mp.prepare()
+            mp.start()
+            previewPlayer = mp
+        } catch (e: Exception) {
+            Log.w(TAG, "couldn't preview $ref", e)
+        }
+    }
+
+    fun stopPreview() {
+        val mp = previewPlayer ?: return
+        previewPlayer = null
+        try {
+            mp.stop()
+        } catch (_: Exception) {
+        }
+        mp.release()
+    }
+
     fun playSound(context: Context, path: String) {
         try {
             val mp = MediaPlayer()

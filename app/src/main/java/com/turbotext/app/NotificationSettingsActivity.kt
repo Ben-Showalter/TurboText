@@ -113,9 +113,10 @@ class NotificationSettingsActivity : AppCompatActivity() {
             .show()
     }
 
-    /** Every sound from [source]. Picking one plays it and makes it the
-     *  sound right away, and the list stays open to try others; Clear
-     *  closes it, keeping the last one picked. */
+    /** Every sound from [source]. Each one plays as the highlight moves
+     *  onto it while scrolling; picking one (OK) makes it the sound. The
+     *  list stays open to try others; Done or Clear closes it, keeping
+     *  the last one picked. */
     private fun soundList(source: NotificationSounds.Source) {
         val sounds = NotificationSounds.all(this, source)
         if (sounds.isEmpty()) {
@@ -123,17 +124,32 @@ class NotificationSettingsActivity : AppCompatActivity() {
             return
         }
         val current = SettingsHelper.getNotificationSoundPath(this)
-        AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this)
             .setTitle(source.label)
             .setSingleChoiceItems(sounds.map { it.name }.toTypedArray(), sounds.indexOfFirst { it.ref == current }) { _, which ->
                 val chosen = sounds[which]
                 SettingsHelper.setNotificationSoundPath(this, chosen.ref)
-                SoundNotificationHelper.playSound(this, chosen.ref)
+                SoundNotificationHelper.preview(this, chosen.ref)
                 updateSoundRowLabel()
             }
             .setPositiveButton("Done", null)
-            .show()
+            .setOnDismissListener { previewHandler.removeCallbacksAndMessages(null); SoundNotificationHelper.stopPreview() }
+            .create()
+        // Play each sound as the D-pad highlight reaches it, after a short
+        // pause so holding Down doesn't start every sound it passes.
+        dialog.listView.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: android.view.View?, position: Int, id: Long) {
+                val sound = sounds.getOrNull(position) ?: return
+                previewHandler.removeCallbacksAndMessages(null)
+                previewHandler.postDelayed({ SoundNotificationHelper.preview(this@NotificationSettingsActivity, sound.ref) }, 250)
+            }
+
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+        }
+        dialog.show()
     }
+
+    private val previewHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     private fun updateVibrateRowLabel() {
         val patternId = SettingsHelper.getVibratePattern(this)

@@ -19,7 +19,7 @@
   - **TurboText sounds:** 75 sounds built into TurboText (Android's own open-source notification sounds), so they work on any phone.
   - **My sound files:** your own files in Internal storage/notifications, as before.
 
-  Picking a sound plays it and selects it at once, so you can try several before pressing Done.
+  Each sound plays as you scroll onto it. Press OK to select it, then Done.
 - New: Search Messages. While a message is highlighted (press Up from the message box), the left softkey is Search. A small search box opens over the conversation. Type a word or a few words (or dictate with the mic button) and press OK or the Search softkey. It jumps to the newest message that contains all of them, highlights the words in every message, and shows "2 of 5" at the bottom. Left goes to older matches, Right to newer ones. OK opens a message, and Clear goes back to typing.
 - New: Send Later. While writing a message, choose Options > Send Later, pick the day and time on one screen. It starts on Tomorrow at the next half hour, and you can go up to a week ahead. The line underneath spells out exactly when it will send. Until it goes out, it shows in the conversation as "Scheduled" ("Scheduled for Fri 13" when it's later in the week), and you can choose Send Now, Change Time or Cancel.
 - New Message first asks "Choose Contact" (the phone's own contact list) or "Type Number". If you already have a conversation with that person, it opens and you write the message there. Anything you already typed or attached comes along. Options > Choose Contact is always there too.
