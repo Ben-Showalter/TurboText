@@ -21,7 +21,9 @@ object MessageEvents {
         fun onMessagesChanged(threadId: Long?)
     }
 
-    private val main = Handler(Looper.getMainLooper())
+    /** Made when first needed (and never in plain unit tests, which have
+     *  no main thread). */
+    private val main by lazy { Looper.getMainLooper()?.let { Handler(it) } }
     private val listeners = java.util.concurrent.CopyOnWriteArraySet<Listener>()
 
     fun addListener(listener: Listener) {
@@ -35,6 +37,6 @@ object MessageEvents {
     /** Safe from any thread; listeners run on the main thread. */
     fun changed(threadId: Long? = null) {
         val id = threadId?.takeIf { it >= 0 }
-        main.post { listeners.forEach { it.onMessagesChanged(id) } }
+        main?.post { listeners.forEach { it.onMessagesChanged(id) } }
     }
 }

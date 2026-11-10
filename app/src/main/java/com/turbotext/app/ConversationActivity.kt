@@ -1225,8 +1225,13 @@ class ConversationActivity : AppCompatActivity() {
      *  enough on its own. */
     private val messageEventListener = MessageEvents.Listener { changedThread ->
         if (changedThread == null || changedThread == threadId) {
+            // Redraw from memory at once — that's what puts a just-sent
+            // "Sending" bubble on screen the moment Send is pressed — then
+            // read the newest messages. One event per change, so only a
+            // short wait to group a send's few events.
+            MessageCache.get(threadId)?.let { showMessages(it) }
             reloadHandler.removeCallbacks(reloadRunnable)
-            reloadHandler.postDelayed(reloadRunnable, 300)
+            reloadHandler.postDelayed(reloadRunnable, 100)
         }
     }
 

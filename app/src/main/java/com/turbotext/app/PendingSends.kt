@@ -22,7 +22,15 @@ object PendingSends {
         val threadId: Long,
         var message: Message,
         val attachments: List<OutgoingAttachment>
-    )
+    ) {
+        /** When the send was handed over, or null while still preparing.
+         *  The bubble stays until the real row is on screen (see merge). */
+        var handedOverAt: Long? = null
+    }
+
+    /** A handed-over bubble whose real row never shows up is dropped
+     *  after this long anyway. */
+    private const val HANDED_OVER_MAX_MS = 60_000L
 
     /** Pending ids are negative so they never collide with a real row. */
     private var nextId = -1L
@@ -60,7 +68,7 @@ object PendingSends {
         }.start()
     }
 
-    private fun add(threadId: Long, recipients: List<String>, body: String, attachments: List<OutgoingAttachment>): Long {
+    internal fun add(threadId: Long, recipients: List<String>, body: String, attachments: List<OutgoingAttachment>): Long {
         val id = synchronized(this) {
             val id = nextId--
             val image = attachments.firstOrNull { it.isImage }?.uri?.toString()
@@ -84,13 +92,15 @@ object PendingSends {
         return id
     }
 
-    /** A successful send's bubble is replaced by its real row; a failed
-     *  one stays, marked failed, for [takeFailed]. */
-    private fun finish(key: Long, error: String?) {
+    /** A successful send's bubble stays until its real row is on screen
+     *  (merge) — removing it at once let a refresh that had read just
+     *  before the row was saved draw neither, so the message blinked out.
+     *  A failed one stays, marked failed, for [takeFailed]. */
+    internal fun finish(key: Long, error: String?, now: Long = System.currentTimeMillis()) {
         synchronized(this) {
             val entry = entries[key] ?: return
             if (error == null) {
-                entries.remove(key)
+                entry.handedOverAt = now
             } else {
                 entry.message = entry.message.copy(sendStatus = "failed")
             }
@@ -99,12 +109,25 @@ object PendingSends {
 
     /** [real] plus any pending bubbles for [threadId] that don't have a
      *  real row yet, newest last. */
-    fun merge(threadId: Long, real: List<Message>): List<Message> {
-        val pending = synchronized(this) {
-            entries.values.filter { it.threadId == threadId }.map { it.message }
+    fun merge(threadId: Long, real: List<Message>, now: Long = System.currentTimeMillis()): List<Message> {
+        val shown = synchronized(this) {
+            val result = ArrayList<Message>()
+            val done = ArrayList<Long>()
+            for ((key, entry) in entries) {
+                if (entry.threadId != threadId) continue
+                val p = entry.message
+                val handed = entry.handedOverAt
+                when {
+                    p.sendStatus == "failed" -> result.add(p)
+                    real.any { matches(p, it) } -> if (handed != null) done.add(key)
+                    handed != null && now - handed > HANDED_OVER_MAX_MS -> done.add(key)
+                    else -> result.add(p)
+                }
+            }
+            // Handed over and now on screen for real (or long gone): done.
+            done.forEach { entries.remove(it) }
+            result
         }
-        if (pending.isEmpty()) return real
-        val shown = pending.filter { p -> p.sendStatus == "failed" || real.none { matches(p, it) } }
         if (shown.isEmpty()) return real
         return (real + shown).sortedBy { it.date }
     }
