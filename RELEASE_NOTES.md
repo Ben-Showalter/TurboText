@@ -14,6 +14,10 @@
 - Options > Mark All as Read, on the conversation and group lists.
 - Picture and group messages are received again. TurboText now asks for Android's "receive picture messages" permission at startup. It could be missing, and then Android silently dropped every incoming picture message, group message and picture delivery report.
 - No signal? Texts and picture messages now wait and are sent again on their own once the phone has service. Their bubble says "Waiting for signal". If there's still no signal after a day, the message shows "Failed" and a notification tells you.
+- New: Contact Options, in the conversation list's Options. Highlight a conversation and choose:
+  - **Add to Contacts:** moved here from the main Options list.
+  - **Special Notification Sound:** a sound for just that person or group. It also plays on repeats. "Use default sound" removes it.
+  - **Call (or press SEND):** calls them, the same as the SEND key.
 - Many more notification sounds. Settings > Notifications > Notification Sound now offers:
   - **Phone sounds:** every notification sound already on the phone.
   - **TurboText sounds:** 75 sounds built into TurboText (Android's own open-source notification sounds), so they work on any phone.

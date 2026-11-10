@@ -75,7 +75,8 @@ object SoundNotificationHelper {
         sender: String? = null,
         preview: String? = null
     ) {
-        val soundPath = SettingsHelper.getNotificationSoundPath(context)
+        // This conversation's special sound (Contact Options), or the default.
+        val soundPath = SettingsHelper.soundFor(context, address)
         val vibratePattern = SettingsHelper.getVibratePattern(context)
         // Do Not Disturb and the ringer switch decide whether this alert
         // may sound or buzz right now (see DndHelper). Repeats are still
@@ -275,7 +276,7 @@ class SoundAlarmReceiver : BroadcastReceiver() {
         val sender = intent.getStringExtra("sender")
         // Checked on every repeat: Do Not Disturb may have come on since.
         val level = DndHelper.level(context, sender)
-        val soundPath = SettingsHelper.getNotificationSoundPath(context)
+        val soundPath = SettingsHelper.soundFor(context, address)
         if (soundPath != null && level == DndHelper.Level.FULL) SoundNotificationHelper.playSoundWithWakeup(context, soundPath)
         val vibratePattern = SettingsHelper.getVibratePattern(context)
         if (vibratePattern != null && level != DndHelper.Level.SILENT) VibrationPatterns.play(context, vibratePattern)

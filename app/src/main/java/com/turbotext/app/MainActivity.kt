@@ -394,7 +394,7 @@ class MainActivity : AppCompatActivity() {
         // move the highlight, center/OK selects) — no touch needed.
         val convo = focusedConversation
         val options = if (convo != null) {
-            arrayOf("Mark All as Read", "Move to Trash", "Archive All Conversations", "Add to Contacts", "Trash Bin", "Settings")
+            arrayOf("Mark All as Read", "Move to Trash", "Archive All Conversations", "Contact Options", "Trash Bin", "Settings")
         } else {
             arrayOf("Mark All as Read", "Archive All Conversations", "Trash Bin", "Settings")
         }
@@ -406,9 +406,31 @@ class MainActivity : AppCompatActivity() {
                     "Mark All as Read" -> ReadAll.run(this) { refreshConversations() }
                     "Move to Trash" -> convo?.let { trashConversation(it) }
                     "Archive All Conversations" -> archiveAllConversations()
-                    "Add to Contacts" -> convo?.let { addToContacts(it) }
+                    "Contact Options" -> convo?.let { showContactOptions(it) }
                     "Trash Bin" -> startActivity(Intent(this, TrashBinActivity::class.java))
                     "Settings" -> startActivity(Intent(this, SettingsActivity::class.java))
+                }
+            }
+            .show()
+    }
+
+    /** Options > Contact Options for the highlighted conversation: add
+     *  them to contacts, give them their own notification sound, or call
+     *  (the SEND key does the same). */
+    private fun showContactOptions(convo: Conversation) {
+        val key = NotificationHelper.conversationKey(convo.threadId, convo.address)
+        val own = SettingsHelper.getConversationSound(this, key)
+        val soundLabel = "Special Notification Sound: ${own?.let { NotificationSounds.nameOf(this, it) } ?: "Default"}"
+        val options = arrayOf("Add to Contacts", soundLabel, "Call (or press SEND)")
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(convo.displayName)
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> addToContacts(convo)
+                    1 -> SoundPicker.show(this, "Sound for ${convo.displayName}", own, "Use default sound") { ref ->
+                        SettingsHelper.setConversationSound(this, key, ref)
+                    }
+                    2 -> callFocusedConversation()
                 }
             }
             .show()

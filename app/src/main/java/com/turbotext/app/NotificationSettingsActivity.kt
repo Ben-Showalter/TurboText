@@ -91,64 +91,16 @@ class NotificationSettingsActivity : AppCompatActivity() {
         }
     }
 
-    /** First where from: the phone's own sounds, TurboText's built-in
-     *  ones, or your own files — then the sounds there (soundList). */
+    /** The shared sound picker (SoundPicker); "No Sound" turns it off. */
     private fun showSoundPicker() {
-        val sources = NotificationSounds.Source.values()
-        val counts = sources.map { NotificationSounds.all(this, it).size }
-        val options = listOf("No Sound") + sources.mapIndexed { i, src -> "${src.label} (${counts[i]})" }
-        AlertDialog.Builder(this)
-            .setTitle("Notification Sound")
-            .setItems(options.toTypedArray()) { _, which ->
-                if (which == 0) {
-                    SettingsHelper.setNotificationSoundPath(this, null)
-                    updateSoundRowLabel()
-                } else {
-                    val source = sources[which - 1]
-                    // Only your own folder needs "All files access".
-                    if (source == NotificationSounds.Source.MY_FILES && promptForAllFilesAccess()) return@setItems
-                    soundList(source)
-                }
-            }
-            .show()
-    }
-
-    /** Every sound from [source]. Each one plays as the highlight moves
-     *  onto it while scrolling; picking one (OK) makes it the sound. The
-     *  list stays open to try others; Back (Clear) closes it, keeping
-     *  the last one picked. */
-    private fun soundList(source: NotificationSounds.Source) {
-        val sounds = NotificationSounds.all(this, source)
-        if (sounds.isEmpty()) {
-            android.widget.Toast.makeText(this, "No sounds there", android.widget.Toast.LENGTH_SHORT).show()
-            return
+        SoundPicker.show(
+            this, "Notification Sound", SettingsHelper.getNotificationSoundPath(this), "No Sound",
+            beforeMyFiles = { promptForAllFilesAccess() }
+        ) { ref ->
+            SettingsHelper.setNotificationSoundPath(this, ref)
+            updateSoundRowLabel()
         }
-        val current = SettingsHelper.getNotificationSoundPath(this)
-        val dialog = AlertDialog.Builder(this)
-            .setTitle(source.label)
-            .setSingleChoiceItems(sounds.map { it.name }.toTypedArray(), sounds.indexOfFirst { it.ref == current }) { _, which ->
-                val chosen = sounds[which]
-                SettingsHelper.setNotificationSoundPath(this, chosen.ref)
-                SoundNotificationHelper.preview(this, chosen.ref)
-                updateSoundRowLabel()
-            }
-            .setOnDismissListener { previewHandler.removeCallbacksAndMessages(null); SoundNotificationHelper.stopPreview() }
-            .create()
-        // Play each sound as the D-pad highlight reaches it, after a short
-        // pause so holding Down doesn't start every sound it passes.
-        dialog.listView.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: android.view.View?, position: Int, id: Long) {
-                val sound = sounds.getOrNull(position) ?: return
-                previewHandler.removeCallbacksAndMessages(null)
-                previewHandler.postDelayed({ SoundNotificationHelper.preview(this@NotificationSettingsActivity, sound.ref) }, 250)
-            }
-
-            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
-        }
-        dialog.show()
     }
-
-    private val previewHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     private fun updateVibrateRowLabel() {
         val patternId = SettingsHelper.getVibratePattern(this)

@@ -55,6 +55,23 @@ object SettingsHelper {
         prefs(context).edit().putString("notif_sound_path", path).apply()
     }
 
+    /** One conversation's own notification sound (Contact Options), by
+     *  its NotificationHelper.conversationKey; null means the default. */
+    fun getConversationSound(context: Context, key: String): String? =
+        prefs(context).getString("conv_sound:$key", null)
+
+    fun setConversationSound(context: Context, key: String, ref: String?) {
+        val e = prefs(context).edit()
+        if (ref == null) e.remove("conv_sound:$key") else e.putString("conv_sound:$key", ref)
+        e.apply()
+    }
+
+    /** The sound for an alert in conversation [key]: its own if set and
+     *  still there, otherwise the Settings sound. */
+    fun soundFor(context: Context, key: String): String? =
+        getConversationSound(context, key)?.takeIf { NotificationSounds.exists(context, it) }
+            ?: getNotificationSoundPath(context)
+
     /** null means "Just Once" (no repeat); otherwise the repeat interval
      *  in minutes for persistent alerts. */
     fun getRepeatMinutes(context: Context): Int? {
