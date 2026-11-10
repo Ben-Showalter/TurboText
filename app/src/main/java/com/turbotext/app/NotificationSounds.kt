@@ -9,7 +9,7 @@ import java.io.File
 
 /**
  * Every notification sound TurboText can play, from three places:
- *  - the phone's own notification sounds (RingtoneManager), as
+ *  - the phone's own notification sounds (the media store), as
  *    content:// references;
  *  - TurboText's built-in pack, the Android Open Source Project's
  *    notification sounds (assets/sounds, Apache 2.0, see NOTICE.txt),
@@ -29,20 +29,47 @@ object NotificationSounds {
 
     data class Sound(val name: String, val ref: String, val source: Source)
 
-    /** The phone's own notification sounds, by their titles. */
-    fun phone(context: Context): List<Sound> = try {
-        val manager = RingtoneManager(context).apply { setType(RingtoneManager.TYPE_NOTIFICATION) }
-        val cursor = manager.cursor
+    /**
+     * The phone's own notification sounds, by their titles. Read from the
+     * media store rather than RingtoneManager: on this phone its
+     * "notification" list also had every ringtone in it. A sound counts
+     * when it's filed under a notifications folder, or flagged as a
+     * notification and not as a ringtone or alarm; anything filed under a
+     * ringtones or alarms folder never does.
+     */
+    fun phone(context: Context): List<Sound> {
         val list = ArrayList<Sound>()
-        while (cursor.moveToNext()) {
-            val title = cursor.getString(RingtoneManager.TITLE_COLUMN_INDEX) ?: continue
-            val uri = manager.getRingtoneUri(cursor.position) ?: continue
-            list.add(Sound(title, uri.toString(), Source.PHONE))
+        for (collection in listOf(
+            android.provider.MediaStore.Audio.Media.INTERNAL_CONTENT_URI,
+            android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+        )) {
+            try {
+                context.contentResolver.query(
+                    collection,
+                    arrayOf("_id", "title", "_data", "is_notification", "is_ringtone", "is_alarm"),
+                    null, null, "title"
+                )?.use { c ->
+                    while (c.moveToNext()) {
+                        val path = c.getString(2).orEmpty()
+                        val keep = isNotificationSound(path, c.getInt(3) != 0, c.getInt(4) != 0, c.getInt(5) != 0)
+                        if (!keep) continue
+                        val title = c.getString(1)?.takeIf { it.isNotBlank() } ?: File(path).nameWithoutExtension
+                        list.add(Sound(title, android.content.ContentUris.withAppendedId(collection, c.getLong(0)).toString(), Source.PHONE))
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "couldn't list the phone's sounds in $collection", e)
+            }
         }
-        list.distinctBy { it.ref }.sortedBy { it.name.lowercase() }
-    } catch (e: Exception) {
-        Log.w(TAG, "couldn't list the phone's sounds", e)
-        emptyList()
+        return list.distinctBy { it.ref }.sortedBy { it.name.lowercase() }
+    }
+
+    /** See [phone]: whether one media-store sound is a notification sound. */
+    fun isNotificationSound(path: String, isNotification: Boolean, isRingtone: Boolean, isAlarm: Boolean): Boolean {
+        val p = path.lowercase()
+        if ("/ringtones/" in p || "/alarms/" in p) return false
+        if ("/notifications/" in p) return true
+        return isNotification && !isRingtone && !isAlarm
     }
 
     /** TurboText's built-in sounds, by name. */
