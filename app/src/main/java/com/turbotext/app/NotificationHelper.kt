@@ -72,7 +72,10 @@ object NotificationHelper {
         }
 
         val address = conversationAddress ?: rawAddress
-        val notificationId = conversationKey(resolvedThreadId, address).hashCode()
+        val key = conversationKey(resolvedThreadId, address)
+        // The tap action stays per conversation; the notification's own id
+        // changes with every message (below).
+        val requestCode = key.hashCode()
 
         val mainIntent = Intent(context, MainActivity::class.java)
         val conversationIntent = Intent(context, ConversationActivity::class.java).apply {
@@ -91,13 +94,15 @@ object NotificationHelper {
             // notification's tap action was the same PendingIntent, updated
             // to whichever conversation notified last — so tapping an older
             // notification opened the wrong thread.
-            getPendingIntent(notificationId, android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE)
+            getPendingIntent(requestCode, android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE)
         }
 
+        val slot = nextSlot(context, key)
         val notification = NotificationCompat.Builder(context, INCOMING_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_turbotext)
             .setContentTitle(displayName)
             .setContentText(body)
+            .setSubText(otherMessages(slot.others))
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
@@ -115,8 +120,50 @@ object NotificationHelper {
             .setLights(android.graphics.Color.BLUE, 1, 0)
             .build()
 
-        manager.notify(notificationId, notification)
+        // Cancel, then post under a new id: a fresh notification alerts,
+        // where an update of the same id may stay silent. Only the newest
+        // one is ever in the shade.
+        slot.old?.let { manager.cancel(it) }
+        manager.cancel(requestCode) // posted by builds before this one
+        manager.notify(slot.id, notification)
+        val importance = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+            manager.getNotificationChannel(INCOMING_CHANNEL_ID)?.importance?.toString() ?: "?" else "n/a"
+        AppLog.event(
+            "Notify",
+            "$key: cancelled ${slot.old ?: "none"}, posted ${slot.id}, importance $importance, " +
+                "text ${body.length} chars, +${slot.others} others"
+        )
         return resolvedThreadId
+    }
+
+    private const val PREFS = "message_notifications"
+    private const val FIRST_ID = 100_000
+    private val slotLock = Any()
+
+    /** The notification showing for a conversation (if any), the new id
+     *  to post this message under, and how many messages came before it
+     *  since the conversation was last cleared. */
+    private data class Slot(val old: Int?, val id: Int, val others: Int)
+
+    private fun nextSlot(context: Context, key: String): Slot = synchronized(slotLock) {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val old = if (prefs.contains("id:$key")) prefs.getInt("id:$key", 0) else null
+        val others = prefs.getInt("count:$key", 0)
+        var id = prefs.getInt("next_id", FIRST_ID)
+        if (id < FIRST_ID || id >= Int.MAX_VALUE - 1) id = FIRST_ID
+        prefs.edit()
+            .putInt("next_id", id + 1)
+            .putInt("id:$key", id)
+            .putInt("count:$key", others + 1)
+            .commit()
+        Slot(old, id, others)
+    }
+
+    /** The shade's small line for the messages before the newest one. */
+    internal fun otherMessages(others: Int): String? = when {
+        others <= 0 -> null
+        others == 1 -> "+1 other message"
+        else -> "+$others other messages"
     }
 
     /** Shown when an MMS failed to download and nothing was saved, so
@@ -151,7 +198,14 @@ object NotificationHelper {
      *  you got there by opening the app directly rather than tapping the
      *  notification. [key] is [conversationKey]. */
     fun cancelForConversation(context: Context, key: String) {
-        context.getSystemService(NotificationManager::class.java).cancel(key.hashCode())
+        val manager = context.getSystemService(NotificationManager::class.java)
+        manager.cancel(key.hashCode()) // posted by builds before this one
+        synchronized(slotLock) {
+            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            if (prefs.contains("id:$key")) manager.cancel(prefs.getInt("id:$key", 0))
+            if (prefs.contains("id:$key") || prefs.contains("count:$key"))
+                prefs.edit().remove("id:$key").remove("count:$key").apply()
+        }
     }
 
     fun showProvisioningConfirmation(context: Context) {
