@@ -64,16 +64,25 @@ class SettingsActivity : AppCompatActivity() {
         themeRow.text = "Theme: ${ThemeHelper.getCurrentTheme(this).label}"
     }
 
+    /** Dark, Light, and the conversation wallpaper on or off. */
     private fun showThemePicker() {
         val themes = AppTheme.values()
-        val options = themes.map { it.label }.toTypedArray()
+        val wallpaperOn = SettingsHelper.isConversationWallpaper(this)
+        val options = themes.map { it.label } + "Conversation Wallpaper: ${if (wallpaperOn) "On" else "Off"}"
         AlertDialog.Builder(this)
             .setTitle("Theme")
-            .setItems(options) { _, which ->
-                ThemeHelper.setTheme(this, themes[which])
-                updateThemeRowLabel()
-                ThemeHelper.apply(this)
-                updateRowHighlight()
+            .setItems(options.toTypedArray()) { _, which ->
+                if (which < themes.size) {
+                    ThemeHelper.setTheme(this, themes[which])
+                    updateThemeRowLabel()
+                    ThemeHelper.apply(this)
+                    updateRowHighlight()
+                } else {
+                    SettingsHelper.setConversationWallpaper(this, !wallpaperOn)
+                    android.widget.Toast.makeText(
+                        this, "Conversation wallpaper ${if (wallpaperOn) "off" else "on"}", android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
             }
             .show()
     }

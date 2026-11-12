@@ -55,6 +55,14 @@ object SettingsHelper {
         prefs(context).edit().putString("notif_sound_path", path).apply()
     }
 
+    /** A picture behind each conversation (ConversationWallpaper). On by default. */
+    fun isConversationWallpaper(context: Context): Boolean =
+        prefs(context).getBoolean("conversation_wallpaper", true)
+
+    fun setConversationWallpaper(context: Context, on: Boolean) {
+        prefs(context).edit().putBoolean("conversation_wallpaper", on).apply()
+    }
+
     /** One conversation's own notification sound (Contact Options), by
      *  its NotificationHelper.conversationKey; null means the default. */
     fun getConversationSound(context: Context, key: String): String? =

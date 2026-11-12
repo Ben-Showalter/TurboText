@@ -95,6 +95,17 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
      *  than a fresh BubbleDrawable per bind. */
     private val bubbleProtos = HashMap<String, Drawable>()
 
+    /** A wallpaper is behind the messages (ConversationWallpaper): bubble
+     *  fills let it show through a little. */
+    var translucentBubbles = false
+        set(value) {
+            if (field == value) return
+            field = value
+            bubbleProtos.clear()
+            themeGeneration++
+            notifyDataSetChanged()
+        }
+
     /** Bumped on a theme change so every row's cached background key
      *  goes stale and gets rebuilt in the new colors. */
     private var themeGeneration = 0
@@ -168,7 +179,8 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
         val density = context.resources.displayMetrics.density
         return BubbleDrawable(
             BubbleDrawable.State(
-                fillColor = fillColor,
+                // About 88% opaque over a wallpaper, fully otherwise.
+                fillColor = if (translucentBubbles) (fillColor and 0x00FFFFFF) or (0xE0 shl 24) else fillColor,
                 radius = BUBBLE_RADIUS_DP * density,
                 stripeOnLeft = stripeOnLeft,
                 stripeColor = theme.accentLight,

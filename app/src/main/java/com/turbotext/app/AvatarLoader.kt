@@ -149,6 +149,16 @@ object AvatarLoader {
         return bmp
     }
 
+    /** The saved contact for [address], as a Contacts content URI, or
+     *  null when the number isn't a contact. */
+    fun contactUriFor(context: Context, address: String): Uri? = try {
+        val lookup = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(address))
+        context.contentResolver.query(lookup, arrayOf(ContactsContract.PhoneLookup._ID), null, null, null)
+            ?.use { if (it.moveToFirst()) android.content.ContentUris.withAppendedId(ContactsContract.Contacts.CONTENT_URI, it.getLong(0)) else null }
+    } catch (e: Exception) {
+        null
+    }
+
     private fun loadPhoto(context: Context, address: String, size: Int): Bitmap? {
         return try {
             val lookup = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(address))

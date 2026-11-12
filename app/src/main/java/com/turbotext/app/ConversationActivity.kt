@@ -63,6 +63,7 @@ class ConversationActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.contactName).text = displayName
         repo = SmsRepository(this)
         bindTitleAvatar(displayName)
+        showWallpaper()
         engine = T9EngineHolder.get(this)
 
         messageList = findViewById(R.id.messageList)
@@ -1232,6 +1233,35 @@ class ConversationActivity : AppCompatActivity() {
             MessageCache.get(threadId)?.let { showMessages(it) }
             reloadHandler.removeCallbacks(reloadRunnable)
             reloadHandler.postDelayed(reloadRunnable, 100)
+        }
+    }
+
+    /** The picture behind the messages (ConversationWallpaper): the
+     *  contact's photo, or this conversation's wallpaper from the pack,
+     *  dimmed with the theme's background so the messages stay readable.
+     *  Loaded once the message area has its size. */
+    private fun showWallpaper() {
+        val image = findViewById<android.widget.ImageView>(R.id.wallpaper)
+        val dim = findViewById<View>(R.id.wallpaperDim)
+        if (!SettingsHelper.isConversationWallpaper(this)) return
+        val app = applicationContext
+        image.post {
+            val w = image.width
+            val h = image.height
+            Thread {
+                val bitmap = ConversationWallpaper.load(app, threadId, address, w, h)
+                runOnUiThread {
+                    if (isFinishing || isDestroyed || bitmap == null) return@runOnUiThread
+                    val theme = ThemeHelper.getCurrentTheme(this)
+                    image.setImageBitmap(bitmap)
+                    image.visibility = View.VISIBLE
+                    // Dark: 60% of the background over it; Light: 55%.
+                    val alpha = if (theme.isLight) 0x8C else 0x99
+                    dim.setBackgroundColor((theme.background and 0x00FFFFFF) or (alpha shl 24))
+                    dim.visibility = View.VISIBLE
+                    messageAdapter.translucentBubbles = true
+                }
+            }.start()
         }
     }
 

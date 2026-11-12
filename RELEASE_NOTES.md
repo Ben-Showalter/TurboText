@@ -14,6 +14,10 @@
 - Options > Mark All as Read, on the conversation and group lists.
 - Picture and group messages are received again. TurboText now asks for Android's "receive picture messages" permission at startup. It could be missing, and then Android silently dropped every incoming picture message, group message and picture delivery report.
 - No signal? Texts and picture messages now wait and are sent again on their own once the phone has service. Their bubble says "Waiting for signal". If there's still no signal after a day, the message shows "Failed" and a notification tells you.
+- New: conversation wallpapers. Each conversation shows a picture behind its messages, dimmed so the messages stay easy to read:
+  - **With a contact photo:** that contact's photo.
+  - **Otherwise:** a wallpaper picked at random from 36 built into TurboText, and the conversation keeps it. Groups get one too.
+  - **Turning it off:** Settings > Theme > Conversation Wallpaper: On/Off.
 - New: Settings > Archive Options.
   - **Archive All Conversations** (moved from the conversation and Groups lists) saves every conversation, groups included, to `Documents/Archived conversations/<date time>`.
     - Pictures, videos, voice messages and files are saved too, in `media/`.
