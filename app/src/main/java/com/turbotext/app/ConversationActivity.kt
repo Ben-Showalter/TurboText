@@ -1243,11 +1243,14 @@ class ConversationActivity : AppCompatActivity() {
     private fun showWallpaper() {
         val image = findViewById<android.widget.ImageView>(R.id.wallpaper)
         val dim = findViewById<View>(R.id.wallpaperDim)
-        if (!SettingsHelper.isConversationWallpaper(this)) return
+        if (!SettingsHelper.isConversationWallpaper(this)) {
+            android.util.Log.i("TurboTextWallpaper", "none: setting off")
+            return
+        }
         val app = applicationContext
-        image.post {
-            val w = image.width
-            val h = image.height
+        // Sized from the message list: the picture's own view is hidden
+        // (gone) until it has a picture, so it measures 0×0.
+        whenSized(messageList) { w, h ->
             Thread {
                 val bitmap = ConversationWallpaper.load(app, threadId, address, w, h)
                 runOnUiThread {
@@ -1263,6 +1266,21 @@ class ConversationActivity : AppCompatActivity() {
                 }
             }.start()
         }
+    }
+
+    /** Calls [then] with [view]'s size once it has been laid out. */
+    private fun whenSized(view: View, then: (Int, Int) -> Unit) {
+        if (view.width > 0 && view.height > 0) {
+            then(view.width, view.height)
+            return
+        }
+        view.viewTreeObserver.addOnGlobalLayoutListener(object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
+            override fun onGlobalLayout() {
+                if (view.width <= 0 || view.height <= 0) return
+                view.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                then(view.width, view.height)
+            }
+        })
     }
 
     /** The avatar left of the name in the top bar, the same image or

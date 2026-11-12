@@ -61,18 +61,24 @@ object ConversationWallpaper {
         val contact = if (isGroup) null else AvatarLoader.contactUriFor(context, address)
         val key = "${contact ?: choiceFor(context, threadId)}|${width}x$height"
         cache.get(key)?.let { return it }
+        var source = "pack ${choiceFor(context, threadId)}"
         val bitmap = try {
             val fromContact = contact?.let { uri ->
                 ContactsContract.Contacts.openContactPhotoInputStream(context.contentResolver, uri, true)
                     ?.let { stream -> decodeCropped({ stream }, width, height) }
             }
+            if (fromContact != null) source = "contact photo"
             fromContact ?: choiceFor(context, threadId)?.let { file ->
                 decodeCropped({ context.assets.open("$DIR/$file") }, width, height)
             }
         } catch (e: Exception) {
             Log.w(TAG, "couldn't load the wallpaper for $threadId", e)
             null
-        } ?: return null
+        } ?: run {
+            Log.i(TAG, "none: nothing loaded for $threadId")
+            return null
+        }
+        Log.i(TAG, "wallpaper for $threadId: $source at ${width}x$height")
         cache.put(key, bitmap)
         return bitmap
     }
