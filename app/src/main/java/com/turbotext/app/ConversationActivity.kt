@@ -1250,7 +1250,7 @@ class ConversationActivity : AppCompatActivity() {
         val app = applicationContext
         // Sized from the message list: the picture's own view is hidden
         // (gone) until it has a picture, so it measures 0×0.
-        whenSized(messageList) { w, h ->
+        whenSized(findViewById<View>(R.id.messageList)) { w, h ->
             Thread {
                 val bitmap = ConversationWallpaper.load(app, threadId, address, w, h)
                 runOnUiThread {
