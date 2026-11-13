@@ -1127,6 +1127,7 @@ class ConversationActivity : AppCompatActivity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (isVolumeKey(event.keyCode)) return handleVolumeKey(event)
         if (event.action == KeyEvent.ACTION_DOWN) {
             if (isRecordingMemo) {
                 if (event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
@@ -1450,6 +1451,8 @@ class ConversationActivity : AppCompatActivity() {
                 prepare()
                 start()
             }
+            // The volume keys now change this playback's volume.
+            volumeControlStream = android.media.AudioManager.STREAM_MUSIC
             voiceMessagePlayingId = message.id
             messageAdapter.setPlayingAudioId(message.id)
         } catch (e: Exception) {
@@ -1457,6 +1460,29 @@ class ConversationActivity : AppCompatActivity() {
             Toast.makeText(this, "Couldn't play voice message", Toast.LENGTH_SHORT).show()
             stopVoiceMessagePlayback()
         }
+    }
+
+    private fun isVolumeKey(code: Int) = code == KeyEvent.KEYCODE_VOLUME_UP ||
+        code == KeyEvent.KEYCODE_VOLUME_DOWN || code == KeyEvent.KEYCODE_VOLUME_MUTE
+
+    /** Volume keys: while a recording plays they change its volume (the
+     *  phone's volume bar shows); otherwise they act as they do anywhere.
+     *  The screen's own key handling used to swallow them. */
+    private fun handleVolumeKey(event: KeyEvent): Boolean {
+        val player = voiceMessagePlayer
+        val playing = try { player?.isPlaying == true } catch (e: Exception) { false }
+        if (!playing) return super.dispatchKeyEvent(event)
+        if (event.action == KeyEvent.ACTION_DOWN) {
+            val direction = when (event.keyCode) {
+                KeyEvent.KEYCODE_VOLUME_UP -> android.media.AudioManager.ADJUST_RAISE
+                KeyEvent.KEYCODE_VOLUME_DOWN -> android.media.AudioManager.ADJUST_LOWER
+                else -> android.media.AudioManager.ADJUST_TOGGLE_MUTE
+            }
+            getSystemService(android.media.AudioManager::class.java)?.adjustStreamVolume(
+                android.media.AudioManager.STREAM_MUSIC, direction, android.media.AudioManager.FLAG_SHOW_UI
+            )
+        }
+        return true
     }
 
     private fun stopVoiceMessagePlayback() {
@@ -1468,6 +1494,7 @@ class ConversationActivity : AppCompatActivity() {
             it.release()
         }
         voiceMessagePlayer = null
+        volumeControlStream = android.media.AudioManager.USE_DEFAULT_STREAM_TYPE
         voiceMessagePlayingId = null
         messageAdapter.setPlayingAudioId(null)
     }
