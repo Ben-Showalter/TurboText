@@ -111,7 +111,7 @@ class ComposeActivity : AppCompatActivity() {
         voiceHelper = GroqVoiceInputHelper(this)
         audioMemoRecorder = AudioMemoRecorder(this)
         attachments = PendingAttachments(this, attachmentIndicator)
-        picker = AttachmentPicker(this) { attachments.add(it) }
+        picker = AttachmentPicker(this, onRecordAudio = { startAudioMemoRecording() }) { attachments.add(it) }
 
         // Shared in from another app ("Share → TurboText").
         if (intent?.action == android.content.Intent.ACTION_SEND) {
@@ -212,19 +212,16 @@ class ComposeActivity : AppCompatActivity() {
         val options = arrayOf("Choose Contact") + when {
             editingRecipient -> emptyArray()
             !attachments.isEmpty() ->
-                arrayOf("Choose Picture or Video", "Take Photo", "Record Audio", "Attach", "Remove Attachment", "Paste", "Send Later")
-            else -> arrayOf("Choose Picture or Video", "Take Photo", "Record Audio", "Attach", "Paste", "Send Later")
+                arrayOf("Attach", "Remove Attachment", "Paste", "Schedule Send")
+            else -> arrayOf("Attach", "Paste", "Schedule Send")
         }
         AlertDialog.Builder(this)
             .setTitle("Options")
             .setItems(options) { _, which ->
                 when (options[which]) {
                     "Choose Contact" -> chooseContact()
-                    "Send Later" -> scheduleMessage()
-                    "Choose Picture or Video" -> picker.pickFromGallery()
-                    "Take Photo" -> picker.takePhoto()
-                    "Record Audio" -> startAudioMemoRecording()
-                    "Attach" -> picker.showAttachMenu()
+                    "Schedule Send" -> scheduleMessage()
+                    "Attach" -> picker.pickFromGallery()
                     "Remove Attachment" -> {
                         attachments.clear()
                         Toast.makeText(this, "Attachment removed", Toast.LENGTH_SHORT).show()
@@ -364,7 +361,7 @@ class ComposeActivity : AppCompatActivity() {
         finish()
     }
 
-    /** Options > Send Later: like Send, on a day and at a time picked on the keypad. */
+    /** Options > Schedule Send: like Send, on a day and at a time picked on the keypad. */
     private fun scheduleMessage() {
         recipientController.confirmPending()
         inputController.confirmPending()
@@ -461,12 +458,50 @@ class ComposeActivity : AppCompatActivity() {
         }.start()
     }
 
+
+    private val micTaps = MicTaps()
+    private var cameraPressed = false
+
+    /** Mic press: hold to dictate; a quick second tap starts an audio message. */
+    private fun onMicPressed(event: KeyEvent) {
+        if (event.repeatCount != 0) return
+        if (micTaps.press(event.eventTime)) {
+            listeningIndicator.visibility = View.GONE
+            startAudioMemoRecording()
+        } else {
+            startVoiceRecording()
+        }
+    }
+
+    private fun onMicReleased(event: KeyEvent) {
+        when (micTaps.release(event.eventTime)) {
+            MicTaps.Release.TRANSCRIBE -> stopVoiceRecordingAndSend()
+            MicTaps.Release.DROP -> {
+                voiceHelper.cancelRecording()
+                listeningIndicator.visibility = View.GONE
+            }
+            MicTaps.Release.IGNORE -> {}
+        }
+    }
+
+    /** Camera key released (its press came here): take a picture. */
+    private fun onCameraReleased(event: KeyEvent) {
+        if (!cameraPressed) return
+        cameraPressed = false
+        AppLog.event("Camera", "key ${event.keyCode} (${KeyEvent.keyCodeToString(event.keyCode)}): taking a picture")
+        picker.takePhoto()
+    }
+
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action == KeyEvent.ACTION_DOWN) {
             if (isRecordingMemo) {
                 if (event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
                     finishAudioMemoRecording()
                 }
+                return true
+            }
+            if (CameraKey.matches(event.keyCode)) {
+                if (event.repeatCount == 0) cameraPressed = true
                 return true
             }
             when (event.keyCode) {
@@ -481,7 +516,7 @@ class ComposeActivity : AppCompatActivity() {
                 }
             }
             if (event.keyCode in MicButtonKeyCodes.CODES) {
-                if (event.repeatCount == 0) startVoiceRecording()
+                onMicPressed(event)
                 return true
             }
 
@@ -598,7 +633,11 @@ class ComposeActivity : AppCompatActivity() {
             if (inputController.onKeyDown(event.keyCode, event)) return true
         } else if (event.action == KeyEvent.ACTION_UP) {
             if (event.keyCode in MicButtonKeyCodes.CODES) {
-                stopVoiceRecordingAndSend()
+                onMicReleased(event)
+                return true
+            }
+            if (CameraKey.matches(event.keyCode)) {
+                onCameraReleased(event)
                 return true
             }
             if (editingRecipient && recipientController.onKeyUp(event.keyCode)) return true

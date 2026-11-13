@@ -123,7 +123,7 @@ class ConversationActivity : AppCompatActivity() {
         voiceHelper = GroqVoiceInputHelper(this)
         audioMemoRecorder = AudioMemoRecorder(this)
         attachments = PendingAttachments(this, attachmentIndicator)
-        picker = AttachmentPicker(this) { attachments.add(it) }
+        picker = AttachmentPicker(this, onRecordAudio = { startAudioMemoRecording() }) { attachments.add(it) }
         OutgoingAttachment.fromHandoff(intent.getStringArrayListExtra(EXTRA_PREFILL_ATTACHMENTS))
             .takeIf { it.isNotEmpty() }?.let { attachments.add(it) }
 
@@ -345,22 +345,19 @@ class ConversationActivity : AppCompatActivity() {
             return
         }
         val options = (if (!attachments.isEmpty()) {
-            arrayOf("Choose Picture or Video", "Take Photo", "Record Audio", "Attach", "Remove Attachment", "Paste")
+            arrayOf("Attach", "Remove Attachment", "Paste")
         } else {
-            arrayOf("Choose Picture or Video", "Take Photo", "Record Audio", "Attach", "Paste")
-        }) + arrayOf("Send Later") + (if (address.contains(',')) arrayOf("Show Members") else emptyArray())
+            arrayOf("Attach", "Paste")
+        }) + arrayOf("Schedule Send") + (if (address.contains(',')) arrayOf("Show Members") else emptyArray())
         AlertDialog.Builder(this)
             .setTitle("Options")
             .setItems(options) { _, which ->
                 when (options[which]) {
-                    "Choose Picture or Video" -> picker.pickFromGallery()
-                    "Send Later" -> scheduleCurrentMessage()
+                    "Schedule Send" -> scheduleCurrentMessage()
                     "Show Members" -> GroupMembers.show(
                         this, threadId, findViewById<TextView>(R.id.contactName).text.toString()
                     )
-                    "Take Photo" -> picker.takePhoto()
-                    "Record Audio" -> startAudioMemoRecording()
-                    "Attach" -> picker.showAttachMenu()
+                    "Attach" -> picker.pickFromGallery()
                     "Remove Attachment" -> {
                         attachments.clear()
                         Toast.makeText(this, "Attachment removed", Toast.LENGTH_SHORT).show()
@@ -1015,7 +1012,7 @@ class ConversationActivity : AppCompatActivity() {
         )
     }
 
-    /** Options > Send Later: the typed message (and attachments) goes out
+    /** Options > Schedule Send: the typed message (and attachments) goes out
      *  on a chosen day and time, at most a week ahead (ScheduledSends). */
     private fun scheduleCurrentMessage() {
         inputController.confirmPending()
@@ -1095,6 +1092,40 @@ class ConversationActivity : AppCompatActivity() {
     // dispatchKeyEvent gets first crack at every physical key press, before
     // Android's normal focus system decides who handles it. That guarantees
     // typing/scrolling works no matter what view happens to have focus.
+
+    private val micTaps = MicTaps()
+    private var cameraPressed = false
+
+    /** Mic press: hold to dictate; a quick second tap starts an audio message. */
+    private fun onMicPressed(event: KeyEvent) {
+        if (event.repeatCount != 0) return
+        if (micTaps.press(event.eventTime)) {
+            listeningIndicator.visibility = View.GONE
+            startAudioMemoRecording()
+        } else {
+            startVoiceRecording()
+        }
+    }
+
+    private fun onMicReleased(event: KeyEvent) {
+        when (micTaps.release(event.eventTime)) {
+            MicTaps.Release.TRANSCRIBE -> stopVoiceRecordingAndSend()
+            MicTaps.Release.DROP -> {
+                voiceHelper.cancelRecording()
+                listeningIndicator.visibility = View.GONE
+            }
+            MicTaps.Release.IGNORE -> {}
+        }
+    }
+
+    /** Camera key released (its press came here): take a picture. */
+    private fun onCameraReleased(event: KeyEvent) {
+        if (!cameraPressed) return
+        cameraPressed = false
+        AppLog.event("Camera", "key ${event.keyCode} (${KeyEvent.keyCodeToString(event.keyCode)}): taking a picture")
+        picker.takePhoto()
+    }
+
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action == KeyEvent.ACTION_DOWN) {
             if (isRecordingMemo) {
@@ -1112,6 +1143,10 @@ class ConversationActivity : AppCompatActivity() {
                 }
                 return handleSelectionModeKey(event)
             }
+            if (CameraKey.matches(event.keyCode)) {
+                if (event.repeatCount == 0) cameraPressed = true
+                return true
+            }
             when (event.keyCode) {
                 // Standard "send" key on basic-phone keypads.
                 KeyEvent.KEYCODE_CALL -> {
@@ -1127,10 +1162,10 @@ class ConversationActivity : AppCompatActivity() {
                     return true
                 }
                 in MicButtonKeyCodes.CODES -> {
-                    // Hold to record, release to send — key-repeat events
-                    // (repeatCount > 0) fire while held, so only react to
-                    // the initial press.
-                    if (event.repeatCount == 0) startVoiceRecording()
+                    // Hold to dictate, release to transcribe — key-repeat
+                    // events fire while held, so only the first press
+                    // counts. Two quick taps start an audio message.
+                    onMicPressed(event)
                     return true
                 }
                 KeyEvent.KEYCODE_DPAD_UP -> {
@@ -1188,7 +1223,11 @@ class ConversationActivity : AppCompatActivity() {
             }
         } else if (event.action == KeyEvent.ACTION_UP) {
             if (event.keyCode in MicButtonKeyCodes.CODES) {
-                stopVoiceRecordingAndSend()
+                onMicReleased(event)
+                return true
+            }
+            if (CameraKey.matches(event.keyCode)) {
+                onCameraReleased(event)
                 return true
             }
             if ((event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || event.keyCode == KeyEvent.KEYCODE_ENTER) &&

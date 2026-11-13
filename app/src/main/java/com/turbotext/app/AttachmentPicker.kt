@@ -27,9 +27,15 @@ import java.io.File
  */
 class AttachmentPicker(
     private val activity: AppCompatActivity,
+    /** The picture picker's Options > Record Audio: the screen's own recorder. */
+    private val onRecordAudio: () -> Unit = {},
     private val onAttached: (List<OutgoingAttachment>) -> Unit
 ) {
     companion object {
+        /** Set by the picture picker when one of its Options was chosen
+         *  instead of a picture: photo, video, audio, contact or file. */
+        const val EXTRA_ACTION = "com.turbotext.app.ATTACH_ACTION"
+
         const val REQ_PHOTO = 400
         const val REQ_GALLERY = 401
         const val REQ_CONTACT = 403
@@ -45,23 +51,6 @@ class AttachmentPicker(
     /** Where the camera app was asked to save the photo/video being taken. */
     private var captureUri: Uri? = null
     private var captureMime = "image/jpeg"
-
-    /** "Attach" submenu. [onAudio] starts the screen's own voice-memo
-     *  recorder. */
-    fun showAttachMenu() {
-        val options = arrayOf("Choose Picture or Video", "Record Video", "Contact", "File")
-        AlertDialog.Builder(activity)
-            .setTitle("Attach")
-            .setItems(options) { _, which ->
-                when (options[which]) {
-                    "Choose Picture or Video" -> pickFromGallery()
-                    "Record Video" -> recordVideo()
-                    "Contact" -> pickContact()
-                    "File" -> pickFile()
-                }
-            }
-            .show()
-    }
 
     private fun hasCamera(): Boolean {
         if (ContextCompat.checkSelfPermission(activity, Manifest.permission.CAMERA)
@@ -150,6 +139,15 @@ class AttachmentPicker(
             }
             REQ_GALLERY, REQ_FILE -> {
                 if (!ok) return true
+                when (data?.getStringExtra(EXTRA_ACTION)) {
+                    null -> {}
+                    "photo" -> { takePhoto(); return true }
+                    "video" -> { recordVideo(); return true }
+                    "audio" -> { onRecordAudio(); return true }
+                    "contact" -> { pickContact(); return true }
+                    "file" -> { pickFile(); return true }
+                    else -> return true
+                }
                 // A multiple choice comes back in clipData; a single one
                 // in data (some pickers fill both for one item).
                 val uris = ArrayList<Uri>()

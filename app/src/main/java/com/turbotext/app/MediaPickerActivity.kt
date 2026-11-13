@@ -64,8 +64,9 @@ object MediaItems {
  * itself instead.
  *
  * Keys: the D-pad moves, 2/8 jump a page, OK chooses the highlighted one,
- * # marks several (OK then takes all the marked ones), the right
- * softkey picks an album, and Clear or the left softkey cancels. Hands
+ * # marks several (OK then takes all the marked ones), the left softkey
+ * picks an album, the right softkey offers other things to attach (a
+ * new photo, video, audio, a contact or a file), and Clear cancels. Hands
  * back content URIs the same way a gallery app would (data, or clipData
  * for several).
  */
@@ -134,9 +135,9 @@ class MediaPickerActivity : AppCompatActivity() {
             setTextColor(theme.accent)
             textSize = 13f
         }
-        bar.addView(label("Cancel", Gravity.START), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        bar.addView(label("Albums", Gravity.START), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         bar.addView(label("Select", Gravity.CENTER), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        bar.addView(label("Albums", Gravity.END), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        bar.addView(label("Options", Gravity.END), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         root.addView(bar)
         setContentView(root)
         header.text = "Pictures & Videos"
@@ -271,11 +272,12 @@ class MediaPickerActivity : AppCompatActivity() {
             if (!pressed.remove(code)) return true
             when (code) {
                 KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> choose()
-                KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_DEL, KeyEvent.KEYCODE_SOFT_LEFT -> {
+                KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_DEL -> {
                     setResult(Activity.RESULT_CANCELED)
                     finish()
                 }
-                KeyEvent.KEYCODE_SOFT_RIGHT -> chooseAlbum()
+                KeyEvent.KEYCODE_SOFT_LEFT -> chooseAlbum()
+                KeyEvent.KEYCODE_SOFT_RIGHT -> showOptions()
                 else -> return super.dispatchKeyEvent(event)
             }
             return true
@@ -328,6 +330,19 @@ class MediaPickerActivity : AppCompatActivity() {
         }
         setResult(Activity.RESULT_OK, result)
         finish()
+    }
+
+    /** Right softkey: attach something other than a picture from here. */
+    private fun showOptions() {
+        val labels = arrayOf("Take Photo", "Record Video", "Record Audio", "Contact", "File")
+        val actions = arrayOf("photo", "video", "audio", "contact", "file")
+        AlertDialog.Builder(this)
+            .setTitle("Options")
+            .setItems(labels) { _, which ->
+                setResult(Activity.RESULT_OK, Intent().putExtra(AttachmentPicker.EXTRA_ACTION, actions[which]))
+                finish()
+            }
+            .show()
     }
 
     private fun chooseAlbum() {

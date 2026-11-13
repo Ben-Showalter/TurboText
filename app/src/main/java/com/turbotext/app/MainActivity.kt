@@ -394,7 +394,7 @@ class MainActivity : AppCompatActivity() {
         // move the highlight, center/OK selects) — no touch needed.
         val convo = focusedConversation
         val options = if (convo != null) {
-            arrayOf("Mark All as Read", "Move to Trash", "Contact Options", "Trash Bin", "Settings")
+            arrayOf("Contact Options", "Mark All as Read", "Move to Trash", "Trash Bin", "Settings")
         } else {
             arrayOf("Mark All as Read", "Trash Bin", "Settings")
         }

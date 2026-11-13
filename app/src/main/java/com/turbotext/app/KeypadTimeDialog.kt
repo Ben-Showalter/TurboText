@@ -17,7 +17,7 @@ import android.widget.TextView
  * going), Left/Right moves between them, and the number keys can type
  * the hour or minute. OK saves; Clear or the left softkey cancels.
  *
- * With [days] (Send Later) a Day column comes first ("Today",
+ * With [days] (Schedule Send) a Day column comes first ("Today",
  * "Tomorrow", "Wed 4"…), starting on [day]; [describe] writes the line
  * under the selector (the full date and time), and [check] can refuse
  * a choice with a message, keeping the dialog open.

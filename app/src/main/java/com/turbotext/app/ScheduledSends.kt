@@ -13,8 +13,8 @@ import java.io.File
 import java.util.Calendar
 
 /**
- * Send Later: messages written now and sent at a chosen day and time, at
- * most a week ahead (Options > Send Later while composing).
+ * Schedule Send: messages written now and sent at a chosen day and time, at
+ * most a week ahead (Options > Schedule Send while composing).
  *
  * Each one is kept in SharedPreferences, with copies of its attachments
  * under files/scheduled/<id>/ so they're still readable when it goes out.
@@ -295,7 +295,7 @@ object ScheduleLabels {
 }
 
 /**
- * Send Later's one screen: Day, hour, minute and AM/PM side by side
+ * Schedule Send's one screen: Day, hour, minute and AM/PM side by side
  * (KeypadTimeDialog with a Day column), opening on Tomorrow at the next
  * half hour. The line under it spells out the date and time; a time
  * already past is refused and the screen stays open.
@@ -326,7 +326,7 @@ object SendLaterPicker {
         val time = java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT)
         fun at(d: Int, h: Int, m: Int) = ScheduledSends.timeOn(System.currentTimeMillis(), d, h, m)
         KeypadTimeDialog(
-            activity, "Send Later", hour, minute,
+            activity, "Schedule Send", hour, minute,
             days = labels,
             day = day,
             describe = { d, h, m -> at(d, h, m).let { "${full.format(java.util.Date(it))} at ${time.format(java.util.Date(it))}" } },
