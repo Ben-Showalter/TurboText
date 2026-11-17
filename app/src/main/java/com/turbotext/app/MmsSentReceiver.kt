@@ -23,6 +23,9 @@ import java.io.File
  */
 class MmsSentReceiver : BroadcastReceiver() {
     companion object {
+        /** [boxOf] couldn't read the row (not the same as "gone"). */
+        private const val BOX_UNREADABLE = -999
+
         private const val REPORT_TAG = "TurboTextMmsReport"
         private const val TAG = "TurboTextMms"
         const val ACTION_RETRY = "com.turbotext.app.MMS_RETRY"
@@ -157,6 +160,15 @@ class MmsSentReceiver : BroadcastReceiver() {
         val pending = goAsync()
         Thread {
             try {
+                val box = context.contentResolver.query(uri, arrayOf(Telephony.Mms.MESSAGE_BOX), null, null, null)
+                    ?.use { if (it.moveToFirst()) it.getInt(0) else null }
+                val target = if (ok) Telephony.Mms.MESSAGE_BOX_SENT else Telephony.Mms.MESSAGE_BOX_FAILED
+                // A late answer (an earlier try, after a resend) can't
+                // turn Sent into Failed.
+                if (!SendState.mmsMayBecome(box, target)) {
+                    AppLog.event("Mms", "${uri.lastPathSegment}: result ignored, already in box $box")
+                    return@Thread
+                }
                 context.contentResolver.update(
                     uri,
                     ContentValues(2).apply {
@@ -194,11 +206,11 @@ class MmsSentReceiver : BroadcastReceiver() {
         val filePath = intent.getStringExtra(MmsTransmitter.EXTRA_FILE_PATH)
         val attempt = intent.getIntExtra(MmsTransmitter.EXTRA_ATTEMPT, MAX_ATTEMPTS)
         // Deleted or already sent another way in the meantime: nothing to do.
-        val box = try {
-            context.contentResolver.query(uri, arrayOf(Telephony.Mms.MESSAGE_BOX), null, null, null)
-                ?.use { if (it.moveToFirst()) it.getInt(0) else null }
-        } catch (e: Exception) {
-            null
+        val box = boxOf(context, uri)
+        if (box == BOX_UNREADABLE) {
+            // Not "finished": look again in a minute.
+            rearm(context, ACTION_RETRY, uri, intent, attempt)
+            return
         }
         if (box != Telephony.Mms.MESSAGE_BOX_OUTBOX) {
             filePath?.let { File(it).delete() }
@@ -232,11 +244,10 @@ class MmsSentReceiver : BroadcastReceiver() {
         val uri = intent.getStringExtra(MmsTransmitter.EXTRA_CONTENT_URI)?.let { Uri.parse(it) } ?: return
         val filePath = intent.getStringExtra(MmsTransmitter.EXTRA_FILE_PATH)
         val attempt = intent.getIntExtra(MmsTransmitter.EXTRA_ATTEMPT, MAX_ATTEMPTS)
-        val box = try {
-            context.contentResolver.query(uri, arrayOf(Telephony.Mms.MESSAGE_BOX), null, null, null)
-                ?.use { if (it.moveToFirst()) it.getInt(0) else null }
-        } catch (e: Exception) {
-            null
+        val box = boxOf(context, uri)
+        if (box == BOX_UNREADABLE) {
+            rearm(context, ACTION_WATCHDOG, uri, intent, attempt)
+            return
         }
         // Answered (sent, failed or deleted), or parked for no signal.
         if (box != Telephony.Mms.MESSAGE_BOX_OUTBOX || SendRetry.isWaiting(context, uri.toString())) return
@@ -256,6 +267,24 @@ class MmsSentReceiver : BroadcastReceiver() {
             if (resent) return
         }
         giveUp(context, uri, filePath, "no answer after try $attempt")
+    }
+
+    /** The row's MESSAGE_BOX, null if it's gone, or [BOX_UNREADABLE]. */
+    private fun boxOf(context: Context, uri: Uri): Int? = try {
+        context.contentResolver.query(uri, arrayOf(Telephony.Mms.MESSAGE_BOX), null, null, null)
+            ?.use { if (it.moveToFirst()) it.getInt(0) else null }
+    } catch (e: Exception) {
+        Log.w(TAG, "couldn't read the box of $uri", e)
+        BOX_UNREADABLE
+    }
+
+    private fun rearm(context: Context, action: String, uri: Uri, intent: Intent, attempt: Int) {
+        AppLog.event("Mms", "${uri.lastPathSegment}: couldn't read it; checking again in a minute")
+        schedule(
+            context, action, uri, intent.getStringExtra(MmsTransmitter.EXTRA_FILE_PATH) ?: "",
+            intent.getIntExtra(MmsTransmitter.EXTRA_SUB_ID, -1),
+            intent.getBooleanExtra(MmsTransmitter.EXTRA_GROUP, false), attempt, 60_000L
+        )
     }
 
     private fun giveUp(context: Context, uri: Uri, filePath: String?, why: String) {

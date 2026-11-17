@@ -42,27 +42,37 @@ object BroadcastSender {
         executor.execute {
             var sent = 0
             var failed = 0
+            var unconfirmed = 0
             try {
                 val repo = SmsRepository(app)
                 list.contacts.forEachIndexed { i, contact ->
                     notify(app, list, "Sending ${i + 1} of ${list.contacts.size}…", ongoing = true, progress = i)
-                    val ok = try {
+                    val result = try {
                         val row = repo.sendMessage(contact.number, body)
-                        row != null && awaitResult(app, row)
+                        if (row == null) RESULT_FAILED else awaitResult(app, row)
                     } catch (e: Exception) {
                         Log.w(TAG, "failed to send to one member", e)
-                        false
+                        RESULT_FAILED
                     }
-                    if (ok) sent++ else failed++
+                    when (result) {
+                        RESULT_SENT -> sent++
+                        RESULT_FAILED -> failed++
+                        else -> unconfirmed++
+                    }
                     if (i < list.contacts.size - 1) Thread.sleep(GAP_MS)
                 }
             } catch (e: InterruptedException) {
                 Thread.currentThread().interrupt()
             } finally {
                 running.set(false)
-                val text = if (failed == 0) "Sent to $sent people" else "Sent to $sent, $failed failed"
+                val text = buildString {
+                    append("Sent to $sent")
+                    if (unconfirmed > 0) append(", $unconfirmed waiting")
+                    if (failed > 0) append(", $failed failed")
+                    if (unconfirmed == 0 && failed == 0) append(" people")
+                }
                 notify(app, list, text, ongoing = false, progress = -1)
-                Log.i(TAG, "broadcast done: $sent sent, $failed failed")
+                Log.i(TAG, "broadcast done: $sent sent, $unconfirmed waiting, $failed failed")
             }
         }
         return true
@@ -70,20 +80,25 @@ object BroadcastSender {
 
     /** Waits for SmsSentReceiver to move [row] out of the outbox; true
      *  when it ended up sent (or the carrier is slow to answer). */
-    private fun awaitResult(context: Context, row: android.net.Uri): Boolean {
+    private const val RESULT_SENT = 0
+    private const val RESULT_FAILED = 1
+    /** Waiting for signal, or no answer yet: not counted as sent. */
+    private const val RESULT_UNCONFIRMED = 2
+
+    private fun awaitResult(context: Context, row: android.net.Uri): Int {
         val until = System.currentTimeMillis() + WAIT_MS
         while (System.currentTimeMillis() < until) {
             val type = context.contentResolver.query(row, arrayOf(Telephony.Sms.TYPE), null, null, null)
                 ?.use { if (it.moveToFirst()) it.getInt(0) else null }
             when (type) {
-                Telephony.Sms.MESSAGE_TYPE_FAILED -> return false
+                Telephony.Sms.MESSAGE_TYPE_FAILED -> return RESULT_FAILED
                 // No signal: SendRetry sends it once there is.
-                Telephony.Sms.MESSAGE_TYPE_QUEUED -> return true
+                Telephony.Sms.MESSAGE_TYPE_QUEUED -> return RESULT_UNCONFIRMED
                 null, Telephony.Sms.MESSAGE_TYPE_OUTBOX -> Thread.sleep(500)
-                else -> return true
+                else -> return RESULT_SENT
             }
         }
-        return true
+        return RESULT_UNCONFIRMED
     }
 
     private fun notify(context: Context, list: BroadcastList, text: String, ongoing: Boolean, progress: Int) {

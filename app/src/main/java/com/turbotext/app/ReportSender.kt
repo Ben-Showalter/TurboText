@@ -182,34 +182,13 @@ class ReportAlarmReceiver : BroadcastReceiver() {
  *  set the report's alarm again (alarms don't survive either). */
 class BootReceiver : BroadcastReceiver() {
 
-    /** A picture message still "Sending" from before the restart lost its
-     *  retry alarm (MmsSentReceiver) and would say "Sending" forever: show
-     *  it as failed, so it can be sent again. Ones from the last 10
-     *  minutes may still be going through, and are left alone. */
-    private fun failStuckPictureMessages(context: Context) {
-        try {
-            val before = System.currentTimeMillis() / 1000 - 10 * 60
-            // Ones waiting for service (SendRetry) aren't stuck.
-            val waiting = SendRetry.waitingMmsIds(context)
-            val notWaiting = if (waiting.isEmpty()) "" else " AND ${Telephony.Mms._ID} NOT IN (${waiting.joinToString(",")})"
-            val n = context.contentResolver.update(
-                Telephony.Mms.CONTENT_URI,
-                android.content.ContentValues().apply { put(Telephony.Mms.MESSAGE_BOX, Telephony.Mms.MESSAGE_BOX_FAILED) },
-                "${Telephony.Mms.MESSAGE_BOX} = ${Telephony.Mms.MESSAGE_BOX_OUTBOX} AND ${Telephony.Mms.DATE} < $before$notWaiting",
-                null
-            )
-            if (n > 0) AppLog.event("Mms", "marked $n stuck picture message(s) as failed at restart")
-        } catch (e: Exception) {
-            android.util.Log.w("TurboTextMms", "couldn't check for stuck picture messages", e)
-        }
-    }
-
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
             Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED -> {
                 BackgroundHost.ensureRunning(context)
                 ReportSender.schedule(context.applicationContext)
-                failStuckPictureMessages(context.applicationContext)
+                val app = context.applicationContext
+                Thread { StuckSends.sweep(app) }.start()
                 // Messages waiting for service lost their alarm too.
                 SendRetry.retryAll(context.applicationContext)
                 // Schedule Send alarms are gone too.

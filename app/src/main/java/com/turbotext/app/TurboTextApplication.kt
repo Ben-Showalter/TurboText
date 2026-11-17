@@ -55,6 +55,9 @@ class TurboTextApplication : Application() {
         BackgroundHost.ensureRunning(this)
         // Texts and pictures waiting for a signal go out when it's back.
         SendRetry.startListening(this)
+        // Anything left "Sending" with no alarm still watching it (the app
+        // was stopped) is shown as Failed, so it can be resent.
+        Thread { StuckSends.sweep(this) }.start()
         // Schedule Send: alarms are lost if the app was force-stopped; set
         // them again, and send any whose time passed meanwhile.
         Thread { ScheduledSends.rescheduleAll(this) }.start()

@@ -151,6 +151,15 @@ object MmsTransmitter {
 
         val (messageId, resolvedSubId) = readRow(context, messageUri, subscriptionId)
 
+        // Armed before anything else can go wrong: if the app dies before
+        // the hand-off, this finds no file (or no result) and marks it
+        // failed instead of leaving it on "Sending". Re-armed at hand-off.
+        val pduFile = File(context.cacheDir, "send.${UUID.randomUUID()}.dat")
+        MmsSentReceiver.schedule(
+            context, MmsSentReceiver.ACTION_WATCHDOG, messageUri, pduFile.path, resolvedSubId, groupMms, 1,
+            MmsSentReceiver.WATCHDOG_MS
+        )
+
         // Compose from the persisted PDU so the bytes sent are exactly
         // what was saved.
         val persistedPdu: GenericPdu = try {
@@ -165,7 +174,6 @@ object MmsTransmitter {
         // From here on the message is in the outbox ("Sending"). Anything
         // going wrong must not leave it there: it used to stay on "Sending"
         // until a restart marked it failed, and was never tried again.
-        val pduFile = File(context.cacheDir, "send.${UUID.randomUUID()}.dat")
         try {
             handOff(context, messageUri, persistedPdu, pduFile, messageId, resolvedSubId, groupMms)
         } catch (e: Exception) {
@@ -211,14 +219,15 @@ object MmsTransmitter {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_IMMUTABLE else 0
         val pendingIntent = PendingIntent.getBroadcast(context, messageId, sentIntent, flags)
 
-        val configOverrides = Bundle().apply {
-            putBoolean(SmsManager.MMS_CONFIG_GROUP_MMS_ENABLED, groupMms)
-        }
+        val configOverrides = configOverrides(groupMms)
 
         SmsManagerFactory.createSmsManager(resolvedSubId)
             .sendMultimediaMessage(context, contentUri, null, configOverrides, pendingIntent)
 
-        AppLog.event("Mms", "$messageId: handed to the phone (${pduFile.length()}B, sim $resolvedSubId)")
+        AppLog.event(
+            "Mms", "$messageId: handed to the phone (${pduFile.length()}B, sim $resolvedSubId, " +
+                "reports ${if (SettingsHelper.isMmsDeliveryReports(context)) "on" else "off"}, ${describe(configOverrides)})"
+        )
         MmsSentReceiver.schedule(
             context, MmsSentReceiver.ACTION_WATCHDOG, messageUri, pduFile.path, resolvedSubId, groupMms, 1,
             MmsSentReceiver.WATCHDOG_MS
@@ -250,7 +259,7 @@ object MmsTransmitter {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_IMMUTABLE else 0
         val requestCode = messageUri.lastPathSegment?.toIntOrNull() ?: 0
         val pendingIntent = PendingIntent.getBroadcast(context, requestCode, sentIntent, flags)
-        val configOverrides = Bundle().apply { putBoolean(SmsManager.MMS_CONFIG_GROUP_MMS_ENABLED, groupMms) }
+        val configOverrides = configOverrides(groupMms)
         SmsManagerFactory.createSmsManager(subId)
             .sendMultimediaMessage(context, contentUri, null, configOverrides, pendingIntent)
         AppLog.event("Mms", "${messageUri.lastPathSegment}: try $attempt handed to the phone")
@@ -260,6 +269,34 @@ object MmsTransmitter {
         )
         return true
     }
+
+    /**
+     * What the phone's MMS service is told for each send — as older
+     * TurboText (the klinker library) did, and the October rewrite
+     * dropped: the carrier's extra HTTP headers from mms_config for this
+     * SIM (on Verizon's network: X-VzW-MDN and x-up-calling-line-id, the
+     * sender's number, which its MMSC uses to know who's sending), and
+     * the size limit. The phone fills in ##LINE1…## itself.
+     */
+    private fun configOverrides(groupMms: Boolean) = Bundle().apply {
+        putBoolean(SmsManager.MMS_CONFIG_GROUP_MMS_ENABLED, groupMms)
+        try {
+            com.android.mms.MmsConfig.getHttpParams()?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                putString(SmsManager.MMS_CONFIG_HTTP_PARAMS, it)
+            }
+            // Never below what AttachmentPolicy already sized the message to.
+            putInt(
+                SmsManager.MMS_CONFIG_MAX_MESSAGE_SIZE,
+                maxOf(com.android.mms.MmsConfig.getMaxMessageSize(), AttachmentPolicy.HARD_CAP_BYTES.toInt())
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "MmsTransmitter: no mms_config values", e)
+        }
+    }
+
+    /** For the log: the headers template (no numbers in it) and size. */
+    private fun describe(b: Bundle) =
+        "headers ${b.getString(SmsManager.MMS_CONFIG_HTTP_PARAMS) ?: "none"}, max ${b.getInt(SmsManager.MMS_CONFIG_MAX_MESSAGE_SIZE, 0) / 1024}KB"
 
     fun markFailed(context: Context, messageUri: Uri) {
         try {
@@ -331,7 +368,11 @@ object MmsTransmitter {
             req.setPriority(PduHeaders.PRIORITY_NORMAL)
             // The carrier sends an m-delivery-ind back per recipient; mmslib's
             // PushReceiver saves it, and SmsRepository shows "Delivered".
-            req.setDeliveryReport(PduHeaders.VALUE_YES)
+            // Off unless chosen in Advanced settings: older TurboText and
+            // DPAD never asked, and iPhone failures began after it was on.
+            req.setDeliveryReport(
+                if (SettingsHelper.isMmsDeliveryReports(context)) PduHeaders.VALUE_YES else PduHeaders.VALUE_NO
+            )
             req.setReadReport(PduHeaders.VALUE_NO)
         } catch (e: InvalidHeaderValueException) {
             Log.w(TAG, "MmsTransmitter: invalid header value while building PDU", e)

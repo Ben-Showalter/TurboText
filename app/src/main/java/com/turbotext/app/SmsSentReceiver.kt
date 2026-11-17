@@ -83,13 +83,29 @@ class SmsSentReceiver : android.content.BroadcastReceiver() {
             // No signal: wait for it and send again (SendRetry) rather
             // than leave it failed.
             if (isNoService(context, resultCode)) {
-                SendRetry.waitSms(context.applicationContext, rowUri)
+                // Unless a later answer already sent it.
+                val current = try {
+                    context.contentResolver.query(rowUri, arrayOf(Telephony.Sms.TYPE), null, null, null)
+                        ?.use { if (it.moveToFirst()) it.getInt(0) else null }
+                } catch (e: Exception) {
+                    null
+                }
+                if (current != Telephony.Sms.MESSAGE_TYPE_SENT) SendRetry.waitSms(context.applicationContext, rowUri)
                 return
             }
         }
         val values = ContentValues().apply { put(Telephony.Sms.TYPE, newType) }
         try {
-            context.contentResolver.update(rowUri, values, null, null)
+            // Only forward: a late OK can't undo a failed part, and a late
+            // failure can't undo Sent (SendState).
+            val current = context.contentResolver.query(rowUri, arrayOf(Telephony.Sms.TYPE), null, null, null)
+                ?.use { if (it.moveToFirst()) it.getInt(0) else null }
+            if (SendState.smsMayBecome(current, newType, partCount)) {
+                context.contentResolver.update(rowUri, values, null, null)
+                if (newType == Telephony.Sms.MESSAGE_TYPE_SENT) AppLog.event("Sms", "text ${rowUri.lastPathSegment} sent")
+            } else {
+                AppLog.event("Sms", "text ${rowUri.lastPathSegment}: result $resultCode ignored, already type $current")
+            }
         } catch (e: Exception) {
             Log.w("TurboTextSend", "failed to update sent status", e)
         }

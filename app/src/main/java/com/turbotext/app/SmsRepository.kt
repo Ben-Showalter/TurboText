@@ -1225,6 +1225,8 @@ class SmsRepository(private val context: Context) {
         if (rowUri != null) {
             transmitSms(rowUri, address, body, threadId)
         } else {
+            // Couldn't save it: sent anyway, but there's nothing to track.
+            AppLog.event("Sms", "text to $address couldn't be saved; sending untracked")
             smsManager.sendMultipartTextMessage(address, null, parts, null, null)
         }
 
@@ -1241,7 +1243,26 @@ class SmsRepository(private val context: Context) {
      *  part; [SmsSentReceiver] moves it to SENT or FAILED, or to
      *  waiting-for-service ([SendRetry]). Also used to send a waiting
      *  text again. */
-    fun transmitSms(rowUri: android.net.Uri, address: String, body: String, threadId: Long?) {
+    fun transmitSms(rowUri: android.net.Uri, address: String, body: String, threadId: Long?): Boolean = try {
+        transmitSmsOrThrow(rowUri, address, body, threadId)
+        // No answer at all (the phone's radio service lost it, or the app
+        // was stopped) used to leave it on "Sending" forever.
+        SendRetry.armSmsWatchdog(context, rowUri)
+        true
+    } catch (e: Exception) {
+        // Handed to nobody: show it as failed (Resend), not "Sending".
+        android.util.Log.w("TurboTextSend", "couldn't hand the text to the phone", e)
+        AppLog.event("Sms", "text ${rowUri.lastPathSegment} FAILED: ${e.javaClass.simpleName}: ${e.message}")
+        try {
+            context.contentResolver.update(
+                rowUri, ContentValues().apply { put(Telephony.Sms.TYPE, Telephony.Sms.MESSAGE_TYPE_FAILED) }, null, null
+            )
+        } catch (_: Exception) {
+        }
+        false
+    }
+
+    private fun transmitSmsOrThrow(rowUri: android.net.Uri, address: String, body: String, threadId: Long?) {
         val smsManager = SmsManager.getDefault()
         val parts = smsManager.divideMessage(body)
         val requestCode = rowUri.lastPathSegment?.toIntOrNull() ?: System.currentTimeMillis().toInt()

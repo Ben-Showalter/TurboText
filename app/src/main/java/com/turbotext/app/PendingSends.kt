@@ -137,6 +137,9 @@ object PendingSends {
     internal fun matches(pending: Message, real: Message): Boolean =
         real.isOutgoing && real.id >= 0 &&
             real.body.trim() == pending.body.trim() &&
+            // A picture with no text only matches a picture message, not
+            // any recent empty row.
+            (pending.body.isNotBlank() || real.isMms) &&
             real.date >= pending.date - 60_000
 
     /** Removes [threadId]'s failed sends and hands back what they held,

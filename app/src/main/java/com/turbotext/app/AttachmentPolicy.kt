@@ -36,7 +36,7 @@ object AttachmentPolicy {
      *  carrier may not: bigger messages are accepted, reported "sent",
      *  and then silently dropped in transit — pictures that "didn't always
      *  go through". 600 KB is what every US carrier passes on. */
-    private const val HARD_CAP_BYTES = 600 * 1024
+    internal const val HARD_CAP_BYTES = 600 * 1024
 
     /** SMIL, headers, part names — what the PDU costs on top of the media. */
     private const val PDU_OVERHEAD_BYTES = 2 * 1024

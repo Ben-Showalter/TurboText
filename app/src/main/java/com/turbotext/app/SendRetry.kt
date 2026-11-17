@@ -36,6 +36,10 @@ object SendRetry {
     private const val PREFS = "send_retry"
     private const val KEY_QUEUE = "queue"
     private const val ACTION_ALARM = "com.turbotext.app.SEND_RETRY"
+    const val ACTION_SMS_WATCHDOG = "com.turbotext.app.SMS_WATCHDOG"
+
+    /** How long a text may go unanswered before it's shown as failed. */
+    private const val SMS_WATCHDOG_MS = 5 * 60_000L
     private const val CHANNEL_ID = "send_failed"
     private const val NOTIFICATION_ID = 4720
 
@@ -86,13 +90,19 @@ object SendRetry {
     }
 
     private fun save(context: Context, entries: List<Entry>) {
-        prefs(context).edit().putString(KEY_QUEUE, JSONArray(entries.map { it.toJson() }).toString()).apply()
+        // commit, not apply: the queue must be on disk before the next step.
+        prefs(context).edit().putString(KEY_QUEUE, JSONArray(entries.map { it.toJson() }).toString()).commit()
     }
 
     fun waitingCount(context: Context): Int = synchronized(lock) { load(context).size }
 
     /** True while [uri] (a content://sms or content://mms row) waits for service. */
     fun isWaiting(context: Context, uri: String): Boolean = synchronized(lock) { load(context).any { it.uri == uri } }
+
+    /** Every waiting text's row URI (StuckSends leaves these alone). */
+    fun waitingSmsUris(context: Context): Set<String> = synchronized(lock) {
+        load(context).filter { it.kind == "sms" }.map { it.uri }.toSet()
+    }
 
     /** Every waiting picture message's row id — read once per thread load. */
     fun waitingMmsIds(context: Context): Set<Long> = synchronized(lock) {
@@ -197,19 +207,26 @@ object SendRetry {
                 if (live.isNotEmpty()) scheduleAlarm(app, live.maxOf { it.tries })
                 return
             }
-            // Out of the queue now; a send that fails again re-adds it
-            // (SmsSentReceiver / MmsSentReceiver), keeping its count.
-            synchronized(lock) { save(app, load(app).filter { e -> queue.none { it.uri == e.uri } }) }
+            synchronized(lock) { save(app, load(app).filter { e -> expired.none { it.uri == e.uri } }) }
             Log.i(TAG, "sending ${live.size} waiting message(s) again")
             for (e in live) {
+                // Taken off the queue one at a time, just before it's sent:
+                // taking them all off first left the rest stuck on
+                // "Waiting" if the app was stopped part way. A send that
+                // fails again re-adds it (SmsSentReceiver /
+                // MmsSentReceiver), keeping its count.
+                synchronized(lock) { save(app, load(app).filter { it.uri != e.uri }) }
                 // Remembered first, so a new failure keeps the original
                 // time and count (see add).
                 rememberRetried(app, e)
+                synchronized(resentAt) { resentAt[e.uri] = System.currentTimeMillis() }
                 try {
                     resend(app, e)
                 } catch (ex: Exception) {
+                    // Never left off the queue in Sending or Waiting.
                     Log.w(TAG, "resend of ${e.uri} failed", ex)
-                    add(app, e)
+                    AppLog.event("Retry", "${e.kind} ${Uri.parse(e.uri).lastPathSegment} FAILED on resend: ${ex.javaClass.simpleName}")
+                    markFailed(app, e)
                 }
                 Thread.sleep(1_500)
             }
@@ -223,6 +240,13 @@ object SendRetry {
     private fun rememberRetried(@Suppress("UNUSED_PARAMETER") context: Context, e: Entry) {
         synchronized(retried) { retried[e.uri] = e }
     }
+
+    /** When each message was last sent again from the queue: its row is
+     *  old, but it isn't stuck (StuckSends). */
+    private val resentAt = HashMap<String, Long>()
+
+    fun resentWithin(uri: String, ms: Long): Boolean =
+        synchronized(resentAt) { resentAt[uri]?.let { System.currentTimeMillis() - it < ms } ?: false }
 
     /** The waiting entry a fresh failure of [uri] continues, if any. */
     fun previous(uri: String): Entry? = synchronized(retried) { retried.remove(uri) }
@@ -238,8 +262,14 @@ object SendRetry {
                     ?: return // deleted meanwhile
                 val (fields, type) = row
                 if (type != Telephony.Sms.MESSAGE_TYPE_QUEUED) return // sent or deleted another way
+                val address = fields.first
+                if (address.isNullOrBlank()) {
+                    markFailed(context, e)
+                    return
+                }
                 setSmsType(context, uri, Telephony.Sms.MESSAGE_TYPE_OUTBOX)
-                SmsRepository(context).transmitSms(uri, fields.first ?: return, fields.second ?: "", fields.third)
+                // Marks it failed itself if the phone won't take it.
+                SmsRepository(context).transmitSms(uri, address, fields.second ?: "", fields.third)
             }
             "mms" -> {
                 val box = context.contentResolver.query(uri, arrayOf(Telephony.Mms.MESSAGE_BOX), null, null, null)
@@ -257,6 +287,56 @@ object SendRetry {
         refresh(context, e.uri)
     }
 
+    private fun markFailed(context: Context, e: Entry) {
+        val uri = Uri.parse(e.uri)
+        try {
+            if (e.kind == "sms") setSmsType(context, uri, Telephony.Sms.MESSAGE_TYPE_FAILED)
+            else {
+                MmsTransmitter.markFailed(context, uri)
+                e.mmsFile?.let { java.io.File(it).delete() }
+            }
+        } catch (ex: Exception) {
+            Log.w(TAG, "couldn't mark ${e.uri} failed", ex)
+        }
+        refresh(context, e.uri)
+    }
+
+    // ---- Texts that never get an answer ----
+
+    /** After a text is handed to the phone: if it's still "Sending" after
+     *  [SMS_WATCHDOG_MS], it's shown as failed (with Resend). Not sent
+     *  again automatically, which could send it twice. */
+    fun armSmsWatchdog(context: Context, rowUri: Uri) {
+        try {
+            val pending = PendingIntent.getBroadcast(
+                context, rowUri.lastPathSegment?.toIntOrNull() ?: 0,
+                Intent(context, SendRetryReceiver::class.java).setAction(ACTION_SMS_WATCHDOG).setData(rowUri),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            context.getSystemService(AlarmManager::class.java)?.setAndAllowWhileIdle(
+                AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + SMS_WATCHDOG_MS, pending
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "couldn't set the text watchdog", e)
+        }
+    }
+
+    /** The watchdog fired (or the start-up sweep found it): a text still
+     *  in the outbox becomes Failed. */
+    fun smsWatchdog(context: Context, rowUri: Uri) {
+        val type = try {
+            context.contentResolver.query(rowUri, arrayOf(Telephony.Sms.TYPE), null, null, null)
+                ?.use { if (it.moveToFirst()) it.getInt(0) else null }
+        } catch (e: Exception) {
+            null
+        }
+        if (type != Telephony.Sms.MESSAGE_TYPE_OUTBOX) return
+        AppLog.event("Sms", "text ${rowUri.lastPathSegment} FAILED: no answer from the phone after ${SMS_WATCHDOG_MS / 60000} min")
+        setSmsType(context, rowUri, Telephony.Sms.MESSAGE_TYPE_FAILED)
+        refresh(context, rowUri.toString())
+        notifyFailed(context, "A text couldn't be confirmed as sent. Open the conversation to resend it.")
+    }
+
     private fun giveUp(context: Context, e: Entry) {
         val uri = Uri.parse(e.uri)
         AppLog.event("Retry", "${e.kind} ${uri.lastPathSegment} FAILED after waiting a day for service")
@@ -270,7 +350,7 @@ object SendRetry {
             Log.w(TAG, "couldn't mark ${e.uri} failed", ex)
         }
         refresh(context, e.uri)
-        notifyFailed(context)
+        notifyFailed(context, "No signal for a day. Open the conversation to try again.")
     }
 
     private fun setSmsType(context: Context, uri: Uri, type: Int) {
@@ -315,7 +395,7 @@ object SendRetry {
         }
     }
 
-    private fun notifyFailed(context: Context) {
+    private fun notifyFailed(context: Context, text: String) {
         try {
             val manager = context.getSystemService(NotificationManager::class.java) ?: return
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -332,7 +412,7 @@ object SendRetry {
                 NotificationCompat.Builder(context, CHANNEL_ID)
                     .setSmallIcon(R.drawable.ic_notification_turbotext)
                     .setContentTitle("Message not sent")
-                    .setContentText("No signal for a day. Open the conversation to try again.")
+                    .setContentText(text)
                     .setAutoCancel(true)
                     .setContentIntent(open)
                     .build()
@@ -348,6 +428,19 @@ object SendRetry {
 /** The fallback alarm, and after a restart: send waiting messages again. */
 class SendRetryReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == SendRetry.ACTION_SMS_WATCHDOG) {
+            val uri = intent.data ?: return
+            val app = context.applicationContext
+            val pending = goAsync()
+            Thread {
+                try {
+                    SendRetry.smsWatchdog(app, uri)
+                } finally {
+                    pending.finish()
+                }
+            }.start()
+            return
+        }
         SendRetry.retryAll(context)
     }
 }

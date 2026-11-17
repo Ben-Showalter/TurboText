@@ -14,10 +14,11 @@ class AdvancedSettingsActivity : AppCompatActivity() {
     private lateinit var defaultAppRow: TextView
     private lateinit var backgroundHelperRow: TextView
     private lateinit var trustedNumberRow: TextView
+    private lateinit var mmsReportsRow: TextView
     private lateinit var bugReportRow: TextView
     private lateinit var checkUpdatesRow: TextView
     private var currentRow = 0
-    private val rows get() = listOf(defaultAppRow, backgroundHelperRow, trustedNumberRow, bugReportRow, checkUpdatesRow)
+    private val rows get() = listOf(defaultAppRow, backgroundHelperRow, trustedNumberRow, mmsReportsRow, bugReportRow, checkUpdatesRow)
     private val lastRow get() = rows.size - 1
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -28,12 +29,15 @@ class AdvancedSettingsActivity : AppCompatActivity() {
         defaultAppRow = findViewById(R.id.defaultAppRow)
         backgroundHelperRow = findViewById(R.id.backgroundHelperRow)
         trustedNumberRow = findViewById(R.id.trustedNumberRow)
+        mmsReportsRow = findViewById(R.id.mmsReportsRow)
         bugReportRow = findViewById(R.id.bugReportRow)
         checkUpdatesRow = findViewById(R.id.checkUpdatesRow)
 
         defaultAppRow.setOnClickListener { openDefaultAppSettings() }
         backgroundHelperRow.setOnClickListener { AccessibilityHelper.openSettings(this) }
         trustedNumberRow.setOnClickListener { promptTrustedNumber() }
+        mmsReportsRow.setOnClickListener { toggleMmsReports() }
+        updateMmsReportsRowLabel()
         bugReportRow.setOnClickListener { saveBugReport() }
         checkUpdatesRow.setOnClickListener { checkForUpdate() }
         checkUpdatesRow.text = "Check for Updates (installed v${UpdateChecker.installedVersion(this)})"
@@ -50,6 +54,16 @@ class AdvancedSettingsActivity : AppCompatActivity() {
         backgroundHelperRow.text =
             "Background Helper: ${if (AccessibilityHelper.isServiceEnabled(this)) "On" else "Off"}"
         BackgroundHost.ensureRunning(this)
+    }
+
+    private fun updateMmsReportsRowLabel() {
+        mmsReportsRow.text = "Picture Delivery Reports: ${if (SettingsHelper.isMmsDeliveryReports(this)) "On" else "Off"}"
+    }
+
+    /** Whether picture messages ask for a "Delivered" report. */
+    private fun toggleMmsReports() {
+        SettingsHelper.setMmsDeliveryReports(this, !SettingsHelper.isMmsDeliveryReports(this))
+        updateMmsReportsRowLabel()
     }
 
     private fun updateTrustedNumberRowLabel() {
@@ -175,8 +189,9 @@ class AdvancedSettingsActivity : AppCompatActivity() {
                     0 -> openDefaultAppSettings()
                     1 -> AccessibilityHelper.openSettings(this)
                     2 -> promptTrustedNumber()
-                    3 -> saveBugReport()
-                    4 -> checkForUpdate()
+                    3 -> toggleMmsReports()
+                    4 -> saveBugReport()
+                    5 -> checkForUpdate()
                 }
                 return true
             }

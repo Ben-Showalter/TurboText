@@ -55,6 +55,16 @@ object SettingsHelper {
         prefs(context).edit().putString("notif_sound_path", path).apply()
     }
 
+    /** Ask the carrier for a delivery report on picture messages (the
+     *  "Delivered" label). Off by default: older TurboText and DPAD never
+     *  asked, and picture failures to iPhones began after it was turned on. */
+    fun isMmsDeliveryReports(context: Context): Boolean =
+        prefs(context).getBoolean("mms_delivery_reports", false)
+
+    fun setMmsDeliveryReports(context: Context, on: Boolean) {
+        prefs(context).edit().putBoolean("mms_delivery_reports", on).apply()
+    }
+
     /** A picture behind each conversation (ConversationWallpaper). On by default. */
     fun isConversationWallpaper(context: Context): Boolean =
         prefs(context).getBoolean("conversation_wallpaper", true)
