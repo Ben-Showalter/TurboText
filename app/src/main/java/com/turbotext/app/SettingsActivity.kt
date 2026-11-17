@@ -68,7 +68,7 @@ class SettingsActivity : AppCompatActivity() {
     private fun showThemePicker() {
         val themes = AppTheme.values()
         val wallpaperOn = SettingsHelper.isConversationWallpaper(this)
-        val options = themes.map { it.label } + "Conversation Wallpaper: ${if (wallpaperOn) "On" else "Off"}"
+        val options = themes.map { it.label } + "Conversation Background: ${if (wallpaperOn) "On" else "Off"}"
         AlertDialog.Builder(this)
             .setTitle("Theme")
             .setItems(options.toTypedArray()) { _, which ->

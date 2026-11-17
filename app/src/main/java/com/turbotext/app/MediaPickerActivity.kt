@@ -72,12 +72,16 @@ object MediaItems {
  */
 class MediaPickerActivity : AppCompatActivity() {
 
-    private companion object {
-        const val COLUMNS = 3
-        const val REQ_PERMISSION = 701
+    companion object {
+        /** Opened to choose a Conversation Background: pictures only, one
+         *  at a time, and no attach Options. */
+        const val EXTRA_FOR_BACKGROUND = "com.turbotext.app.PICK_BACKGROUND"
+        private const val COLUMNS = 3
+        private const val REQ_PERMISSION = 701
     }
 
     private val theme by lazy { ThemeHelper.getCurrentTheme(this) }
+    private val forBackground by lazy { intent.getBooleanExtra(EXTRA_FOR_BACKGROUND, false) }
     private lateinit var header: TextView
     private lateinit var grid: RecyclerView
     private lateinit var message: TextView
@@ -137,7 +141,7 @@ class MediaPickerActivity : AppCompatActivity() {
         }
         bar.addView(label("Albums", Gravity.START), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         bar.addView(label("Select", Gravity.CENTER), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        bar.addView(label("Options", Gravity.END), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        bar.addView(label(if (forBackground) "" else "Options", Gravity.END), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         root.addView(bar)
         setContentView(root)
         header.text = "Pictures & Videos"
@@ -174,7 +178,8 @@ class MediaPickerActivity : AppCompatActivity() {
         val app = applicationContext
         Thread {
             val pictures = query(app, MediaStore.Images.Media.EXTERNAL_CONTENT_URI, video = false)
-            val videos = query(app, MediaStore.Video.Media.EXTERNAL_CONTENT_URI, video = true)
+            val videos = if (forBackground) emptyList()
+            else query(app, MediaStore.Video.Media.EXTERNAL_CONTENT_URI, video = true)
             val items = MediaItems.merge(pictures, videos)
             android.util.Log.i("TurboTextAttach", "picker: ${pictures.size} pictures, ${videos.size} videos")
             runOnUiThread {
@@ -240,7 +245,7 @@ class MediaPickerActivity : AppCompatActivity() {
 
     private fun updateHeader() {
         val item = shown.getOrNull(selected)
-        val count = "${album ?: "Pictures & Videos"} (${shown.size})"
+        val count = "${album ?: if (forBackground) "Pictures" else "Pictures & Videos"} (${shown.size})"
         val markedText = if (marked.isEmpty()) "" else " · ${marked.size} marked"
         val date = item?.let {
             DateLabels.forMessage(it.dateAdded * 1000) + if (it.isVideo) " · video" else ""
@@ -261,7 +266,7 @@ class MediaPickerActivity : AppCompatActivity() {
                 KeyEvent.KEYCODE_DPAD_DOWN -> move(+COLUMNS)
                 KeyEvent.KEYCODE_2 -> move(-COLUMNS * 3)
                 KeyEvent.KEYCODE_8 -> move(+COLUMNS * 3)
-                KeyEvent.KEYCODE_POUND -> if (event.repeatCount == 0) toggleMark()
+                KeyEvent.KEYCODE_POUND -> if (event.repeatCount == 0 && !forBackground) toggleMark()
                 KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_BACK,
                 KeyEvent.KEYCODE_DEL, KeyEvent.KEYCODE_SOFT_LEFT, KeyEvent.KEYCODE_SOFT_RIGHT -> {}
                 else -> return super.dispatchKeyEvent(event)
@@ -277,7 +282,7 @@ class MediaPickerActivity : AppCompatActivity() {
                     finish()
                 }
                 KeyEvent.KEYCODE_SOFT_LEFT -> chooseAlbum()
-                KeyEvent.KEYCODE_SOFT_RIGHT -> showOptions()
+                KeyEvent.KEYCODE_SOFT_RIGHT -> if (!forBackground) showOptions()
                 else -> return super.dispatchKeyEvent(event)
             }
             return true

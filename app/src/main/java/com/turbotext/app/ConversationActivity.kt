@@ -1276,8 +1276,8 @@ class ConversationActivity : AppCompatActivity() {
         }
     }
 
-    /** The picture behind the messages (ConversationWallpaper): the
-     *  contact's photo, or this conversation's wallpaper from the pack,
+    /** The Conversation Background behind the messages
+     *  (ConversationWallpaper): a pack picture or a gallery picture,
      *  dimmed with the theme's background so the messages stay readable.
      *  Loaded once the message area has its size. */
     private fun showWallpaper() {

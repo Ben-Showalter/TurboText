@@ -414,13 +414,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** Options > Contact Options for the highlighted conversation: add
-     *  them to contacts, give them their own notification sound, or call
-     *  (the SEND key does the same). */
+     *  them to contacts, give them their own notification sound, choose
+     *  the Conversation Background, or call (the SEND key does the same). */
     private fun showContactOptions(convo: Conversation) {
         val key = NotificationHelper.conversationKey(convo.threadId, convo.address)
         val own = SettingsHelper.getConversationSound(this, key)
         val soundLabel = "Special Notification Sound: ${own?.let { NotificationSounds.nameOf(this, it) } ?: "Default"}"
-        val options = arrayOf("Add to Contacts", soundLabel, "Call (or press SEND)")
+        val backgroundLabel = "Conversation Background: " +
+            ConversationWallpaper.label(ConversationWallpaper.getChoice(this, convo.threadId))
+        val options = arrayOf("Add to Contacts", soundLabel, backgroundLabel, "Call (or press SEND)")
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle(convo.displayName)
             .setItems(options) { _, which ->
@@ -429,7 +431,8 @@ class MainActivity : AppCompatActivity() {
                     1 -> SoundPicker.show(this, "Sound for ${convo.displayName}", own, "Use default sound") { ref ->
                         SettingsHelper.setConversationSound(this, key, ref)
                     }
-                    2 -> callFocusedConversation()
+                    2 -> if (convo.threadId > 0) WallpaperPickerActivity.open(this, convo.threadId, convo.displayName)
+                    3 -> callFocusedConversation()
                 }
             }
             .show()

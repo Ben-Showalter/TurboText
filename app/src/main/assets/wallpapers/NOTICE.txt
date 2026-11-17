@@ -1,0 +1,49 @@
+Conversation backgrounds (wallpaper_pack_NN.jpg), cropped to 480x640.
+
+Photos marked Unsplash are by the named photographer, used under the Unsplash License
+(https://unsplash.com/license). The others are the TurboText author's own photos.
+
+wallpaper_pack_01.jpg  TurboText author (5S1A2115 2x upscale.jpg)
+wallpaper_pack_02.jpg  TurboText author (Charleston Falls.jpg)
+wallpaper_pack_03.jpg  TurboText author (DJI_20251202073215_0582_D edot.jpg)
+wallpaper_pack_04.jpg  TurboText author (DJI_20260201161014_0762_D edit.jpg)
+wallpaper_pack_05.jpg  TurboText author (Flower at Charleston Falls Preserve.jpg)
+wallpaper_pack_06.jpg  TurboText author (N81A0636 edit.jpg)
+wallpaper_pack_07.jpg  TurboText author (N81A4843 edit.jpg)
+wallpaper_pack_08.jpg  Unsplash: Aman Upadhyay
+wallpaper_pack_09.jpg  Unsplash: Arno Smit
+wallpaper_pack_10.jpg  Unsplash: Dejan Zakic
+wallpaper_pack_11.jpg  Unsplash: Diego Ph
+wallpaper_pack_12.jpg  Unsplash: Doriana Popa
+wallpaper_pack_13.jpg  Unsplash: Enrico Bet
+wallpaper_pack_14.jpg  Unsplash: Eugene Golovesov
+wallpaper_pack_15.jpg  Unsplash: Evgeni Evgeniev
+wallpaper_pack_16.jpg  Unsplash: Fabian Mardi
+wallpaper_pack_17.jpg  Unsplash: Finding Dan Dan Grinwis
+wallpaper_pack_18.jpg  Unsplash: Florian Van Duyn
+wallpaper_pack_19.jpg  Unsplash: Fynn
+wallpaper_pack_20.jpg  Unsplash: Gildardo Rh
+wallpaper_pack_21.jpg  Unsplash: Greg Shield
+wallpaper_pack_22.jpg  Unsplash: Guille Pozzi
+wallpaper_pack_23.jpg  Unsplash: Guzman Barquin
+wallpaper_pack_24.jpg  Unsplash: Jei Lee
+wallpaper_pack_25.jpg  Unsplash: Joel Holland
+wallpaper_pack_26.jpg  Unsplash: Kelly Sikkema
+wallpaper_pack_27.jpg  Unsplash: Lukas Blazek
+wallpaper_pack_28.jpg  Unsplash: Massimiliano Morosinotto
+wallpaper_pack_29.jpg  Unsplash: Maximilian Zahn
+wallpaper_pack_30.jpg  Unsplash: Michael Hacker
+wallpaper_pack_31.jpg  Unsplash: Nahil Naseer
+wallpaper_pack_32.jpg  Unsplash: Nate Rayfield
+wallpaper_pack_33.jpg  Unsplash: Pascal Debrunner
+wallpaper_pack_34.jpg  Unsplash: Quentin
+wallpaper_pack_35.jpg  Unsplash: Ricardo Gomez Angel
+wallpaper_pack_36.jpg  Unsplash: Santiago Franco
+wallpaper_pack_37.jpg  Unsplash: Sead Dedic
+wallpaper_pack_38.jpg  Unsplash: Shifaaz Shamoon
+wallpaper_pack_39.jpg  Unsplash: Siegmund Photography
+wallpaper_pack_40.jpg  Unsplash: Simon
+wallpaper_pack_41.jpg  Unsplash: Tim Mossholder
+wallpaper_pack_42.jpg  Unsplash: Uran Wang
+wallpaper_pack_43.jpg  Unsplash: Wes Hicks
+wallpaper_pack_44.jpg  Unsplash: Will Truettner

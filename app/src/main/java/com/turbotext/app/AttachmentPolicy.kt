@@ -167,7 +167,7 @@ object AttachmentPolicy {
 
     /** Phone cameras save pictures sideways and record the turn in EXIF;
      *  re-encoding drops that tag, so apply it to the pixels first. */
-    private fun rotateUpright(context: Context, uri: android.net.Uri, bitmap: Bitmap): Bitmap {
+    internal fun rotateUpright(context: Context, uri: android.net.Uri, bitmap: Bitmap): Bitmap {
         val degrees = try {
             context.contentResolver.openInputStream(uri)?.use {
                 when (ExifInterface(it).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {

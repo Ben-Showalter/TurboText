@@ -150,6 +150,10 @@
             android:exported="false" />
 
         <activity
+            android:name=".WallpaperPickerActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".AdvancedSettingsActivity"
             android:exported="false" />
 
