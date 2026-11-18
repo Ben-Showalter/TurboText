@@ -239,7 +239,9 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
             return
         }
         holder.reactions.visibility = View.VISIBLE
-        holder.reactions.text = msg.reactions.groupingBy { it.emoji }.eachCount().entries
+        // Newer emoji this phone can't draw show as a close older one.
+        holder.reactions.text = msg.reactions.groupingBy { ReactionDisplay.shown(it.emoji, EmojiUsage::drawable) }
+            .eachCount().entries
             .joinToString("  ") { (emoji, count) -> if (count > 1) "$emoji $count" else emoji }
         // On a Conversation Background, ConversationActivity recolours it.
         holder.reactions.setTextColor(theme.textSecondary)

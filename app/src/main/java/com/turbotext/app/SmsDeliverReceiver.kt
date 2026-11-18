@@ -64,7 +64,7 @@ class SmsDeliverReceiver : BroadcastReceiver() {
         val notifyBody = when {
             VcardTextExtractor.extract(body) != null -> "Contact card"
             // A reaction text reads short: "❤️ to “Hi”".
-            SettingsHelper.isShowReactions(context) -> ReactionParser.displayText(body)
+            SettingsHelper.isShowReactions(context) -> ReactionParser.displayText(body, EmojiUsage::drawable)
             else -> body
         }
         val threadId = NotificationHelper.showIncoming(context, address, displayName, notifyBody)

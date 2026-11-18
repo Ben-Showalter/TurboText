@@ -69,7 +69,7 @@ object MmsReceivePostProcessor {
             val sender = senderOf(context, id) ?: "Unknown"
             val repo = SmsRepository(context)
             val preview = repo.mmsPreview(id).let {
-                if (SettingsHelper.isShowReactions(context)) ReactionParser.displayText(it) else it
+                if (SettingsHelper.isShowReactions(context)) ReactionParser.displayText(it, EmojiUsage::drawable) else it
             }
             ProviderChangeTracker.bump()
             val tid = threadId

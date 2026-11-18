@@ -1695,7 +1695,8 @@ class ConversationActivity : AppCompatActivity() {
      *  picking it again takes it back (reactions toggle). */
     private fun showReactionPicker(message: Message) {
         val mine = message.reactions.firstOrNull { it.isMine }?.emoji
-        val emoji = ReactionParser.PICKER_EMOJI
+        // Your current one, your Recent emoji, then the standard ones.
+        val emoji = ReactionDisplay.choices(EmojiUsage.recent(this), mine, EmojiUsage::drawable)
         val labels = emoji.map { if (it == mine) "$it  ✓" else it }.toTypedArray()
         AlertDialog.Builder(this)
             .setTitle("React")
@@ -1705,7 +1706,10 @@ class ConversationActivity : AppCompatActivity() {
 
     /** Who reacted with what. */
     private fun showReactions(message: Message) {
-        val labels = message.reactions.map { "${it.emoji}  ${it.who}" }.toTypedArray()
+        val labels = message.reactions.map {
+            val shown = ReactionDisplay.shown(it.emoji, EmojiUsage::drawable)
+            "$shown  ${it.who}" + if (shown != it.emoji) " (a newer emoji)" else ""
+        }.toTypedArray()
         AlertDialog.Builder(this)
             .setTitle("Reactions")
             .setItems(labels, null)
@@ -1718,6 +1722,8 @@ class ConversationActivity : AppCompatActivity() {
      *  send path, so it gets Sending / Sent / Failed like any message. */
     private fun sendReaction(message: Message, emoji: String) {
         val body = MessageReactions.composeFor(message, emoji)
+        // Counts as a use, so it moves up the Recent emoji.
+        if (!body.startsWith("Removed")) EmojiUsage.recordUse(this, emoji)
         AppLog.event("Reaction", "${if (body.startsWith("Removed")) "removing" else "sending"} $emoji on ${message.id}")
         PendingSends.send(
             this, threadId, address.split(","), body, emptyList(),

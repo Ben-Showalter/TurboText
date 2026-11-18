@@ -253,7 +253,7 @@ class MediaViewerActivity : AppCompatActivity() {
      *  it. The one already sent is marked ✓; picking it again takes it back. */
     private fun showReactionPicker() {
         val mine = intent.getStringExtra(EXTRA_MY_REACTION)
-        val emoji = ReactionParser.PICKER_EMOJI
+        val emoji = ReactionDisplay.choices(EmojiUsage.recent(this), mine, EmojiUsage::drawable)
         val labels = emoji.map { if (it == mine) "$it  ✓" else it }.toTypedArray()
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("React")

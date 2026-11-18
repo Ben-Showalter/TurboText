@@ -131,14 +131,18 @@ object ReactionParser {
      * Compact text for notifications and the conversation list:
      * "Liked “Hi”" becomes "👍 to “Hi”". Anything else is returned unchanged.
      */
-    fun displayText(body: String): String {
+    fun displayText(body: String, canDraw: (String) -> Boolean = { true }): String {
         val parsed = parse(body) ?: return body
         if (parsed.kind != Kind.ADD || parsed.media != Media.NONE) return body
-        return "${parsed.emoji} to “${parsed.quotedText}”"
+        return "${ReactionDisplay.shown(parsed.emoji, canDraw)} to “${parsed.quotedText}”"
     }
 
     /** Emoji offered when reacting from this app. */
-    val PICKER_EMOJI = listOf("👍", "❤️", "😂", "😮", "😢", "😡", "👎", "‼️", "❓")
+    val PICKER_EMOJI = listOf(
+        "👍", "❤️", "😂", "😮", "😢", "😡", "👎", "‼️", "❓",
+        // Added for TurboText; all old enough for Android 9's font.
+        "😍", "🙏", "🎉", "🔥", "👏", "💯", "🤔"
+    )
 
     private const val MAX_QUOTE_LENGTH = 100
 

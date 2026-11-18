@@ -133,7 +133,7 @@ class ConversationAdapter(
         // One line in the list, so a multi-line message reads as a sentence
         // rather than stopping at its first line break.
         // A reaction text reads short: "❤️ to “Hi”" instead of "Loved “Hi”".
-        val snippet = if (SettingsHelper.isShowReactions(holder.snippet.context)) ReactionParser.displayText(convo.snippet)
+        val snippet = if (SettingsHelper.isShowReactions(holder.snippet.context)) ReactionParser.displayText(convo.snippet, EmojiUsage::drawable)
         else convo.snippet
         holder.snippet.text = snippet.replace('\n', ' ')
         holder.time.text = formatTime(convo.date)
