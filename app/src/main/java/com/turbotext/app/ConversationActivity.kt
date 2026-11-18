@@ -1440,6 +1440,14 @@ class ConversationActivity : AppCompatActivity() {
         super.onPause()
         stopVoiceMessagePlayback()
         NotificationHelper.cancelForConversation(this, notificationKey())
+        // Leaving the thread: anything that arrived while it was open is
+        // read too, so the list doesn't show it bold.
+        if (threadId > 0) {
+            ConversationListCache.markThreadRead(threadId)
+            val id = threadId
+            val r = repo
+            Thread { r.markThreadRead(id) }.start()
+        }
         messageObserver?.let { contentResolver.unregisterContentObserver(it) }
         MessageEvents.removeListener(messageEventListener)
         reloadHandler.removeCallbacks(reloadRunnable)
