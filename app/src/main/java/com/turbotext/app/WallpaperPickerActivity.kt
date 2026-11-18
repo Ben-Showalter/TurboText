@@ -31,7 +31,7 @@ import java.io.FileOutputStream
  * every picture in TurboText's pack — and Gallery (left softkey) for any
  * picture on the phone, through the same picker as attaching a picture.
  * A gallery picture is then positioned on a full-screen preview (D-pad
- * moves it, 1 and 3 zoom) and saved as a copy for this conversation.
+ * moves it, # zooms in, * zooms out) and saved as a copy for this conversation.
  */
 class WallpaperPickerActivity : AppCompatActivity() {
 
@@ -109,7 +109,7 @@ class WallpaperPickerActivity : AppCompatActivity() {
         cropView = CropView(this).apply { visibility = View.GONE }
         body.addView(cropView, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         hint = TextView(this).apply {
-            text = "◀ ▲ ▼ ▶ move · 1 zoom out · 3 zoom in"
+            text = "◀ ▲ ▼ ▶ move · # zoom in · * zoom out"
             setTextColor(0xFFFFFFFF.toInt())
             setBackgroundColor(0x99000000.toInt())
             textSize = 12f
@@ -316,8 +316,8 @@ class WallpaperPickerActivity : AppCompatActivity() {
                     KeyEvent.KEYCODE_DPAD_RIGHT -> cropView.pan(1, 0)
                     KeyEvent.KEYCODE_DPAD_UP -> cropView.pan(0, -1)
                     KeyEvent.KEYCODE_DPAD_DOWN -> cropView.pan(0, 1)
-                    KeyEvent.KEYCODE_1 -> cropView.zoom(1.12f)
-                    KeyEvent.KEYCODE_3 -> cropView.zoom(1 / 1.12f)
+                    KeyEvent.KEYCODE_POUND -> cropView.zoom(1 / 1.12f)
+                    KeyEvent.KEYCODE_STAR -> cropView.zoom(1.12f)
                     KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_BACK,
                     KeyEvent.KEYCODE_DEL, KeyEvent.KEYCODE_SOFT_LEFT, KeyEvent.KEYCODE_SOFT_RIGHT -> {}
                     else -> return super.dispatchKeyEvent(event)
