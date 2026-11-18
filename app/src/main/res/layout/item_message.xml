@@ -83,6 +83,15 @@
         </LinearLayout>
     </LinearLayout>
 
+    <!-- Reactions on this message, e.g. "👍 2  ❤️" (MessageReactions). -->
+    <TextView
+        android:id="@+id/bubbleReactions"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textSize="15sp"
+        android:layout_marginTop="2dp"
+        android:visibility="gone" />
+
     <TextView
         android:id="@+id/bubbleTime"
         android:layout_width="wrap_content"

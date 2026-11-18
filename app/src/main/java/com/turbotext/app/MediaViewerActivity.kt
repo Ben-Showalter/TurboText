@@ -39,6 +39,12 @@ class MediaViewerActivity : AppCompatActivity() {
         const val EXTRA_MIME = "mime"
         /** All of a message's pictures (String array), to page through. */
         const val EXTRA_IMAGE_URIS = "image_uris"
+        /** Opened from a message that can be reacted to: Options offers React. */
+        const val EXTRA_CAN_REACT = "can_react"
+        /** My current reaction on that message, marked ✓ in the list. */
+        const val EXTRA_MY_REACTION = "my_reaction"
+        /** The emoji chosen with React, handed back to the conversation. */
+        const val EXTRA_REACTION = "reaction"
     }
 
     private var pages: List<Uri> = emptyList()
@@ -229,10 +235,32 @@ class MediaViewerActivity : AppCompatActivity() {
     }
 
     private fun showOptions() {
-        val options = arrayOf("Save to gallery", "Save to files")
+        val canReact = intent.getBooleanExtra(EXTRA_CAN_REACT, false)
+        val options = (if (canReact) listOf("React") else emptyList()) + listOf("Save to gallery", "Save to files")
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Options")
-            .setItems(options) { _, which -> saveToPhone(toFiles = which == 1) }
+            .setItems(options.toTypedArray()) { _, which ->
+                when (options[which]) {
+                    "React" -> showReactionPicker()
+                    "Save to gallery" -> saveToPhone(toFiles = false)
+                    "Save to files" -> saveToPhone(toFiles = true)
+                }
+            }
+            .show()
+    }
+
+    /** React to the message this picture is in: the conversation sends
+     *  it. The one already sent is marked ✓; picking it again takes it back. */
+    private fun showReactionPicker() {
+        val mine = intent.getStringExtra(EXTRA_MY_REACTION)
+        val emoji = ReactionParser.PICKER_EMOJI
+        val labels = emoji.map { if (it == mine) "$it  ✓" else it }.toTypedArray()
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("React")
+            .setItems(labels) { _, which ->
+                setResult(android.app.Activity.RESULT_OK, android.content.Intent().putExtra(EXTRA_REACTION, emoji[which]))
+                finish()
+            }
             .show()
     }
 

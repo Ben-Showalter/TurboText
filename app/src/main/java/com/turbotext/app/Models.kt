@@ -50,8 +50,16 @@ data class Message(
     /** MMS delivery reports: how many recipients have it, out of how
      *  many — only filled in once a report has come back. */
     val deliveredTo: Int = 0,
-    val recipientCount: Int = 0
+    val recipientCount: Int = 0,
+    /** Reactions on this message, oldest first (MessageReactions). */
+    val reactions: List<Reaction> = emptyList(),
+    /** The sender edited it ("Edited to …" from an iPhone); [body] is the new text. */
+    val edited: Boolean = false
 )
+
+/** One person's reaction on a message: [who] is their name or number, or
+ *  "You" when [isMine]. */
+data class Reaction(val emoji: String, val who: String, val isMine: Boolean, val date: Long)
 
 data class BroadcastContact(val name: String, val number: String)
 

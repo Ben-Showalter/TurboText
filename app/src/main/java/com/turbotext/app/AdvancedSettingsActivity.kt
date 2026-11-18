@@ -15,10 +15,11 @@ class AdvancedSettingsActivity : AppCompatActivity() {
     private lateinit var backgroundHelperRow: TextView
     private lateinit var trustedNumberRow: TextView
     private lateinit var mmsReportsRow: TextView
+    private lateinit var reactionsRow: TextView
     private lateinit var bugReportRow: TextView
     private lateinit var checkUpdatesRow: TextView
     private var currentRow = 0
-    private val rows get() = listOf(defaultAppRow, backgroundHelperRow, trustedNumberRow, mmsReportsRow, bugReportRow, checkUpdatesRow)
+    private val rows get() = listOf(defaultAppRow, backgroundHelperRow, trustedNumberRow, mmsReportsRow, reactionsRow, bugReportRow, checkUpdatesRow)
     private val lastRow get() = rows.size - 1
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -30,6 +31,7 @@ class AdvancedSettingsActivity : AppCompatActivity() {
         backgroundHelperRow = findViewById(R.id.backgroundHelperRow)
         trustedNumberRow = findViewById(R.id.trustedNumberRow)
         mmsReportsRow = findViewById(R.id.mmsReportsRow)
+        reactionsRow = findViewById(R.id.reactionsRow)
         bugReportRow = findViewById(R.id.bugReportRow)
         checkUpdatesRow = findViewById(R.id.checkUpdatesRow)
 
@@ -38,6 +40,8 @@ class AdvancedSettingsActivity : AppCompatActivity() {
         trustedNumberRow.setOnClickListener { promptTrustedNumber() }
         mmsReportsRow.setOnClickListener { toggleMmsReports() }
         updateMmsReportsRowLabel()
+        reactionsRow.setOnClickListener { toggleReactions() }
+        updateReactionsRowLabel()
         bugReportRow.setOnClickListener { saveBugReport() }
         checkUpdatesRow.setOnClickListener { checkForUpdate() }
         checkUpdatesRow.text = "Check for Updates (installed v${UpdateChecker.installedVersion(this)})"
@@ -64,6 +68,17 @@ class AdvancedSettingsActivity : AppCompatActivity() {
     private fun toggleMmsReports() {
         SettingsHelper.setMmsDeliveryReports(this, !SettingsHelper.isMmsDeliveryReports(this))
         updateMmsReportsRowLabel()
+    }
+
+    private fun updateReactionsRowLabel() {
+        reactionsRow.text = "Show Reactions: ${if (SettingsHelper.isShowReactions(this)) "On" else "Off"}"
+    }
+
+    /** Reactions on messages, or every reaction as its original text. */
+    private fun toggleReactions() {
+        SettingsHelper.setShowReactions(this, !SettingsHelper.isShowReactions(this))
+        updateReactionsRowLabel()
+        MessageCache.clear()
     }
 
     private fun updateTrustedNumberRowLabel() {
@@ -190,8 +205,9 @@ class AdvancedSettingsActivity : AppCompatActivity() {
                     1 -> AccessibilityHelper.openSettings(this)
                     2 -> promptTrustedNumber()
                     3 -> toggleMmsReports()
-                    4 -> saveBugReport()
-                    5 -> checkForUpdate()
+                    4 -> toggleReactions()
+                    5 -> saveBugReport()
+                    6 -> checkForUpdate()
                 }
                 return true
             }

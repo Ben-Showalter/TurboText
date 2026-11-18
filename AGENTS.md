@@ -141,6 +141,7 @@ All app code is in `app/src/main/java/com/turbotext/app/`.
 | Data and refresh | `SmsRepository`, `MessageCache`, `ConversationListCache`, `GroupThreadsCache`, `MessageEvents`, `MessageMerge`, `RefreshGate`, `ProviderChangeTracker`, `ConversationPrewarm` |
 | Screens | `MainActivity` (list, Contact Options), `ConversationActivity`, `ComposeActivity`, `GroupMessagesActivity`, `MediaPickerActivity`, `WallpaperPickerActivity`, `MediaViewerActivity`, `Settings*` / `AdvancedSettingsActivity`, broadcast list screens |
 | Typing | `T9InputController`, `Tt9WordEngine`, `WordPredictor`, `NoImeEditText`, `SuggestionRenderer`, `SearchBoxDialog`, `KeypadTimeDialog` |
+| Reactions | `ReactionParser` (iPhone / Google Messages wording, lone emoji, what to send), `MessageReactions` (applied in `ConversationActivity.showMessages`; display only, nothing stored), Settings > Advanced > Show Reactions |
 | Alerts | `NotificationHelper`, `SoundNotificationHelper`, `NotificationSounds`, `SoundPicker`, `CoverScreenNotifier` (outer screen), `DndHelper` |
 | Look | `ThemeHelper` / `AppTheme`, `MessageAdapter`, `BubbleDrawable`, `ConversationWallpaper`, `BackgroundContrast`, `SystemBars` |
 | Other | `ArchiveFormat` / `ArchiveManager`, `ReportSender` (daily report, `BootReceiver`), `UpdateChecker`, `AppLog`, `GroqVoiceInputHelper` / `GroqTranslateHelper` |

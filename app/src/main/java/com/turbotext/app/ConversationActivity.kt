@@ -243,8 +243,10 @@ class ConversationActivity : AppCompatActivity() {
      *  user away from a message they scrolled back to. */
     private fun showMessages(messages: List<Message>) {
         // Messages set to send later go last, in time order.
-        val merged = PendingSends.merge(threadId, messages) +
+        val all = PendingSends.merge(threadId, messages) +
             ScheduledSends.bubblesFor(this, threadId).sortedBy { it.date }
+        // Reaction texts become reactions on the message they point at.
+        val merged = if (SettingsHelper.isShowReactions(this)) MessageReactions.apply(all) else all
         if (merged == messageAdapter.currentItems()) return
         val wasEmpty = messageAdapter.currentItems().isEmpty()
         val wasAtBottom = !messageList.canScrollVertically(1)
@@ -405,6 +407,10 @@ class ConversationActivity : AppCompatActivity() {
         if (message.isOutgoing && message.id >= 0 && message.sendStatus !in setOf("sending", "waiting")) {
             options.add(0, "Resend")
         }
+        if (canReact(message)) {
+            options.add(0, "React")
+            if (message.reactions.isNotEmpty()) options.add(1, "View Reactions")
+        }
         if (message.imageUri != null) options.add("Save to Gallery")
         if (message.videoUri != null) options.add("Play Video")
         if (message.videoUri != null || message.fileUri != null || message.audioUri != null) options.add("Save to Phone")
@@ -420,13 +426,15 @@ class ConversationActivity : AppCompatActivity() {
             .setItems(options.toTypedArray()) { _, which ->
                 when (options[which]) {
                     "Resend" -> resendMessage(message)
+                    "React" -> showReactionPicker(message)
+                    "View Reactions" -> showReactions(message)
                     "Copy Text to Clipboard" -> copyMessageText(message)
                     "Forward Message" -> forwardMessage(message)
                     "Translate to English" -> translateMessage(message)
                     "Save to Gallery" -> saveImageToGallery(message)
                     "Import Contact" -> importVcard(message)
                     "Play Audio" -> playVoiceMessage(message)
-                    "Play Video" -> message.videoUri?.let { openMediaViewer(it, "video/*") }
+                    "Play Video" -> message.videoUri?.let { openMediaViewer(it, "video/*", message) }
                     "Save to Phone" -> saveAttachmentToPhone(message)
                     "Open File" -> openFile(message)
                     "Download" -> downloadPendingMms(message)
@@ -852,8 +860,8 @@ class ConversationActivity : AppCompatActivity() {
         val message = messageAdapter.currentItems().getOrNull(realIndex) ?: return
         when {
             message.audioUri != null -> toggleVoiceMessage(message)
-            message.imageUri != null -> openImages(message.imageUris)
-            message.videoUri != null -> openMediaViewer(message.videoUri, "video/*")
+            message.imageUri != null -> openImages(message.imageUris, message)
+            message.videoUri != null -> openMediaViewer(message.videoUri, "video/*", message)
             message.fileUri != null -> openFile(message)
             message.mmsDownloadPending -> downloadPendingMms(message)
             message.vcardUri != null -> importVcard(message)
@@ -863,6 +871,18 @@ class ConversationActivity : AppCompatActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_VIEWER) {
+            // React from the picture viewer: find the message as it is now
+            // (its reactions may have changed) and send.
+            val key = reactingTo
+            reactingTo = null
+            val emoji = data?.getStringExtra(MediaViewerActivity.EXTRA_REACTION)
+            if (resultCode == android.app.Activity.RESULT_OK && key != null && emoji != null) {
+                messageAdapter.currentItems().firstOrNull { it.id == key.first && it.isMms == key.second }
+                    ?.let { sendReaction(it, emoji) }
+            }
+            return
+        }
         picker.handleResult(requestCode, resultCode, data)
     }
 
@@ -1332,7 +1352,21 @@ class ConversationActivity : AppCompatActivity() {
         val rect = android.graphics.Rect()
         list.viewTreeObserver.addOnPreDrawListener {
             for (i in 0 until list.childCount) {
-                val time = list.getChildAt(i).findViewById<TextView>(R.id.bubbleTime) ?: continue
+                val row = list.getChildAt(i)
+                row.findViewById<TextView>(R.id.bubbleReactions)?.let { r ->
+                    if (r.visibility == View.VISIBLE && r.width > 0) {
+                        r.getDrawingRect(rect)
+                        list.offsetDescendantRectToMyCoords(r, rect)
+                        val c = BackgroundContrast.textColorFor(
+                            contrast.brightnessUnder(rect.left, rect.top, rect.right, rect.bottom, list.width, list.height)
+                        )
+                        if (r.currentTextColor != c) {
+                            r.setTextColor(c)
+                            r.setShadowLayer(shadowRadius, 0f, 0f, BackgroundContrast.shadowFor(c))
+                        }
+                    }
+                }
+                val time = row.findViewById<TextView>(R.id.bubbleTime) ?: continue
                 if (time.visibility != View.VISIBLE || time.width == 0) continue
                 time.getDrawingRect(rect)
                 list.offsetDescendantRectToMyCoords(time, rect)
@@ -1610,22 +1644,86 @@ class ConversationActivity : AppCompatActivity() {
 
     /** Center-key action on a focused picture/video message — opens it
      *  full screen (zoom or play with OK, save with the right softkey). */
-    private fun openMediaViewer(uri: String, mime: String) {
-        startActivity(
-            android.content.Intent(this, MediaViewerActivity::class.java)
-                .putExtra(MediaViewerActivity.EXTRA_URI, uri)
-                .putExtra(MediaViewerActivity.EXTRA_MIME, mime)
-        )
+    private fun openMediaViewer(uri: String, mime: String, message: Message? = null) {
+        val intent = android.content.Intent(this, MediaViewerActivity::class.java)
+            .putExtra(MediaViewerActivity.EXTRA_URI, uri)
+            .putExtra(MediaViewerActivity.EXTRA_MIME, mime)
+        startViewer(intent, message)
+    }
+
+    /** Opens the viewer; for a message it can be reacted to, its Options
+     *  offer React, and the chosen emoji comes back in onActivityResult. */
+    private fun startViewer(intent: android.content.Intent, message: Message?) {
+        if (message != null && canReact(message)) {
+            reactingTo = message.id to message.isMms
+            intent.putExtra(MediaViewerActivity.EXTRA_CAN_REACT, true)
+            message.reactions.firstOrNull { it.isMine }?.let { intent.putExtra(MediaViewerActivity.EXTRA_MY_REACTION, it.emoji) }
+            startActivityForResult(intent, REQ_VIEWER)
+        } else {
+            startActivity(intent)
+        }
     }
 
     /** A message's pictures, full screen — Left/Right steps through them
      *  when there's more than one. */
-    private fun openImages(uris: List<String>) {
-        startActivity(
+    private fun openImages(uris: List<String>, message: Message? = null) {
+        startViewer(
             android.content.Intent(this, MediaViewerActivity::class.java)
                 .putExtra(MediaViewerActivity.EXTRA_URI, uris.first())
                 .putExtra(MediaViewerActivity.EXTRA_MIME, "image/*")
-                .putExtra(MediaViewerActivity.EXTRA_IMAGE_URIS, uris.toTypedArray())
+                .putExtra(MediaViewerActivity.EXTRA_IMAGE_URIS, uris.toTypedArray()),
+            message
+        )
+    }
+
+    // ---- Reactions ----
+
+    /** The message whose picture is open in the viewer (id, isMms). */
+    private var reactingTo: Pair<Long, Boolean>? = null
+
+    private val REQ_VIEWER = 7301
+
+    /** Sent and received messages that are really in the phone (not on
+     *  their way out or scheduled) can be reacted to. */
+    private fun canReact(message: Message): Boolean =
+        SettingsHelper.isShowReactions(this) && message.id >= 0 &&
+            ScheduledSends.idForBubble(message) == null &&
+            message.sendStatus !in setOf("sending", "waiting", "failed") &&
+            !message.mmsDownloadPending && !message.isUnretrievedMms
+
+    /** React: a D-pad list of emoji; the one already sent is marked ✓, and
+     *  picking it again takes it back (reactions toggle). */
+    private fun showReactionPicker(message: Message) {
+        val mine = message.reactions.firstOrNull { it.isMine }?.emoji
+        val emoji = ReactionParser.PICKER_EMOJI
+        val labels = emoji.map { if (it == mine) "$it  ✓" else it }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("React")
+            .setItems(labels) { _, which -> sendReaction(message, emoji[which]) }
+            .show()
+    }
+
+    /** Who reacted with what. */
+    private fun showReactions(message: Message) {
+        val labels = message.reactions.map { "${it.emoji}  ${it.who}" }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Reactions")
+            .setItems(labels, null)
+            .show()
+    }
+
+    /** Sends the reaction as a text ("👍 to “Hi”", or "Removed 👍 from
+     *  “Hi”" to take it back), the way Google Messages does: iPhones and
+     *  Android phones show it as a reaction. It goes through the normal
+     *  send path, so it gets Sending / Sent / Failed like any message. */
+    private fun sendReaction(message: Message, emoji: String) {
+        val body = MessageReactions.composeFor(message, emoji)
+        AppLog.event("Reaction", "${if (body.startsWith("Removed")) "removing" else "sending"} $emoji on ${message.id}")
+        PendingSends.send(
+            this, threadId, address.split(","), body, emptyList(),
+            onDone = { error ->
+                if (error != null && !isFinishing && !isDestroyed) Toast.makeText(this, error, Toast.LENGTH_LONG).show()
+            }
         )
     }
 }

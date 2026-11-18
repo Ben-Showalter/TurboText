@@ -68,7 +68,9 @@ object MmsReceivePostProcessor {
             }
             val sender = senderOf(context, id) ?: "Unknown"
             val repo = SmsRepository(context)
-            val preview = repo.mmsPreview(id)
+            val preview = repo.mmsPreview(id).let {
+                if (SettingsHelper.isShowReactions(context)) ReactionParser.displayText(it) else it
+            }
             ProviderChangeTracker.bump()
             val tid = threadId
             val participants = if (tid != null) repo.getThreadParticipants(tid) else emptyList()

@@ -55,6 +55,16 @@ object SettingsHelper {
         prefs(context).edit().putString("notif_sound_path", path).apply()
     }
 
+    /** Show iPhone / Google Messages reaction texts ("Liked “…”", a lone
+     *  👍) as reactions on the message they point at (MessageReactions).
+     *  On by default; off shows them as ordinary messages and hides React. */
+    fun isShowReactions(context: Context): Boolean =
+        prefs(context).getBoolean("show_reactions", true)
+
+    fun setShowReactions(context: Context, on: Boolean) {
+        prefs(context).edit().putBoolean("show_reactions", on).apply()
+    }
+
     /** Ask the carrier for a delivery report on picture messages (the
      *  "Delivered" label). Off by default: older TurboText and DPAD never
      *  asked, and picture failures to iPhones began after it was turned on. */

@@ -10,6 +10,8 @@ Key features:
 
 •	Broadcast lists: text the same announcement to many people, each getting their own private text. Lists can be imported from a CSV file (one phone number per row, with an optional name column). Copy the file to the phone (for example to Download), then use Broadcast Lists > + New List from CSV.
 
+•	Reactions: when an iPhone or Google Messages user reacts to a message ("Liked …", or a single 👍 sent right after it), the reaction shows under that message instead of as a separate text. React to any message (Options > React, or Options while viewing a picture); choosing the same emoji again takes it back. Settings > Advanced > Show Reactions turns it off.
+
 •	Send Later: schedule a message for a day and time up to a week ahead (Options > Send Later while writing).
 
 •	New Message lets you pick from the phone's contacts or type a number. If you already have a conversation with that person, it opens there.

@@ -61,7 +61,12 @@ class SmsDeliverReceiver : BroadcastReceiver() {
         // routed through that, so it needs its own friendly text instead
         // of showing "N:Doe;John;;;" etc.
         val displayName = ContactHelper.lookupName(context, address) ?: address
-        val notifyBody = if (VcardTextExtractor.extract(body) != null) "Contact card" else body
+        val notifyBody = when {
+            VcardTextExtractor.extract(body) != null -> "Contact card"
+            // A reaction text reads short: "❤️ to “Hi”".
+            SettingsHelper.isShowReactions(context) -> ReactionParser.displayText(body)
+            else -> body
+        }
         val threadId = NotificationHelper.showIncoming(context, address, displayName, notifyBody)
         SoundNotificationHelper.notifyNewMessage(
             context, NotificationHelper.conversationKey(threadId, address), displayName,

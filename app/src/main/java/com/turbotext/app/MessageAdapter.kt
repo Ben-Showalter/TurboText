@@ -133,6 +133,7 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
         val avatar: ImageView = view.findViewById(R.id.senderAvatar)
         val text: TextView = view.findViewById(R.id.bubbleText)
         val time: TextView = view.findViewById(R.id.bubbleTime)
+        val reactions: TextView = view.findViewById(R.id.bubbleReactions)
         val imageFrame: View = view.findViewById(R.id.bubbleImageFrame)
         val image: ImageView = view.findViewById(R.id.bubbleImage)
         val playOverlay: View = view.findViewById(R.id.playOverlay)
@@ -230,10 +231,25 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
         holder.imageBgKey = key
     }
 
+    /** "👍 2  ❤️" under the bubble: each emoji, with a count when more
+     *  than one person used it. */
+    private fun bindReactions(holder: VH, msg: Message, theme: AppTheme) {
+        if (msg.reactions.isEmpty()) {
+            holder.reactions.visibility = View.GONE
+            return
+        }
+        holder.reactions.visibility = View.VISIBLE
+        holder.reactions.text = msg.reactions.groupingBy { it.emoji }.eachCount().entries
+            .joinToString("  ") { (emoji, count) -> if (count > 1) "$emoji $count" else emoji }
+        // On a Conversation Background, ConversationActivity recolours it.
+        holder.reactions.setTextColor(theme.textSecondary)
+        if (!translucentBubbles) holder.reactions.setShadowLayer(0f, 0f, 0f, 0)
+    }
+
     /** Sender name (incoming messages in a group thread) goes in accent
      *  color right next to the timestamp, e.g. "Sarah · 3:45 PM". */
     private fun buildTimeLabel(msg: Message, theme: AppTheme): CharSequence {
-        val timeText = DateLabels.forMessage(msg.date)
+        val timeText = DateLabels.forMessage(msg.date) + if (msg.edited) " · Edited" else ""
         val statusWord = when (msg.sendStatus) {
             "sending" -> "Sending"
             "waiting" -> "Waiting for signal"
@@ -317,6 +333,7 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
             holder.imageFrame.visibility = View.GONE
             holder.avatar.visibility = View.GONE
             holder.time.text = ""
+            holder.reactions.visibility = View.GONE
             holder.text.visibility = View.VISIBLE
             holder.text.text = "Load More"
             holder.text.gravity = Gravity.CENTER
@@ -329,6 +346,7 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
 
         val msg = items[if (hasMore) position - 1 else position]
         holder.time.text = buildTimeLabel(msg, theme)
+        bindReactions(holder, msg, theme)
         // On a Conversation Background, ConversationActivity recolours
         // this to contrast with the picture behind it (BackgroundContrast).
         holder.time.setTextColor(theme.textSecondary)
