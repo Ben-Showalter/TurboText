@@ -230,30 +230,6 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
         holder.imageBgKey = key
     }
 
-    /** The time line's colour: brighter on a background (it has a pill). */
-    private fun timeColor(theme: AppTheme) = if (translucentBubbles) theme.textPrimary else theme.textSecondary
-
-    private var pillState: android.graphics.drawable.Drawable.ConstantState? = null
-    private var pillColor = 0
-    private var pillPadH = 0
-    private var pillPadV = 0
-
-    private fun timePill(theme: AppTheme): android.graphics.drawable.Drawable {
-        val color = (theme.background and 0x00FFFFFF) or (0xBF shl 24)
-        // Rebuilt when the theme changes.
-        if (color == pillColor) pillState?.let { return it.newDrawable() }
-        pillColor = color
-        val density = android.content.res.Resources.getSystem().displayMetrics.density
-        pillPadH = (6 * density).toInt()
-        pillPadV = (1 * density).toInt()
-        val pill = android.graphics.drawable.GradientDrawable().apply {
-            cornerRadius = 8 * density
-            setColor(color)
-        }
-        pillState = pill.constantState
-        return pill
-    }
-
     /** Sender name (incoming messages in a group thread) goes in accent
      *  color right next to the timestamp, e.g. "Sarah · 3:45 PM". */
     private fun buildTimeLabel(msg: Message, theme: AppTheme): CharSequence {
@@ -299,8 +275,11 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
             )
         }
         statusRange?.let {
+            // Other status words follow the time line's own colour (which
+            // a Conversation Background changes to contrast).
             val failed = msg.sendStatus == "failed" || msg.sendStatus == "not_delivered"
-            val color = if (failed) 0xFFCC3333.toInt() else timeColor(theme)
+            if (!failed) return@let
+            val color = 0xFFCC3333.toInt()
             spannable.setSpan(
                 android.text.style.ForegroundColorSpan(color),
                 it.first, it.last + 1, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
@@ -350,16 +329,10 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
 
         val msg = items[if (hasMore) position - 1 else position]
         holder.time.text = buildTimeLabel(msg, theme)
-        holder.time.setTextColor(timeColor(theme))
-        // On a Conversation Background the time line sits on its own small
-        // pill (the theme's background colour), so it reads on any picture.
-        if (translucentBubbles) {
-            holder.time.background = timePill(theme)
-            holder.time.setPadding(pillPadH, pillPadV, pillPadH, pillPadV)
-        } else {
-            holder.time.background = null
-            holder.time.setPadding(0, 0, 0, 0)
-        }
+        // On a Conversation Background, ConversationActivity recolours
+        // this to contrast with the picture behind it (BackgroundContrast).
+        holder.time.setTextColor(theme.textSecondary)
+        if (!translucentBubbles) holder.time.setShadowLayer(0f, 0f, 0f, 0)
 
         // Default alignment for a plain text bubble — the voice-message
         // branch overrides this to CENTER, so reset it for recycled rows.

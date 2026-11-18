@@ -1293,18 +1293,57 @@ class ConversationActivity : AppCompatActivity() {
         whenSized(findViewById<View>(R.id.messageList)) { w, h ->
             Thread {
                 val bitmap = ConversationWallpaper.load(app, threadId, address, w, h)
+                val theme = ThemeHelper.getCurrentTheme(app)
+                // Dark: 60% of the background over it; Light: 55%.
+                val alpha = if (theme.isLight) 0x8C else 0x99
+                val contrast = bitmap?.let { contrastMap(it, theme.background, alpha) }
                 runOnUiThread {
                     if (isFinishing || isDestroyed || bitmap == null) return@runOnUiThread
-                    val theme = ThemeHelper.getCurrentTheme(this)
                     image.setImageBitmap(bitmap)
                     image.visibility = View.VISIBLE
-                    // Dark: 60% of the background over it; Light: 55%.
-                    val alpha = if (theme.isLight) 0x8C else 0x99
                     dim.setBackgroundColor((theme.background and 0x00FFFFFF) or (alpha shl 24))
                     dim.visibility = View.VISIBLE
                     messageAdapter.translucentBubbles = true
+                    contrast?.let { startTimeContrast(it) }
                 }
             }.start()
+        }
+    }
+
+    /** How bright each part of the dimmed background looks (a small grid). */
+    private fun contrastMap(bitmap: android.graphics.Bitmap, dim: Int, alpha: Int): BackgroundContrast? = try {
+        val cols = 24
+        val rows = 32
+        val small = android.graphics.Bitmap.createScaledBitmap(bitmap, cols, rows, true)
+        val pixels = IntArray(cols * rows)
+        small.getPixels(pixels, 0, cols, 0, 0, cols, rows)
+        if (small !== bitmap) small.recycle()
+        BackgroundContrast.fromPixels(pixels, cols, rows, dim, alpha)
+    } catch (e: Exception) {
+        null
+    }
+
+    /** Each visible message's time line takes a colour that contrasts
+     *  with the part of the background behind it — checked before every
+     *  frame (scrolling, new rows), changed only when it differs. */
+    private fun startTimeContrast(contrast: BackgroundContrast) {
+        val list = messageList
+        val shadowRadius = resources.displayMetrics.density
+        val rect = android.graphics.Rect()
+        list.viewTreeObserver.addOnPreDrawListener {
+            for (i in 0 until list.childCount) {
+                val time = list.getChildAt(i).findViewById<TextView>(R.id.bubbleTime) ?: continue
+                if (time.visibility != View.VISIBLE || time.width == 0) continue
+                time.getDrawingRect(rect)
+                list.offsetDescendantRectToMyCoords(time, rect)
+                val lum = contrast.brightnessUnder(rect.left, rect.top, rect.right, rect.bottom, list.width, list.height)
+                val color = BackgroundContrast.textColorFor(lum)
+                if (time.currentTextColor != color) {
+                    time.setTextColor(color)
+                    time.setShadowLayer(shadowRadius, 0f, 0f, BackgroundContrast.shadowFor(color))
+                }
+            }
+            true
         }
     }
 
