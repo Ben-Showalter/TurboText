@@ -41,8 +41,10 @@ class MediaViewerActivity : AppCompatActivity() {
         const val EXTRA_IMAGE_URIS = "image_uris"
         /** Opened from a message that can be reacted to: Options offers React. */
         const val EXTRA_CAN_REACT = "can_react"
-        /** My current reaction on that message, marked ✓ in the list. */
-        const val EXTRA_MY_REACTION = "my_reaction"
+        /** The React list's rows (ReactionDisplay.rows), from the
+         *  conversation: labels, and what each sends ("" for none). */
+        const val EXTRA_ROW_LABELS = "reaction_row_labels"
+        const val EXTRA_ROW_EMOJI = "reaction_row_emoji"
         /** The emoji chosen with React, handed back to the conversation. */
         const val EXTRA_REACTION = "reaction"
     }
@@ -252,13 +254,14 @@ class MediaViewerActivity : AppCompatActivity() {
     /** React to the message this picture is in: the conversation sends
      *  it. The one already sent is marked ✓; picking it again takes it back. */
     private fun showReactionPicker() {
-        val mine = intent.getStringExtra(EXTRA_MY_REACTION)
-        val emoji = ReactionDisplay.choices(EmojiUsage.recent(this), mine, EmojiUsage::drawable)
-        val labels = emoji.map { if (it == mine) "$it  ✓" else it }.toTypedArray()
+        val labels = intent.getStringArrayExtra(EXTRA_ROW_LABELS) ?: return
+        val emoji = intent.getStringArrayExtra(EXTRA_ROW_EMOJI) ?: return
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("React")
             .setItems(labels) { _, which ->
-                setResult(android.app.Activity.RESULT_OK, android.content.Intent().putExtra(EXTRA_REACTION, emoji[which]))
+                val chosen = emoji.getOrNull(which).orEmpty()
+                if (chosen.isEmpty()) return@setItems
+                setResult(android.app.Activity.RESULT_OK, android.content.Intent().putExtra(EXTRA_REACTION, chosen))
                 finish()
             }
             .show()

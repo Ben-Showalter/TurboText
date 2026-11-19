@@ -142,6 +142,8 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
         /** Which bubble background each view currently has, so a rebind
          *  with the same look doesn't replace it. */
         var textBgKey: String? = null
+        /** A new message at the bottom: SlideUpItemAnimator slides it in. */
+        var slideIn = false
         var imageBgKey: String? = null
 
         init {
@@ -239,13 +241,28 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
             return
         }
         holder.reactions.visibility = View.VISIBLE
+        // iPhone style: a small badge over the bubble's bottom corner, on
+        // its outer side (the row's gravity), clear of a group avatar.
+        val density = holder.reactions.resources.displayMetrics.density
+        holder.reactions.background = android.graphics.drawable.GradientDrawable().apply {
+            cornerRadius = 12 * density
+            setColor(theme.surface2)
+            setStroke((1 * density).toInt().coerceAtLeast(1), theme.background)
+        }
+        (holder.reactions.layoutParams as? android.widget.LinearLayout.LayoutParams)?.let { lp ->
+            val start = if (!msg.isOutgoing && msg.senderName != null) (40 * density).toInt() else (6 * density).toInt()
+            val end = (6 * density).toInt()
+            if (lp.marginStart != start || lp.marginEnd != end) {
+                lp.marginStart = start
+                lp.marginEnd = end
+                holder.reactions.layoutParams = lp
+            }
+        }
         // Newer emoji this phone can't draw show as a close older one.
         holder.reactions.text = msg.reactions.groupingBy { ReactionDisplay.shown(it.emoji, EmojiUsage::drawable) }
             .eachCount().entries
             .joinToString("  ") { (emoji, count) -> if (count > 1) "$emoji $count" else emoji }
-        // On a Conversation Background, ConversationActivity recolours it.
-        holder.reactions.setTextColor(theme.textSecondary)
-        if (!translucentBubbles) holder.reactions.setShadowLayer(0f, 0f, 0f, 0)
+        holder.reactions.setTextColor(theme.textPrimary)
     }
 
     /** Sender name (incoming messages in a group thread) goes in accent
@@ -347,6 +364,7 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
         }
 
         val msg = items[if (hasMore) position - 1 else position]
+        holder.slideIn = slideKeys.remove(msg.id to msg.isMms)
         holder.time.text = buildTimeLabel(msg, theme)
         bindReactions(holder, msg, theme)
         // On a Conversation Background, ConversationActivity recolours
@@ -465,6 +483,7 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
                 return
             }
         }
+        markNewAtBottom(items, newItems)
         val oldDisplay: List<Message?> = (if (this.hasMore) listOf<Message?>(null) else emptyList()) + items
         val newDisplay: List<Message?> = (if (hasMore) listOf<Message?>(null) else emptyList()) + newItems
         items = newItems
@@ -480,6 +499,23 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
             }
             override fun areContentsTheSame(o: Int, n: Int) = oldDisplay[o] == newDisplay[n]
         }, false).dispatchUpdatesTo(this)
+    }
+
+    /** Messages that slide in: new ones at the end of the list. Not on the
+     *  first load, and not a real row taking over its "Sending" bubble
+     *  (same text, already shown). */
+    private val slideKeys = HashSet<Pair<Long, Boolean>>()
+
+    private fun markNewAtBottom(old: List<Message>, new: List<Message>) {
+        slideKeys.clear()
+        if (old.isEmpty()) return
+        val oldKeys = old.mapTo(HashSet()) { it.id to it.isMms }
+        val pendingBodies = old.filter { it.id < 0 }.mapTo(HashSet()) { it.body.trim() }
+        for (m in new.asReversed()) {
+            if ((m.id to m.isMms) in oldKeys) break
+            if (m.id >= 0 && m.isOutgoing && m.body.trim() in pendingBodies) continue
+            slideKeys.add(m.id to m.isMms)
+        }
     }
 
     /** Prepends an older batch of messages (from "Load More"), keeping

@@ -37,6 +37,9 @@ not be able to push there yourself.
   - Groq dictation and translation;
   - in-app updates from GitHub Releases;
   - alerts on the outer screen.
+- **Flip Launcher** (`Ben-Showalter/flip-launcher`) has no direct link to TurboText. It opens the default
+  texting app, and counts and reads aloud TurboText's notifications through its notification listener. So
+  notification changes affect the launcher.
 - The maintainer is **not a programmer**. Explain results in plain words. When a phone setting is
   needed, give the exact `adb` command.
 
@@ -82,7 +85,8 @@ not be able to push there yourself.
 | Picking pictures | (not covered) | TurboText's own `MediaPickerActivity`. The gallery app opened its file browser instead. |
 
 In a conversation the softkeys are: left = typing mode, or **Search** when a message is selected;
-right = **Options**. CALL/SEND sends. Holding OK on a selected message copies it.
+right = **Options**. CALL/SEND sends. Holding OK on a selected message opens **React** (or copies a
+message that can't be reacted to); Copy is also in Options.
 
 ## 6. Telephony rules (each one fixed a real failure)
 
@@ -143,7 +147,7 @@ All app code is in `app/src/main/java/com/turbotext/app/`.
 | Typing | `T9InputController`, `Tt9WordEngine`, `WordPredictor`, `NoImeEditText`, `SuggestionRenderer`, `SearchBoxDialog`, `KeypadTimeDialog` |
 | Reactions | `ReactionParser` (iPhone / Google Messages wording, lone emoji, what to send), `MessageReactions` (applied in `ConversationActivity.showMessages`; display only, nothing stored), Settings > Advanced > Show Reactions |
 | Alerts | `NotificationHelper`, `SoundNotificationHelper`, `NotificationSounds`, `SoundPicker`, `CoverScreenNotifier` (outer screen), `DndHelper` |
-| Look | `ThemeHelper` / `AppTheme`, `MessageAdapter`, `BubbleDrawable`, `ConversationWallpaper`, `BackgroundContrast`, `SystemBars` |
+| Look | `ThemeHelper` / `AppTheme`, `MessageAdapter`, `SlideUpItemAnimator` (new messages slide up; nothing else animates), `BubbleDrawable`, `ConversationWallpaper`, `BackgroundContrast`, `SystemBars` |
 | Other | `ArchiveFormat` / `ArchiveManager`, `ReportSender` (daily report, `BootReceiver`), `UpdateChecker`, `AppLog`, `GroqVoiceInputHelper` / `GroqTranslateHelper` |
 
 ## 9. Pitfalls that bit before

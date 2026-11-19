@@ -55,6 +55,33 @@ object ReactionDisplay {
         return sb.toString()
     }
 
+    /** One row of the React list: [emoji] is what picking it sends (or
+     *  takes back, when it's mine), null for the divider. */
+    data class Row(val label: String, val emoji: String?)
+
+    /**
+     * The React list: who reacted with what ("❤️  Sarah", "👍  You";
+     * picking someone else's row adds the same as mine, +1, and picking
+     * mine takes it back), a divider, then the emoji to react with
+     * ([choices]). [name] turns a reaction's sender into a contact name.
+     */
+    fun rows(
+        reactions: List<Reaction>,
+        name: (String) -> String,
+        recent: List<String>,
+        canDraw: (String) -> Boolean
+    ): List<Row> {
+        val mine = reactions.firstOrNull { it.isMine }?.emoji
+        val out = ArrayList<Row>()
+        for (r in reactions) {
+            val shown = shown(r.emoji, canDraw)
+            out += if (r.isMine) Row("$shown  You", r.emoji) else Row("$shown  ${name(r.who)}", shown)
+        }
+        if (out.isNotEmpty()) out += Row("— React —", null)
+        for (e in choices(recent, mine, canDraw)) out += Row(if (e == mine) "$e  ✓" else e, e)
+        return out
+    }
+
     /** How many of the Recent emoji the React list starts with. */
     private const val RECENT_IN_LIST = 12
 

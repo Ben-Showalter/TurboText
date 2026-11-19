@@ -81,7 +81,9 @@ class ConversationActivity : AppCompatActivity() {
         // by taking focus, so it should never intercept key events itself.
         messageList.isFocusable = false
         messageList.isFocusableInTouchMode = false
-        messageList.itemAnimator = null
+        // New messages at the bottom slide up into place; nothing else
+        // animates (a refresh or Sending → Sent stays instant).
+        messageList.itemAnimator = SlideUpItemAnimator(resources.displayMetrics.density)
         messageList.setItemViewCacheSize(6)
         messageAdapter = MessageAdapter(emptyList())
         messageList.adapter = messageAdapter
@@ -407,10 +409,7 @@ class ConversationActivity : AppCompatActivity() {
         if (message.isOutgoing && message.id >= 0 && message.sendStatus !in setOf("sending", "waiting")) {
             options.add(0, "Resend")
         }
-        if (canReact(message)) {
-            options.add(0, "React")
-            if (message.reactions.isNotEmpty()) options.add(1, "View Reactions")
-        }
+        if (canReact(message)) options.add(0, "React")
         if (message.imageUri != null) options.add("Save to Gallery")
         if (message.videoUri != null) options.add("Play Video")
         if (message.videoUri != null || message.fileUri != null || message.audioUri != null) options.add("Save to Phone")
@@ -427,7 +426,6 @@ class ConversationActivity : AppCompatActivity() {
                 when (options[which]) {
                     "Resend" -> resendMessage(message)
                     "React" -> showReactionPicker(message)
-                    "View Reactions" -> showReactions(message)
                     "Copy Text to Clipboard" -> copyMessageText(message)
                     "Forward Message" -> forwardMessage(message)
                     "Translate to English" -> translateMessage(message)
@@ -804,12 +802,13 @@ class ConversationActivity : AppCompatActivity() {
             }
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
                 // Acted on at release: a short press opens the message, a
-                // long one (held until the key repeats) copies its text.
+                // long one (held until the key repeats) opens React, or
+                // copies the text of one that can't be reacted to.
                 if (event.repeatCount == 0) {
                     okLongPressed = false
                 } else if (!okLongPressed) {
                     okLongPressed = true
-                    selectedMessage(index)?.let { copyMessageText(it) }
+                    selectedMessage(index)?.let { if (canReact(it)) showReactionPicker(it) else copyMessageText(it) }
                 }
                 return true
             }
@@ -1353,19 +1352,6 @@ class ConversationActivity : AppCompatActivity() {
         list.viewTreeObserver.addOnPreDrawListener {
             for (i in 0 until list.childCount) {
                 val row = list.getChildAt(i)
-                row.findViewById<TextView>(R.id.bubbleReactions)?.let { r ->
-                    if (r.visibility == View.VISIBLE && r.width > 0) {
-                        r.getDrawingRect(rect)
-                        list.offsetDescendantRectToMyCoords(r, rect)
-                        val c = BackgroundContrast.textColorFor(
-                            contrast.brightnessUnder(rect.left, rect.top, rect.right, rect.bottom, list.width, list.height)
-                        )
-                        if (r.currentTextColor != c) {
-                            r.setTextColor(c)
-                            r.setShadowLayer(shadowRadius, 0f, 0f, BackgroundContrast.shadowFor(c))
-                        }
-                    }
-                }
                 val time = row.findViewById<TextView>(R.id.bubbleTime) ?: continue
                 if (time.visibility != View.VISIBLE || time.width == 0) continue
                 time.getDrawingRect(rect)
@@ -1656,8 +1642,12 @@ class ConversationActivity : AppCompatActivity() {
     private fun startViewer(intent: android.content.Intent, message: Message?) {
         if (message != null && canReact(message)) {
             reactingTo = message.id to message.isMms
+            // The same React list as in the conversation (names looked up now:
+            // only a few contacts, and only when there are reactions).
+            val rows = reactionRows(this, message)
             intent.putExtra(MediaViewerActivity.EXTRA_CAN_REACT, true)
-            message.reactions.firstOrNull { it.isMine }?.let { intent.putExtra(MediaViewerActivity.EXTRA_MY_REACTION, it.emoji) }
+            intent.putExtra(MediaViewerActivity.EXTRA_ROW_LABELS, rows.map { it.label }.toTypedArray())
+            intent.putExtra(MediaViewerActivity.EXTRA_ROW_EMOJI, rows.map { it.emoji.orEmpty() }.toTypedArray())
             startActivityForResult(intent, REQ_VIEWER)
         } else {
             startActivity(intent)
@@ -1691,30 +1681,37 @@ class ConversationActivity : AppCompatActivity() {
             message.sendStatus !in setOf("sending", "waiting", "failed") &&
             !message.mmsDownloadPending && !message.isUnretrievedMms
 
-    /** React: a D-pad list of emoji; the one already sent is marked ✓, and
-     *  picking it again takes it back (reactions toggle). */
+    /** React: who reacted with what (contact names; picking someone
+     *  else's adds the same, +1), then the emoji to react with. The one
+     *  already sent is marked ✓, and picking it again takes it back. */
     private fun showReactionPicker(message: Message) {
-        val mine = message.reactions.firstOrNull { it.isMine }?.emoji
-        // Your current one, your Recent emoji, then the standard ones.
-        val emoji = ReactionDisplay.choices(EmojiUsage.recent(this), mine, EmojiUsage::drawable)
-        val labels = emoji.map { if (it == mine) "$it  ✓" else it }.toTypedArray()
-        AlertDialog.Builder(this)
-            .setTitle("React")
-            .setItems(labels) { _, which -> sendReaction(message, emoji[which]) }
-            .show()
+        val app = applicationContext
+        Thread {
+            val rows = reactionRows(app, message)
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                AlertDialog.Builder(this)
+                    .setTitle("React")
+                    .setItems(rows.map { it.label }.toTypedArray()) { _, which ->
+                        rows[which].emoji?.let { sendReaction(message, it) }
+                    }
+                    .show()
+            }
+        }.start()
     }
 
-    /** Who reacted with what. */
-    private fun showReactions(message: Message) {
-        val labels = message.reactions.map {
-            val shown = ReactionDisplay.shown(it.emoji, EmojiUsage::drawable)
-            "$shown  ${it.who}" + if (shown != it.emoji) " (a newer emoji)" else ""
-        }.toTypedArray()
-        AlertDialog.Builder(this)
-            .setTitle("Reactions")
-            .setItems(labels, null)
-            .show()
-    }
+    /** The React list's rows for [message], with senders as contact
+     *  names. Off the main thread (contact look-ups). */
+    private fun reactionRows(context: android.content.Context, message: Message): List<ReactionDisplay.Row> =
+        ReactionDisplay.rows(
+            message.reactions,
+            name = { who ->
+                if (who.any { it.isLetter() }) who
+                else ContactHelper.lookupName(context, who) ?: ContactIndex.formatNumber(who)
+            },
+            recent = EmojiUsage.recent(context),
+            canDraw = EmojiUsage::drawable
+        )
 
     /** Sends the reaction as a text ("👍 to “Hi”", or "Removed 👍 from
      *  “Hi”" to take it back), the way Google Messages does: iPhones and
