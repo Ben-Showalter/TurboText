@@ -159,6 +159,9 @@ All app code is in `app/src/main/java/com/turbotext/app/`.
 - **`/*` inside a KDoc comment** (for example `"image/*"`) opens a nested comment and breaks the build.
 - **Keep heavy work off the main thread.** On the E4610 a list load once took 6 s. Use the caches;
   refresh only the newest messages (`MessageCache.refreshRecent`).
+- **Don't load a whole thread's history when it opens.** It made long threads sluggish. A conversation shows
+  the newest Messages Shown (Advanced; 200 by default, via `ThreadWindow`), and Load More fetches older
+  messages (`getMessagesPage`).
 - **Test helpers must not need Android.** A main-thread `Handler` in an object broke the JVM tests;
   make such things lazy or nullable.
 - **One unit-test class per file.**

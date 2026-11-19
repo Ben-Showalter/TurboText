@@ -16,10 +16,11 @@ class AdvancedSettingsActivity : AppCompatActivity() {
     private lateinit var trustedNumberRow: TextView
     private lateinit var mmsReportsRow: TextView
     private lateinit var reactionsRow: TextView
+    private lateinit var messagesShownRow: TextView
     private lateinit var bugReportRow: TextView
     private lateinit var checkUpdatesRow: TextView
     private var currentRow = 0
-    private val rows get() = listOf(defaultAppRow, backgroundHelperRow, trustedNumberRow, mmsReportsRow, reactionsRow, bugReportRow, checkUpdatesRow)
+    private val rows get() = listOf(defaultAppRow, backgroundHelperRow, trustedNumberRow, mmsReportsRow, reactionsRow, messagesShownRow, bugReportRow, checkUpdatesRow)
     private val lastRow get() = rows.size - 1
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -32,6 +33,7 @@ class AdvancedSettingsActivity : AppCompatActivity() {
         trustedNumberRow = findViewById(R.id.trustedNumberRow)
         mmsReportsRow = findViewById(R.id.mmsReportsRow)
         reactionsRow = findViewById(R.id.reactionsRow)
+        messagesShownRow = findViewById(R.id.messagesShownRow)
         bugReportRow = findViewById(R.id.bugReportRow)
         checkUpdatesRow = findViewById(R.id.checkUpdatesRow)
 
@@ -42,6 +44,8 @@ class AdvancedSettingsActivity : AppCompatActivity() {
         updateMmsReportsRowLabel()
         reactionsRow.setOnClickListener { toggleReactions() }
         updateReactionsRowLabel()
+        messagesShownRow.setOnClickListener { cycleMessagesShown() }
+        updateMessagesShownRowLabel()
         bugReportRow.setOnClickListener { saveBugReport() }
         checkUpdatesRow.setOnClickListener { checkForUpdate() }
         checkUpdatesRow.text = "Check for Updates (installed v${UpdateChecker.installedVersion(this)})"
@@ -68,6 +72,18 @@ class AdvancedSettingsActivity : AppCompatActivity() {
     private fun toggleMmsReports() {
         SettingsHelper.setMmsDeliveryReports(this, !SettingsHelper.isMmsDeliveryReports(this))
         updateMmsReportsRowLabel()
+    }
+
+    private fun updateMessagesShownRowLabel() {
+        messagesShownRow.text = "Messages Shown: ${ThreadWindow.label(SettingsHelper.getMessagesShown(this))}"
+    }
+
+    /** How many of a conversation's newest messages it shows: 100, 200,
+     *  500 or All. Fewer keeps long threads quick; Load More shows older. */
+    private fun cycleMessagesShown() {
+        SettingsHelper.setMessagesShown(this, ThreadWindow.next(SettingsHelper.getMessagesShown(this)))
+        updateMessagesShownRowLabel()
+        MessageCache.clear()
     }
 
     private fun updateReactionsRowLabel() {
@@ -206,8 +222,9 @@ class AdvancedSettingsActivity : AppCompatActivity() {
                     2 -> promptTrustedNumber()
                     3 -> toggleMmsReports()
                     4 -> toggleReactions()
-                    5 -> saveBugReport()
-                    6 -> checkForUpdate()
+                    5 -> cycleMessagesShown()
+                    6 -> saveBugReport()
+                    7 -> checkForUpdate()
                 }
                 return true
             }

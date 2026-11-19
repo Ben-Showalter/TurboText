@@ -55,6 +55,15 @@ object SettingsHelper {
         prefs(context).edit().putString("notif_sound_path", path).apply()
     }
 
+    /** How many of a conversation's newest messages are shown, with Load
+     *  More for older ones (ThreadWindow); 0 = All. */
+    fun getMessagesShown(context: Context): Int =
+        prefs(context).getInt("messages_shown", ThreadWindow.DEFAULT)
+
+    fun setMessagesShown(context: Context, limit: Int) {
+        prefs(context).edit().putInt("messages_shown", limit).apply()
+    }
+
     /** Show iPhone / Google Messages reaction texts ("Liked “…”", a lone
      *  👍) as reactions on the message they point at (MessageReactions).
      *  On by default; off shows them as ordinary messages and hides React. */

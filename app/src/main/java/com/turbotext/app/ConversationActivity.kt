@@ -62,6 +62,7 @@ class ConversationActivity : AppCompatActivity() {
 
         findViewById<TextView>(R.id.contactName).text = displayName
         repo = SmsRepository(this)
+        shownLimit = SettingsHelper.getMessagesShown(this)
         bindTitleAvatar(displayName)
         showWallpaper()
         engine = T9EngineHolder.get(this)
@@ -209,17 +210,18 @@ class ConversationActivity : AppCompatActivity() {
                 }
             }
 
-            // ...then quietly fill in the rest of the history behind it.
-            // (Paginated "Load More" was tried here and pulled back —
-            // this phone's SMS provider has a fixed connection cost per
-            // query regardless of how much it returns, so loading in
-            // smaller batches didn't meaningfully help and just added an
-            // extra tap.)
-            val read = repo.getMessages(threadId)
+            // ...then quietly fill in the rest behind it: the newest
+            // Messages Shown (plus one, to know if there are older ones),
+            // or the whole history for "All". Reading the whole history
+            // made long threads sluggish: every new message re-checked it.
+            val cap = SettingsHelper.getMessagesShown(this)
+            val read = if (cap > 0) repo.getRecentMessages(threadId, cap + 1) else repo.getMessages(threadId)
             android.util.Log.i("TurboTextPerf", "full query done: ${System.currentTimeMillis() - openedAt}ms, got ${read.size} messages")
             // A long read can miss what arrived while it ran: fold the
             // newest messages in again before showing it.
-            val full = MessageMerge.merge(read, repo.getRecentMessages(threadId, 30))
+            // Older messages already brought in with Load More are kept.
+            val base = if (cap > 0) MessageMerge.merge(MessageCache.get(threadId).orEmpty(), read) else read
+            val full = MessageMerge.merge(base, repo.getRecentMessages(threadId, 30))
             if (!loadGate.isLatest(ticket)) {
                 // A live refresh ran meanwhile; keep its newest messages too.
                 MessageCache.get(threadId)?.let { newer ->
@@ -236,6 +238,53 @@ class ConversationActivity : AppCompatActivity() {
         }.start()
     }
 
+    /** How many messages are shown (Messages Shown, growing with each
+     *  Load More); 0 shows all. */
+    private var shownLimit = 0
+    private var loadingOlder = false
+
+    /** Load More: reads the next batch of older messages and shows them
+     *  above, keeping the selection on the message it was on. */
+    private fun loadOlder() {
+        if (loadingOlder) return
+        loadingOlder = true
+        val step = SettingsHelper.getMessagesShown(this).takeIf { it > 0 } ?: ThreadWindow.DEFAULT
+        val known = MessageCache.get(threadId)
+        val have = known?.size ?: messageAdapter.currentItems().count { it.id >= 0 }
+        // The message at the top now (under the Load More row), to stay on it.
+        val keepKey = messageAdapter.currentItems().firstOrNull()?.let { it.id to it.isMms }
+        listeningIndicator.text = "Loading older messages…"
+        listeningIndicator.visibility = View.VISIBLE
+        Thread {
+            // One more than shown, to know whether there's still more.
+            val older = try {
+                repo.getMessagesPage(threadId, have, step + 1)
+            } catch (e: Exception) {
+                emptyList()
+            }
+            runOnUiThread {
+                loadingOlder = false
+                listeningIndicator.visibility = View.GONE
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                val base = MessageCache.get(threadId) ?: known ?: messageAdapter.currentItems().filter { it.id >= 0 }
+                val all = MessageMerge.merge(older, base)
+                MessageCache.put(threadId, all)
+                // Shown so far plus the new batch (never fewer than now).
+                val shownNow = messageAdapter.currentItems().count { it.id >= 0 }
+                shownLimit = if (shownLimit <= 0) 0 else maxOf(shownLimit, shownNow) + step
+                showMessages(all)
+                val items = messageAdapter.currentItems()
+                val idx = keepKey?.let { k -> items.indexOfFirst { it.id == k.first && it.isMms == k.second } } ?: -1
+                if (idx >= 0) {
+                    val pos = idx + if (messageAdapter.hasLoadMoreRow()) 1 else 0
+                    selectedMessageIndex = pos
+                    messageAdapter.setSelectedPosition(pos)
+                    messageList.scrollToPosition(pos)
+                }
+            }
+        }.start()
+    }
+
     /** Set by a send from this screen, so the next reload brings the new
      *  bubble into view even if the user was reading back. */
     private var stickAfterSend = false
@@ -244,12 +293,14 @@ class ConversationActivity : AppCompatActivity() {
      *  the list when [ScrollRules] says so — a reload never pulls the
      *  user away from a message they scrolled back to. */
     private fun showMessages(messages: List<Message>) {
+        // Only the newest [shownLimit] (Messages Shown); Load More for the rest.
+        val (window, hasOlder) = ThreadWindow.trim(messages, shownLimit)
         // Messages set to send later go last, in time order.
-        val all = PendingSends.merge(threadId, messages) +
+        val all = PendingSends.merge(threadId, window) +
             ScheduledSends.bubblesFor(this, threadId).sortedBy { it.date }
         // Reaction texts become reactions on the message they point at.
         val merged = if (SettingsHelper.isShowReactions(this)) MessageReactions.apply(all) else all
-        if (merged == messageAdapter.currentItems()) return
+        if (merged == messageAdapter.currentItems() && hasOlder == messageAdapter.hasLoadMoreRow()) return
         val wasEmpty = messageAdapter.currentItems().isEmpty()
         val wasAtBottom = !messageList.canScrollVertically(1)
         val stick = ScrollRules.shouldStickToBottom(
@@ -258,7 +309,7 @@ class ConversationActivity : AppCompatActivity() {
             browsing = selectedMessageIndex != null,
             justSent = stickAfterSend
         )
-        messageAdapter.update(merged, context = this)
+        messageAdapter.update(merged, hasOlder, context = this)
         if (stick) {
             stickAfterSend = false
             scrollToBottom()
@@ -855,6 +906,10 @@ class ConversationActivity : AppCompatActivity() {
      *  play/stop a voice message, open a picture full screen, import a
      *  contact card. A plain text message falls back to the Options menu. */
     private fun activateSelectedMessage(adapterIndex: Int) {
+        if (adapterIndex == 0 && messageAdapter.hasLoadMoreRow()) {
+            loadOlder()
+            return
+        }
         val realIndex = if (messageAdapter.hasLoadMoreRow()) adapterIndex - 1 else adapterIndex
         val message = messageAdapter.currentItems().getOrNull(realIndex) ?: return
         when {

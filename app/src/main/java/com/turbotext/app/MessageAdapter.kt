@@ -250,8 +250,12 @@ class MessageAdapter(private var items: List<Message>, private var hasMore: Bool
             setStroke((1 * density).toInt().coerceAtLeast(1), theme.background)
         }
         (holder.reactions.layoutParams as? android.widget.LinearLayout.LayoutParams)?.let { lp ->
-            val start = if (!msg.isOutgoing && msg.senderName != null) (40 * density).toInt() else (6 * density).toInt()
-            val end = (6 * density).toInt()
+            // In from the screen edge on the bubble's outer side, clear of a
+            // group sender's avatar on the inner side.
+            val outer = (16 * density).toInt()
+            val start = if (msg.isOutgoing) (6 * density).toInt()
+            else if (msg.senderName != null) (40 * density).toInt() else outer
+            val end = if (msg.isOutgoing) outer else (6 * density).toInt()
             if (lp.marginStart != start || lp.marginEnd != end) {
                 lp.marginStart = start
                 lp.marginEnd = end
