@@ -85,8 +85,28 @@ object ReactionParser {
         Rule("Lachte über", Kind.ADD, LAUGH)
     )
 
-    private const val OPEN_QUOTES = "“\"„«‘"
-    private const val CLOSE_QUOTES = "”\"“»’"
+    private const val OPEN_QUOTES = "“\"„«‘″＂‚‛‟'"
+    private const val CLOSE_QUOTES = "”\"“»’″＂‛'"
+
+    /**
+     * [text] without invisible formatting characters: direction marks and
+     * isolates (Google Messages wraps the quoted text in U+2068…U+2069)
+     * and zero-width spaces. They look like nothing on screen, but made
+     * "👍 to “Hi”" not match "Hi". The emoji joiner (U+200D) is kept.
+     */
+    fun clean(text: String): String {
+        if (text.none { isInvisible(it.code) }) return text
+        val sb = StringBuilder(text.length)
+        for (ch in text) if (!isInvisible(ch.code)) sb.append(ch)
+        return sb.toString()
+    }
+
+    /** True when [text] has any of the characters [clean] removes. */
+    fun hasInvisible(text: String): Boolean = text.any { isInvisible(it.code) }
+
+    private fun isInvisible(c: Int): Boolean =
+        c == 0x200B || c == 0x200E || c == 0x200F || c in 0x202A..0x202E ||
+            c in 0x2066..0x2069 || c == 0x2060 || c == 0xFEFF
 
     private val mediaPhrases = mapOf(
         "an image" to Media.IMAGE,
@@ -109,7 +129,7 @@ object ReactionParser {
 
     /** Returns the reaction/edit described by [body], or null for an ordinary message. */
     fun parse(body: String): Parsed? {
-        val text = body.trim()
+        val text = clean(body).trim()
         if (text.length < 3 || text.length > 2000) return null
 
         for (rule in rules) {
@@ -195,7 +215,7 @@ object ReactionParser {
      * "👍👍" or "👍 ok" stay ordinary messages.
      */
     fun loneEmoji(body: String): String? {
-        val text = body.trim()
+        val text = clean(body).trim()
         if (text.isEmpty() || text.length > 24 || !looksLikeEmoji(text)) return null
         var bases = 0
         var afterJoiner = false

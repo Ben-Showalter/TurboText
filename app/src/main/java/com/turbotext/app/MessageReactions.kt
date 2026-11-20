@@ -107,6 +107,42 @@ object MessageReactions {
         editOf: Message?
     ): Message? {
         val quote = normalize(if (parsed.isTruncated) parsed.quotePrefix else parsed.quotedText)
+        exactTarget(messages, index, parsed, hidden, edits, editOf, quote)?.let { return it }
+        if (editOf != null || parsed.media != ReactionParser.Media.NONE || quote.isEmpty()) return null
+        // No exact match: some phones change the quote a little ("Hi" →
+        // "hi" or "Hi."). Match ignoring case and trailing punctuation.
+        val looseQuote = loose(quote)
+        for (i in index - 1 downTo 0) {
+            val candidate = messages[i]
+            val key = keyOf(candidate)
+            if (key in hidden) continue
+            val body = loose(normalize(edits[key] ?: candidate.body))
+            if (body.isEmpty()) continue
+            if (if (parsed.isTruncated) body.startsWith(looseQuote) else body == looseQuote) return candidate
+        }
+        onNoMatch?.invoke(
+            "no match for ${messages[index].id} (quote ${quote.length} chars, " +
+                "invisible chars: ${if (ReactionParser.hasInvisible(parsed.quotedText) || ReactionParser.hasInvisible(messages[index].body)) "yes" else "no"}, " +
+                "searched $index messages)"
+        )
+        return null
+    }
+
+    private fun loose(text: String): String = text.lowercase().trimEnd { it in ".!?,;:… " }
+
+    /** Called (no message text) when a reaction's message isn't found;
+     *  ConversationActivity logs it. */
+    @Volatile var onNoMatch: ((String) -> Unit)? = null
+
+    private fun exactTarget(
+        messages: List<Message>,
+        index: Int,
+        parsed: ReactionParser.Parsed,
+        hidden: Set<Key>,
+        edits: Map<Key, String>,
+        editOf: Message?,
+        quote: String
+    ): Message? {
         for (i in index - 1 downTo 0) {
             val candidate = messages[i]
             val key = keyOf(candidate)
@@ -152,7 +188,7 @@ object MessageReactions {
     private val whitespace = Regex("\\s+")
 
     /** Quote matching ignores smart punctuation and spacing differences. */
-    private fun normalize(text: String): String = text
+    private fun normalize(text: String): String = ReactionParser.clean(text)
         .replace('’', '\'').replace('‘', '\'')
         .replace('“', '"').replace('”', '"')
         .replace(' ', ' ')

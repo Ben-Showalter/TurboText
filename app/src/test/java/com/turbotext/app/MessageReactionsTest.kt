@@ -56,4 +56,19 @@ class MessageReactionsTest {
         assertEquals("Removed 👍 from “Hi”", MessageReactions.composeFor(target, "👍"))
         assertEquals("❤️ to “Hi”", MessageReactions.composeFor(target, "❤️"))
     }
+
+    @Test fun invisibleDirectionMarksStillMatch() {
+        val out = MessageReactions.apply(listOf(msg(1, "Hi", true), msg(2, "👍 to “⁨Hi⁩”", false)))
+        assertEquals("👍", out.single().reactions.single().emoji)
+    }
+
+    @Test fun zeroWidthSpaceStillMatches() {
+        val out = MessageReactions.apply(listOf(msg(1, "Thanks", true), msg(2, "👍 to “Than​ks”", false)))
+        assertEquals(1, out.size)
+    }
+
+    @Test fun looseMatchIgnoresCaseAndTrailingPunctuation() {
+        val out = MessageReactions.apply(listOf(msg(1, "Hi.", true), msg(2, "❤️ to “hi”", false)))
+        assertEquals("❤️", out.single().reactions.single().emoji)
+    }
 }

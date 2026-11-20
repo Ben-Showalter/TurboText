@@ -63,6 +63,8 @@ class ConversationActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.contactName).text = displayName
         repo = SmsRepository(this)
         shownLimit = SettingsHelper.getMessagesShown(this)
+        // A reaction whose message wasn't found: logged once each (no text).
+        MessageReactions.onNoMatch = { line -> if (loggedNoMatch.add(line)) AppLog.event("Reaction", line) }
         bindTitleAvatar(displayName)
         showWallpaper()
         engine = T9EngineHolder.get(this)
@@ -241,6 +243,7 @@ class ConversationActivity : AppCompatActivity() {
     /** How many messages are shown (Messages Shown, growing with each
      *  Load More); 0 shows all. */
     private var shownLimit = 0
+    private val loggedNoMatch = java.util.Collections.synchronizedSet(HashSet<String>())
     private var loadingOlder = false
 
     /** Load More: reads the next batch of older messages and shows them
