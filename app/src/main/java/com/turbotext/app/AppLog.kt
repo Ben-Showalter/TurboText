@@ -153,6 +153,7 @@ object AppLog {
             appendLine("App: $version")
             appendLine("Phone: ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
             appendLine("Default texting app: ${if (DefaultSmsRoleHelper.isDefault(context)) "yes" else "NO"}")
+            appendLine("Own number: ${try { OwnNumber.describe(context) } catch (e: Exception) { "?" }}")
             appendLine("Background Helper: ${if (AccessibilityHelper.isServiceEnabled(context)) "on" else "off"}")
             appendLine("Log: stream restarted $restarts time(s) since TurboText started")
             appendLine("In service: ${if (SendRetry.inService(context)) "yes" else "NO"}; waiting to send: ${SendRetry.waitingCount(context)}")

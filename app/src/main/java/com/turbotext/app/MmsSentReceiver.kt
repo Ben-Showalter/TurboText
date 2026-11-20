@@ -96,7 +96,9 @@ class MmsSentReceiver : BroadcastReceiver() {
         /** m-send-conf Response-Status: 0x80 accepted, 0xC0–0xDF a
          *  temporary refusal, anything else the carrier won't take it. */
         private const val RESPONSE_OK = 0x80
-        private fun isTransientResponse(status: Int) = status in 0xC0..0xDF
+        /** 0x84 "sender address unresolved" is tried once more: Verizon's
+         *  server failed it at random on US Mobile. */
+        private fun isTransientResponse(status: Int) = status in 0xC0..0xDF || status == 0x84
     }
 
     override fun onReceive(context: Context, intent: Intent) {

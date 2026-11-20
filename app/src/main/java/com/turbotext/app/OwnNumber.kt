@@ -60,6 +60,30 @@ object OwnNumber {
         return numbers
     }
 
+    /**
+     * Our number and where it came from ("line", "sim" or "learned"), the
+     * way Signal finds it: the phone's line number, else a SIM's number,
+     * else the one learned from group messages. Null when none is known.
+     */
+    fun best(context: Context): Pair<String, String>? {
+        try {
+            val tm = context.getSystemService(TelephonyManager::class.java)
+            @Suppress("DEPRECATION", "HardwareIds")
+            tm?.line1Number?.takeIf { it.any(Char::isDigit) }?.let { return it to "line" }
+        } catch (e: Exception) {
+        }
+        try {
+            val sm = context.getSystemService(SubscriptionManager::class.java)
+            @Suppress("DEPRECATION")
+            sm?.activeSubscriptionInfoList?.forEach { info ->
+                info.number?.takeIf { it.any(Char::isDigit) }?.let { return it to "sim" }
+            }
+        } catch (e: Exception) {
+        }
+        prefs(context).getString(KEY_LEARNED, null)?.takeIf { it.any(Char::isDigit) }?.let { return it to "learned" }
+        return null
+    }
+
     /** Our numbers for the log: each one's source and last 4 digits only. */
     fun describe(context: Context): String {
         val parts = ArrayList<String>()

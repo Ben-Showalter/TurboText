@@ -110,6 +110,10 @@ message that can't be reacted to); Copy is also in Options.
   - always pass the carrier's HTTP headers from `MmsConfig` (on Verizon's network: `X-VzW-MDN`) and the
     size limit, as the klinker library did. Dropping them in October lined up with random failures to
     iPhones on US Mobile;
+  - **always tell the carrier our own number:** From = `OwnNumber.best` (line number, else SIM number, else
+    learned, read the way Signal does), and on Verizon's network add `X-VzW-MDN` with it (`VerizonNetwork`)
+    when mms_config has none. US Mobile's SIM has no mms_config headers, and without our number Verizon refused
+    pictures with 0x84 "sender address unresolved";
   - keep pictures within `AttachmentPolicy` (600 KB cap);
   - **picture delivery reports are off by default** (Advanced > Picture Delivery Reports).
 

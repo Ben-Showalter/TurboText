@@ -219,14 +219,14 @@ object MmsTransmitter {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_IMMUTABLE else 0
         val pendingIntent = PendingIntent.getBroadcast(context, messageId, sentIntent, flags)
 
-        val configOverrides = configOverrides(groupMms)
+        val configOverrides = configOverrides(context, groupMms)
 
         SmsManagerFactory.createSmsManager(resolvedSubId)
             .sendMultimediaMessage(context, contentUri, null, configOverrides, pendingIntent)
 
         AppLog.event(
             "Mms", "$messageId: handed to the phone (${pduFile.length()}B, sim $resolvedSubId, " +
-                "reports ${if (SettingsHelper.isMmsDeliveryReports(context)) "on" else "off"}, ${describe(configOverrides)})"
+                "reports ${if (SettingsHelper.isMmsDeliveryReports(context)) "on" else "off"}, ${describe(context, configOverrides)})"
         )
         MmsSentReceiver.schedule(
             context, MmsSentReceiver.ACTION_WATCHDOG, messageUri, pduFile.path, resolvedSubId, groupMms, 1,
@@ -259,7 +259,7 @@ object MmsTransmitter {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_IMMUTABLE else 0
         val requestCode = messageUri.lastPathSegment?.toIntOrNull() ?: 0
         val pendingIntent = PendingIntent.getBroadcast(context, requestCode, sentIntent, flags)
-        val configOverrides = configOverrides(groupMms)
+        val configOverrides = configOverrides(context, groupMms)
         SmsManagerFactory.createSmsManager(subId)
             .sendMultimediaMessage(context, contentUri, null, configOverrides, pendingIntent)
         AppLog.event("Mms", "${messageUri.lastPathSegment}: try $attempt handed to the phone")
@@ -278,12 +278,12 @@ object MmsTransmitter {
      * sender's number, which its MMSC uses to know who's sending), and
      * the size limit. The phone fills in ##LINE1…## itself.
      */
-    private fun configOverrides(groupMms: Boolean) = Bundle().apply {
+    private fun configOverrides(context: Context, groupMms: Boolean) = Bundle().apply {
         putBoolean(SmsManager.MMS_CONFIG_GROUP_MMS_ENABLED, groupMms)
         try {
-            com.android.mms.MmsConfig.getHttpParams()?.trim()?.takeIf { it.isNotEmpty() }?.let {
-                putString(SmsManager.MMS_CONFIG_HTTP_PARAMS, it)
-            }
+            val fromConfig = com.android.mms.MmsConfig.getHttpParams()?.trim()?.takeIf { it.isNotEmpty() }
+            val params = fromConfig ?: verizonParams(context)
+            params?.let { putString(SmsManager.MMS_CONFIG_HTTP_PARAMS, it) }
             // Never below what AttachmentPolicy already sized the message to.
             putInt(
                 SmsManager.MMS_CONFIG_MAX_MESSAGE_SIZE,
@@ -294,9 +294,35 @@ object MmsTransmitter {
         }
     }
 
-    /** For the log: the headers template (no numbers in it) and size. */
-    private fun describe(b: Bundle) =
-        "headers ${b.getString(SmsManager.MMS_CONFIG_HTTP_PARAMS) ?: "none"}, max ${b.getInt(SmsManager.MMS_CONFIG_MAX_MESSAGE_SIZE, 0) / 1024}KB"
+    /** On Verizon's network with no headers from mms_config (US Mobile):
+     *  X-VzW-MDN with our own number, which Verizon's server reads the
+     *  sender from. Null elsewhere, or when our number isn't known. */
+    private fun verizonParams(context: Context): String? {
+        val tm = context.getSystemService(android.telephony.TelephonyManager::class.java) ?: return null
+        val verizon = try {
+            VerizonNetwork.isVerizon(tm.simOperator, tm.networkOperator, tm.networkOperatorName)
+        } catch (e: Exception) {
+            false
+        }
+        if (!verizon) return null
+        return OwnNumber.best(context)?.let { VerizonNetwork.httpParamsFor(it.first) }
+    }
+
+    /** For the log (last 4 digits of numbers only): the network, where
+     *  our number came from, the headers sent, and the size limit. */
+    private fun describe(context: Context, b: Bundle): String {
+        val tm = context.getSystemService(android.telephony.TelephonyManager::class.java)
+        val network = try {
+            "sim ${tm?.simOperator ?: "?"}, net ${tm?.networkOperator ?: "?"} ${tm?.networkOperatorName ?: ""}".trim()
+        } catch (e: Exception) {
+            "network ?"
+        }
+        val own = OwnNumber.best(context)?.let { "from ${it.second} …${OwnNumber.last4(it.first)}" } ?: "from none"
+        val headers = b.getString(SmsManager.MMS_CONFIG_HTTP_PARAMS)?.let {
+            if (it.contains("VzW", ignoreCase = true)) "verizon headers yes" else "headers from mms_config"
+        } ?: "headers none"
+        return "$network, $own, $headers, max ${b.getInt(SmsManager.MMS_CONFIG_MAX_MESSAGE_SIZE, 0) / 1024}KB"
+    }
 
     fun markFailed(context: Context, messageUri: Uri) {
         try {
@@ -340,7 +366,12 @@ object MmsTransmitter {
     ): SendReq {
         val req = SendReq()
 
-        req.prepareFromAddress(context, "", subscriptionId)
+        // Our number as the sender, read the way Signal does. Without it
+        // the message said "insert my address", and Verizon's server
+        // refused it (0x84, sender address unresolved).
+        val own = OwnNumber.best(context)
+        if (own != null) req.setFrom(EncodedStringValue(VerizonNetwork.fromAddress(own.first)))
+        else req.prepareFromAddress(context, "", subscriptionId)
         recipients.forEach { req.addTo(EncodedStringValue(it)) }
         req.setDate(System.currentTimeMillis() / 1000)
 
