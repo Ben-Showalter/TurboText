@@ -772,8 +772,11 @@ class ConversationActivity : AppCompatActivity() {
      *  straight past it. Returns false if there's nowhere further to go
      *  in that direction. */
     private fun stepSelection(direction: Int): Boolean {
-        val current = selectedMessageIndex ?: return false
         val maxIndex = messageAdapter.itemCount - 1
+        // The list may have shrunk under the selection (a reaction folded
+        // away, a Sending bubble replaced): keep it on a real row.
+        val current = (selectedMessageIndex ?: return false).coerceAtMost(maxIndex)
+        if (current < 0) return false
         val targetIndex = current + direction
 
         val lm = messageList.layoutManager as LinearLayoutManager
@@ -785,6 +788,11 @@ class ConversationActivity : AppCompatActivity() {
             // top (or bottom) can still be reached. This is what lets the
             // first line of a long opening message scroll fully into view.
             val view = lm.findViewByPosition(current) ?: return false
+            // Only while the list can still move that way: at the very end
+            // a bubble's edge (reaction badge, time line) can sit a few
+            // pixels past the bottom, and scrolling by nothing kept Down
+            // from ever reaching the compose box.
+            if (!messageList.canScrollVertically(direction)) return false
             if (direction < 0 && view.top < 0) {
                 messageList.scrollBy(0, maxOf(direction * scrollStepPx(), view.top))
                 return true
@@ -799,6 +807,12 @@ class ConversationActivity : AppCompatActivity() {
         val targetView = lm.findViewByPosition(targetIndex)
 
         if (targetView != null && targetView.height <= oneInchPx()) {
+            selectedMessageIndex = targetIndex
+            messageAdapter.setSelectedPosition(targetIndex)
+            messageList.scrollToPosition(targetIndex)
+        } else if (!messageList.canScrollVertically(direction)) {
+            // Can't scroll any further: go straight to it, so the key
+            // always does something.
             selectedMessageIndex = targetIndex
             messageAdapter.setSelectedPosition(targetIndex)
             messageList.scrollToPosition(targetIndex)
