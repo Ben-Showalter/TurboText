@@ -28,13 +28,13 @@ import android.util.Log
  *   few longer words that start with those keys, each group most-common
  *   first. How many extra keys to look ahead depends on how much has been
  *   typed (TT9's "generations": 1 key for 2 typed, 2 for 3–4, any for 5+).
- * - **Learning** — choosing a word that wasn't the top suggestion gives it
- *   the top word's frequency + 1, so it's first next time ("makeTopWord").
- *   When frequencies get large they're scaled back down, so older habits
- *   can still be overtaken.
- * - **Word pairs** — remembers which word you picked after which ("I" →
- *   "am", "am" → "an"), so when the same keys follow the same word again,
- *   that word is offered first.
+ * - **Learning** — every word you pick for its keys counts as a use, and
+ *   the most used comes first (WordRanking). TT9 instead put whichever
+ *   word was picked last on top, so "me" and "of" (both 6-3) kept trading
+ *   places. Counts are halved when they grow large, so habits can change.
+ * - **Word pairs** — counts which word you pick after which ("I" →
+ *   "am"); once one has been picked there at least twice, and more than
+ *   any other, it's offered first after that word.
  */
 class Tt9WordEngine(private val context: Context, private val digitCode: (String) -> String) : WordPredictor {
 
@@ -44,8 +44,6 @@ class Tt9WordEngine(private val context: Context, private val digitCode: (String
 
         // TT9's own limits (SettingsStatic).
         private const val SUGGESTIONS_MAX = 20
-        private const val WORD_FREQUENCY_MAX = 25500
-        private const val WORD_FREQUENCY_NORMALIZATION_DIVIDER = 100
         private const val WORD_PAIR_MAX = 1250
         private const val WORD_PAIR_MAX_WORD_LENGTH = 6
 
@@ -82,15 +80,18 @@ class Tt9WordEngine(private val context: Context, private val digitCode: (String
      *  words, "c:word" for custom ones — so they survive a dictionary
      *  update that shifts word positions. Held in memory by index. */
     private val freqPrefs = context.getSharedPreferences(PREFS_FREQ, Context.MODE_PRIVATE)
-    private val learned = HashMap<Int, Int>()
+    /** How often each word (lower-case) has been picked for its keys:
+     *  "u:word" in [freqPrefs]. What the order is decided by. */
+    private val uses = HashMap<String, Int>()
 
     /** Contact names and My Words — not in the dictionary, always offered. */
     private val customBySeq = HashMap<String, MutableList<String>>()
     private val customFreq = HashMap<String, Int>()
 
-    /** (previous word, next word's keys) → next word. Oldest dropped first. */
-    private val pairs = object : LinkedHashMap<String, String>(256, 0.75f, false) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?) = size > WORD_PAIR_MAX
+    /** (previous word, next word's keys) → how often each next word was
+     *  picked there. Oldest dropped first. */
+    private val pairs = object : LinkedHashMap<String, MutableMap<String, Int>>(256, 0.75f, false) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, MutableMap<String, Int>>?) = size > WORD_PAIR_MAX
     }
     private val pairPrefs = context.getSharedPreferences(PREFS_PAIRS, Context.MODE_PRIVATE)
 
@@ -98,22 +99,39 @@ class Tt9WordEngine(private val context: Context, private val digitCode: (String
     private var lastResult: List<String> = emptyList()
 
     init {
-        for ((k, v) in freqPrefs.all) {
+        val all = freqPrefs.all
+        for ((k, v) in all) {
             val f = (v as? Int) ?: continue
-            when {
-                k.startsWith("c:") -> customFreq[k.substring(2)] = f
-                k.startsWith("w:") -> indexOf(k.substring(2))?.let { learned[it] = f }
+            if (k.startsWith("u:")) uses[k.substring(2)] = f
+        }
+        // Moving over from "last picked goes first": each word learned that
+        // way starts with one use, and real use settles the order from here.
+        if (!all.containsKey("uses_migrated")) {
+            val edit = freqPrefs.edit()
+            for (k in all.keys) {
+                if (k.startsWith("w:") || k.startsWith("c:")) {
+                    val w = k.substring(2).lowercase()
+                    if (!uses.containsKey(w)) {
+                        uses[w] = 1
+                        edit.putInt("u:$w", 1)
+                    }
+                }
             }
+            edit.putBoolean("uses_migrated", true).apply()
         }
         for ((word, freq) in CONTRACTIONS) {
             val seq = digitCode(word)
             customBySeq.getOrPut(seq) { mutableListOf() }.add(word)
-            // A learned frequency (loaded above) wins over the default.
+            // How common it is; how often it's used is counted separately.
             if (!customFreq.containsKey(word)) customFreq[word] = freq
         }
         pairPrefs.getString("pairs", null)?.split('\n')?.forEach { line ->
             val parts = line.split('\t')
-            if (parts.size == 3) pairs[pairKey(parts[0], parts[1])] = parts[2]
+            // "prev, keys, word[, count]" (older saves have no count).
+            if (parts.size >= 3) {
+                val count = parts.getOrNull(3)?.toIntOrNull() ?: 1
+                pairs.getOrPut(pairKey(parts[0], parts[1])) { HashMap() }[parts[2]] = count
+            }
         }
     }
 
@@ -139,7 +157,10 @@ class Tt9WordEngine(private val context: Context, private val digitCode: (String
         return Dictionary(seqs.toTypedArray(), words.toTypedArray(), freqs.toIntArray())
     }
 
-    private fun freqOf(index: Int) = learned[index] ?: dict.freqs[index]
+    /** How common the word is in English (the dictionary's frequency). */
+    private fun freqOf(index: Int) = dict.freqs[index]
+
+    private fun usesOf(word: String) = uses[word.lowercase()] ?: 0
 
     /** Dictionary index of [word] (case-insensitive), or null. */
     private fun indexOf(word: String): Int? {
@@ -164,7 +185,7 @@ class Tt9WordEngine(private val context: Context, private val digitCode: (String
         return lo
     }
 
-    private data class Hit(val word: String, val seqLen: Int, val freq: Int, val index: Int)
+    private data class Hit(val word: String, val seqLen: Int, val freq: Int, val index: Int, val uses: Int = 0)
 
     /** Dictionary + custom words for [seq] and, depending on its length,
      *  a few longer sequences that start with it. */
@@ -181,12 +202,12 @@ class Tt9WordEngine(private val context: Context, private val digitCode: (String
         while (i < dict.seqs.size) {
             val s = dict.seqs[i]
             if (!s.startsWith(seq)) break
-            if (s.length <= maxLen) out.add(Hit(dict.words[i], s.length, freqOf(i), i))
+            if (s.length <= maxLen) out.add(Hit(dict.words[i], s.length, freqOf(i), i, usesOf(dict.words[i])))
             i++
         }
         for ((cseq, list) in customBySeq) {
             if (cseq.startsWith(seq) && cseq.length <= maxLen) {
-                for (w in list) out.add(Hit(w, cseq.length, customFreq[w] ?: topFrequency(cseq) + 1, -1))
+                for (w in list) out.add(Hit(w, cseq.length, customFreq[w] ?: topFrequency(cseq) + 1, -1, usesOf(w)))
             }
         }
         return out
@@ -206,10 +227,12 @@ class Tt9WordEngine(private val context: Context, private val digitCode: (String
         val key = "$digits|$previousWord"
         if (key == lastKey) return lastResult
 
-        // Shortest (exact) first, then most frequent — TT9's
-        // "ORDER BY LENGTH(word), frequency DESC". Case-insensitive
-        // duplicates ("Mark"/"mark") keep the more frequent one.
-        val sorted = hits(digits).sortedWith(compareBy<Hit> { it.seqLen }.thenByDescending { it.freq })
+        // Shortest (exact) first, then most used, then most common
+        // (WordRanking). Case-insensitive duplicates ("Mark"/"mark") keep
+        // the first one.
+        val found = hits(digits)
+        val ranked = WordRanking.order(found.map { WordRanking.Candidate(it.word, it.seqLen, it.uses, it.freq) })
+        val sorted = ranked.map { c -> found.first { it.word == c.word && it.seqLen == c.seqLen } }
         val seen = HashSet<String>()
         val words = ArrayList<String>()
         for (h in sorted) {
@@ -237,11 +260,11 @@ class Tt9WordEngine(private val context: Context, private val digitCode: (String
 
     private fun pairKey(word1: String, seq2: String) = "${word1.lowercase()}\t$seq2"
 
-    /** If the word last picked after [previousWord] for these keys is in
-     *  the list, move it to the front. */
+    /** If one word has clearly been picked most after [previousWord] for
+     *  these keys (WordRanking.pairLeader), move it to the front. */
     private fun rearrangeByPair(words: List<String>, digits: String, previousWord: String?): List<String> {
         if (previousWord.isNullOrEmpty() || words.size < 2) return words
-        val pairWord = pairs[pairKey(previousWord, digits)] ?: return words
+        val pairWord = pairs[pairKey(previousWord, digits)]?.let { WordRanking.pairLeader(it) } ?: return words
         val idx = words.indexOfFirst { it.equals(pairWord, ignoreCase = true) }
         if (idx <= 0) return words
         return listOf(words[idx]) + words.filterIndexed { i, _ -> i != idx }
@@ -249,14 +272,12 @@ class Tt9WordEngine(private val context: Context, private val digitCode: (String
 
     override fun recordConfirmed(digits: String, word: String, previousWord: String?) {
         if (digits.isEmpty() || word.isEmpty()) return
-        val current = candidatesFor(digits, previousWord)
-        // Already the first suggestion — guessed right, nothing to learn.
-        if (current.firstOrNull() == word) return
         // Only words for exactly these keys — a longer completion is a
-        // different word, not a rival for this key sequence.
+        // different word, not a rival for this key sequence. Every pick
+        // counts, including when it was already the first guess.
         if (digitCode(word) != digits) return
         pairWithPrevious(previousWord, word, digits)
-        makeTopWord(word, digits)
+        addUse(word, digits)
         lastKey = null
     }
 
@@ -266,53 +287,43 @@ class Tt9WordEngine(private val context: Context, private val digitCode: (String
         if (previousWord.length > WORD_PAIR_MAX_WORD_LENGTH && word.length > WORD_PAIR_MAX_WORD_LENGTH) return
         if (!previousWord.all { it.isLetter() || it == '\'' } || !word.all { it.isLetter() || it == '\'' }) return
         val key = pairKey(previousWord, seq)
-        pairs.remove(key)
-        pairs[key] = word
+        val counts = pairs.remove(key) ?: HashMap()
+        counts[word] = (counts[word] ?: 0) + 1
+        pairs[key] = counts
         savePairs()
     }
 
     private fun savePairs() {
         val sb = StringBuilder()
-        for ((k, v) in pairs) {
-            if (sb.isNotEmpty()) sb.append('\n')
-            sb.append(k).append('\t').append(v)
+        for ((k, counts) in pairs) {
+            for ((w, n) in counts) {
+                if (sb.isNotEmpty()) sb.append('\n')
+                sb.append(k).append('\t').append(w).append('\t').append(n)
+            }
         }
         pairPrefs.edit().putString("pairs", sb.toString()).apply()
     }
 
-    /** TT9's makeTopWord: the chosen word gets the current top word's
-     *  frequency + 1 among words for exactly these keys. */
-    private fun makeTopWord(word: String, seq: String) {
-        val newTop = maxOf(topFrequency(seq), customBySeq[seq]?.maxOfOrNull { customFreq[it] ?: 0 } ?: 0) + 1
-        val edit = freqPrefs.edit()
-        val custom = customBySeq[seq]?.firstOrNull { it.equals(word, ignoreCase = true) }
-        if (custom != null) {
-            customFreq[custom] = newTop
-            edit.putInt("c:$custom", newTop)
-        } else {
-            val found = indexOf(word) ?: return
-            learned[found] = newTop
-            edit.putInt("w:${dict.words[found].lowercase()}", newTop)
-        }
-        edit.apply()
-        if (newTop > WORD_FREQUENCY_MAX) normalize(seq)
-    }
-
-    /** Scales every frequency for [seq] back down so learning can keep
-     *  reordering it (TT9's normalization). */
-    private fun normalize(seq: String) {
-        val edit = freqPrefs.edit()
+    /** One more use of [word] for [seq]. When the uses of all the words
+     *  for [seq] add up past WordRanking.HALVE_AT, they're halved. */
+    private fun addUse(word: String, seq: String) {
+        val key = word.lowercase()
+        uses[key] = (uses[key] ?: 0) + 1
+        val edit = freqPrefs.edit().putInt("u:$key", uses[key]!!)
+        val rivals = HashSet<String>()
         var i = lowerBound(seq)
         while (i < dict.seqs.size && dict.seqs[i] == seq) {
-            val f = freqOf(i) / WORD_FREQUENCY_NORMALIZATION_DIVIDER
-            learned[i] = f
-            edit.putInt("w:${dict.words[i].lowercase()}", f)
+            rivals.add(dict.words[i].lowercase())
             i++
         }
-        customBySeq[seq]?.forEach { w ->
-            val f = (customFreq[w] ?: 0) / WORD_FREQUENCY_NORMALIZATION_DIVIDER
-            customFreq[w] = f
-            edit.putInt("c:$w", f)
+        customBySeq[seq]?.forEach { rivals.add(it.lowercase()) }
+        rivals.add(key)
+        if (WordRanking.shouldHalve(rivals.sumOf { uses[it] ?: 0 })) {
+            for (w in rivals) {
+                val n = uses[w] ?: continue
+                uses[w] = n / 2
+                edit.putInt("u:$w", n / 2)
+            }
         }
         edit.apply()
     }
@@ -343,7 +354,7 @@ class Tt9WordEngine(private val context: Context, private val digitCode: (String
      *  so the most recent ends up first. */
     fun importLegacyLearning(legacy: Map<String, List<String>>) {
         for ((seq, words) in legacy) {
-            for (w in words.reversed()) makeTopWord(w, seq)
+            for (w in words.reversed()) addUse(w, seq)
         }
         lastKey = null
     }
