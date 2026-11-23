@@ -250,6 +250,14 @@ class MainActivity : AppCompatActivity() {
         requestCode: Int, permissions: Array<out String>, grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_CALL) {
+            val number = pendingCallNumber ?: return
+            pendingCallNumber = null
+            val granted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
+            // Without the call permission, the dial pad with the number filled in.
+            startCall(if (granted) DialerIntents.call(this, number) else DialerIntents.dial(this, number))
+            return
+        }
         if (hasAllPermissions()) {
             refreshConversations()
         }
@@ -445,10 +453,27 @@ class MainActivity : AppCompatActivity() {
             return
         }
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CALL_PHONE), 600)
+            // Placed (or the dial pad opened) once the answer comes back.
+            pendingCallNumber = convo.address
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CALL_PHONE), REQ_CALL)
             return
         }
-        startActivity(Intent(Intent.ACTION_CALL, Uri.parse("tel:${convo.address}")))
+        startCall(DialerIntents.call(this, convo.address))
+    }
+
+    /** The number to call once the call permission is answered. */
+    private var pendingCallNumber: String? = null
+    private val REQ_CALL = 600
+
+    /** Starts a call or dial-pad intent (aimed at the default phone app). */
+    private fun startCall(intent: Intent) {
+        try {
+            startActivity(intent)
+        } catch (e: android.content.ActivityNotFoundException) {
+            android.widget.Toast.makeText(this, "No phone app found", android.widget.Toast.LENGTH_SHORT).show()
+        } catch (e: SecurityException) {
+            android.widget.Toast.makeText(this, "Not allowed to make calls", android.widget.Toast.LENGTH_SHORT).show()
+        }
     }
 
     /** Hands off to Android's own "insert new contact" flow, pre-filled

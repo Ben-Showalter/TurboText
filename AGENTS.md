@@ -117,6 +117,10 @@ message that can't be reacted to); Copy is also in Options.
   - keep pictures within `AttachmentPolicy` (600 KB cap);
   - **picture delivery reports are off by default** (Advanced > Picture Delivery Reports).
 
+**Calls**
+- Every call, dial-pad and call-log intent goes through `DialerIntents`, which aims it at the default phone app.
+  A plain `tel:` intent showed a "which app" chooser when a second phone app was installed.
+
 **Receiving**
 - The **RECEIVE_MMS** permission is required. Without it, Android silently drops every picture message,
   group message and picture delivery report. TurboText asks for it at startup. If it's missing, use
