@@ -17,10 +17,11 @@ class AdvancedSettingsActivity : AppCompatActivity() {
     private lateinit var mmsReportsRow: TextView
     private lateinit var reactionsRow: TextView
     private lateinit var messagesShownRow: TextView
+    private lateinit var clearLearningRow: TextView
     private lateinit var bugReportRow: TextView
     private lateinit var checkUpdatesRow: TextView
     private var currentRow = 0
-    private val rows get() = listOf(defaultAppRow, backgroundHelperRow, trustedNumberRow, mmsReportsRow, reactionsRow, messagesShownRow, bugReportRow, checkUpdatesRow)
+    private val rows get() = listOf(defaultAppRow, backgroundHelperRow, trustedNumberRow, mmsReportsRow, reactionsRow, messagesShownRow, clearLearningRow, bugReportRow, checkUpdatesRow)
     private val lastRow get() = rows.size - 1
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -34,6 +35,7 @@ class AdvancedSettingsActivity : AppCompatActivity() {
         mmsReportsRow = findViewById(R.id.mmsReportsRow)
         reactionsRow = findViewById(R.id.reactionsRow)
         messagesShownRow = findViewById(R.id.messagesShownRow)
+        clearLearningRow = findViewById(R.id.clearLearningRow)
         bugReportRow = findViewById(R.id.bugReportRow)
         checkUpdatesRow = findViewById(R.id.checkUpdatesRow)
 
@@ -45,6 +47,7 @@ class AdvancedSettingsActivity : AppCompatActivity() {
         reactionsRow.setOnClickListener { toggleReactions() }
         updateReactionsRowLabel()
         messagesShownRow.setOnClickListener { cycleMessagesShown() }
+        clearLearningRow.setOnClickListener { confirmClearLearning() }
         updateMessagesShownRowLabel()
         bugReportRow.setOnClickListener { saveBugReport() }
         checkUpdatesRow.setOnClickListener { checkForUpdate() }
@@ -72,6 +75,20 @@ class AdvancedSettingsActivity : AppCompatActivity() {
     private fun toggleMmsReports() {
         SettingsHelper.setMmsDeliveryReports(this, !SettingsHelper.isMmsDeliveryReports(this))
         updateMmsReportsRowLabel()
+    }
+
+    /** T9 Word forgets which words you use most (My Words and contacts
+     *  stay), after a confirmation. */
+    private fun confirmClearLearning() {
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Clear Learned Words?")
+            .setMessage("T9 Word forgets which words you use most. Your own words and contacts stay.")
+            .setPositiveButton("Clear") { _, _ ->
+                T9EngineHolder.get(this).clearLearning()
+                android.widget.Toast.makeText(this, "Learned words cleared", android.widget.Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun updateMessagesShownRowLabel() {
@@ -223,8 +240,9 @@ class AdvancedSettingsActivity : AppCompatActivity() {
                     3 -> toggleMmsReports()
                     4 -> toggleReactions()
                     5 -> cycleMessagesShown()
-                    6 -> saveBugReport()
-                    7 -> checkForUpdate()
+                    6 -> confirmClearLearning()
+                    7 -> saveBugReport()
+                    8 -> checkForUpdate()
                 }
                 return true
             }

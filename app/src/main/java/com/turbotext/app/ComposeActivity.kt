@@ -98,6 +98,7 @@ class ComposeActivity : AppCompatActivity() {
         inputController = T9InputController(
             engine = engine,
             outputView = composeText,
+            initialMode = SettingsHelper.getLastTypingMode(this),
             onModeChanged = { label -> if (!editingRecipient) softLeftLabel.text = label },
             onSuggestionsChanged = { candidates, selected, windowSize -> renderSuggestions(candidates, selected, windowSize) },
             suggestionsBarView = suggestionsBar
@@ -204,6 +205,7 @@ class ComposeActivity : AppCompatActivity() {
                     else -> InputMode.NUMBER
                 }
                 controller.selectMode(newMode)
+                if (!editingRecipient) SettingsHelper.setLastTypingMode(this, newMode)
             }
             .show()
     }
@@ -565,7 +567,8 @@ class ComposeActivity : AppCompatActivity() {
                     KeyEvent.KEYCODE_DEL, KeyEvent.KEYCODE_BACK -> {
                         if (recipientController.hasContent()) {
                             recipientController.onKeyDown(KeyEvent.KEYCODE_DEL, event)
-                        } else {
+                        } else if (event.repeatCount == 0) {
+                            // Only a fresh press leaves, never a held Clear.
                             finish()
                         }
                         return true
@@ -585,6 +588,10 @@ class ComposeActivity : AppCompatActivity() {
             if (event.keyCode == KeyEvent.KEYCODE_DEL || event.keyCode == KeyEvent.KEYCODE_BACK) {
                 if (inputController.hasContent()) {
                     inputController.onKeyDown(KeyEvent.KEYCODE_DEL, event)
+                } else if (event.repeatCount != 0) {
+                    // A held Clear stops at the empty message instead of
+                    // going on to delete the recipient.
+                    return true
                 } else {
                     editingRecipient = true
                     inputController.stopCursorBlink()

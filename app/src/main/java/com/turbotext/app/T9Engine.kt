@@ -206,6 +206,9 @@ class T9Engine(private val context: Context) {
         return results.toList()
     }
 
+    /** Forgets what was learned from typing (uses and word pairs). */
+    fun clearLearning() = predictor.clearLearning()
+
     /** A word was confirmed for these digits — the predictor learns from it. */
     fun recordConfirmed(digits: String, word: String) {
         if (digits.isEmpty() || word.isEmpty() || word == digits) return

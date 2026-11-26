@@ -17,6 +17,10 @@ interface WordPredictor {
 
     fun removeWord(word: String)
 
+    /** Forgets every learned use and word pair (Settings > Advanced >
+     *  Clear Learned Words); My Words and contacts stay. */
+    fun clearLearning() {}
+
     /** True if [word] is in the built-in dictionary, ignoring case. */
     fun isDictionaryWord(word: String): Boolean
 }

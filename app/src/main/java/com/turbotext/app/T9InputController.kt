@@ -130,6 +130,10 @@ class T9InputController(
     private var punctuationList = PunctuationUsage.DEFAULT
     private var punctuationPickerActive = false
     private var punctuationIndex = 0
+
+    /** The word highlighted when '1' was pressed after it, for the
+     *  "word + mark" suggestions (TurboType). */
+    private var wordBeforeMark: String? = null
     private val handler = Handler(Looper.getMainLooper())
     private val multiTapTimeout = Runnable { commitMultiTapChar() }
 
@@ -366,6 +370,24 @@ class T9InputController(
                 render()
                 return true
             }
+            keyCode == KeyEvent.KEYCODE_DPAD_RIGHT && cursor >= committed.length -> {
+                // TurboType: Right at the end of the text works like '#':
+                // a space (confirming a pending abc letter), hold for a new
+                // line. Elsewhere it moves the cursor.
+                if (event.repeatCount == 0) {
+                    digitHoldRunnable?.let { handler.removeCallbacks(it) }
+                    digitHoldRunnable = null
+                    digitHoldKeyCode = null
+                    insertSpace()
+                    if (allowNewLines) {
+                        val runnable = Runnable { triggerPoundHold() }
+                        digitHoldRunnable = runnable
+                        digitHoldKeyCode = keyCode
+                        handler.postDelayed(runnable, longPressWindowMs)
+                    }
+                }
+                return true
+            }
             keyCode == KeyEvent.KEYCODE_DPAD_RIGHT -> {
                 cursor = (cursor + 1).coerceAtMost(committed.length)
                 render()
@@ -437,12 +459,10 @@ class T9InputController(
     private fun triggerDigitHold(digit: Char) {
         when (digit) {
             '1' -> {
-                // Only reachable when pendingDigits was empty at tap time
-                // (see handleDigit) — tap opened the punctuation picker
-                // without inserting anything yet, so just close it, digit
-                // goes in instead. Mid-sequence, '1' already took the
-                // generic path below instead, same as every other digit.
+                // A lone '1' either opened the punctuation picker or (Word
+                // mode) started a "1" sequence: close the one, drop the other.
                 punctuationPickerActive = false
+                if (pendingDigits.isNotEmpty() && pendingDigits.last() == '1') pendingDigits = pendingDigits.dropLast(1)
             }
             else -> {
                 // Covers '0' too — the tap either appended it to
@@ -461,6 +481,12 @@ class T9InputController(
         if (pendingDigits.isEmpty() && caseState == CaseState.CAP_NEXT) {
             caseState = CaseState.LOWER
             onModeChanged(currentLabel())
+        }
+        // TurboType: a word still in progress goes in first, then the
+        // digit (it used to land in front of the half-typed word).
+        if (pendingDigits.isNotEmpty()) {
+            candidateIndex = defaultCandidateIndex(pendingDigits)
+            confirmWord()
         }
         insertAtCursor(digit.toString())
         render()
@@ -512,6 +538,12 @@ class T9InputController(
         // digit; their single-key behavior below only fires when nothing
         // is pending yet.
         if ((digit == '0' || digit == '1') && mode == InputMode.WORD && pendingDigits.isNotEmpty()) {
+            // TurboType: remember which word was highlighted, for its
+            // "word + mark" suggestions (hello. hello, …).
+            if (digit == '1' && marksEnabled() && MarkSuggestions.isWordKeys(pendingDigits)) {
+                punctuationList = PunctuationUsage.order(outputView.context)
+                wordBeforeMark = lookup(pendingDigits).getOrNull(candidateIndex)?.takeIf { it != pendingDigits }
+            }
             pendingDigits += digit
             candidateIndex = defaultCandidateIndex(pendingDigits)
             render()
@@ -522,6 +554,17 @@ class T9InputController(
         // whatever's currently pending in MULTITAP first, so the mark
         // lands after it even if it was never explicitly confirmed. A
         // pending WORD-mode sequence never reaches here — handled above.
+        // TurboType: in Word mode a lone '1' starts a sequence like any
+        // digit, so "112" can be typed as a number. Its suggestions are the
+        // digit 1 on the far left, then the punctuation marks with the
+        // likely one highlighted (MarkSuggestions).
+        if (digit == '1' && mode == InputMode.WORD && marksEnabled()) {
+            punctuationList = PunctuationUsage.order(outputView.context)
+            pendingDigits = "1"
+            candidateIndex = defaultCandidateIndex(pendingDigits)
+            render()
+            return
+        }
         if (digit == '1' && mode != InputMode.NUMBER) {
             if (mode == InputMode.MULTITAP && multiTapKey != null) commitMultiTapChar()
             punctuationList = PunctuationUsage.order(outputView.context)
@@ -655,6 +698,13 @@ class T9InputController(
      *  match instead, falling back to 0 only when the digits are the
      *  only candidate at all (nothing better to default to). */
     private fun defaultCandidateIndex(digits: String): Int {
+        if (marksEnabled() && mode == InputMode.WORD) {
+            // TurboType: a lone '1' highlights the likely mark (the digit
+            // sits one Left press away); a word + '1' highlights the word
+            // with the likely mark, right after the number.
+            if (digits == "1") return 1 + guessPunctuationIndex()
+            if (MarkSuggestions.isWordThenMark(digits)) return if (lookup(digits).size > 1) 1 else 0
+        }
         val candidates = lookup(digits)
         return if (candidates.size > 1 && candidates[0] == digits) 1 else 0
     }
@@ -727,8 +777,18 @@ class T9InputController(
         val baseWord = candidates.getOrNull(candidateIndex)
         val rawWord = baseWord ?: pendingDigits
         if (baseWord != null && learnsWords) {
-            engine.recordConfirmed(pendingDigits, baseWord)
+            when {
+                pendingDigits.none { it == '0' || it == '1' } -> engine.recordConfirmed(pendingDigits, baseWord)
+                // TurboType: "hello." still teaches "hello" for its keys.
+                MarkSuggestions.isWordThenMark(pendingDigits) && baseWord != pendingDigits ->
+                    engine.recordConfirmed(pendingDigits.dropLast(1), baseWord.dropLast(1))
+            }
         }
+        // A mark chosen from the '1' suggestions counts for the mark order.
+        if (baseWord != null && baseWord != pendingDigits && pendingDigits.endsWith('1') && marksEnabled()) {
+            punctuationList.firstOrNull { baseWord.endsWith(it) }?.let { PunctuationUsage.recordUse(outputView.context, it) }
+        }
+        wordBeforeMark = null
         val resolved = resolveWord(rawWord)
         // A candidate that actually resolved to something else (e.g. the
         // recipient field turning a matched contact name into that
@@ -787,6 +847,10 @@ class T9InputController(
     private fun applyWordCasing(word: String, atWordStart: Boolean): String {
         if (word.isEmpty()) return word
         if (caseState == CaseState.LOWER && atWordStart && word.equals("i", ignoreCase = true)) return "I"
+        // TurboType: also "I" followed by a mark (from the word + mark suggestions).
+        if (caseState == CaseState.LOWER && atWordStart && word.length == 2 && word[0].equals('i', ignoreCase = true) &&
+            word.substring(1) in punctuationList
+        ) return "I" + word.substring(1)
         return applyCaseTransform(word)
     }
 
@@ -838,26 +902,38 @@ class T9InputController(
             }
             multiTapKey != null -> {
                 multiTapKey = null
+                handler.removeCallbacks(multiTapTimeout)
             }
             cursor > 0 -> {
-                // Most emoji live outside the Basic Multilingual Plane and
-                // need a surrogate pair (2 Kotlin Chars) to represent one
-                // visible character. Deleting just one left an orphaned,
-                // invalid code unit behind — which is exactly what was
-                // rendering as a tofu/replacement-character glyph, and
-                // also why Clear needed two presses to actually empty the
-                // field (the orphan still counted as content).
-                val deleteCount = if (
-                    cursor >= 2 &&
-                    Character.isLowSurrogate(committed[cursor - 1]) &&
-                    Character.isHighSurrogate(committed[cursor - 2])
-                ) 2 else 1
+                // TurboType: one press removes one whole character, even an
+                // emoji made of several pieces (❤️, skin tones, flags,
+                // families), found with Android's character breaks.
+                val deleteCount = lastCharacterLength(committed.substring(0, cursor))
                 committed.delete(cursor - deleteCount, cursor)
                 cursor -= deleteCount
             }
+            else -> {}
         }
         render()
     }
+
+    /** Length (in UTF-16 units) of the last visible character of [text]. */
+    private fun lastCharacterLength(text: String): Int {
+        if (text.length <= 1) return text.length
+        return try {
+            val bi = android.icu.text.BreakIterator.getCharacterInstance()
+            bi.setText(text)
+            val end = bi.last()
+            (end - bi.preceding(end)).coerceIn(1, text.length)
+        } catch (e: Throwable) {
+            surrogatePairLength(text)
+        }
+    }
+
+    private fun surrogatePairLength(text: String): Int =
+        if (text.length >= 2 && Character.isLowSurrogate(text[text.length - 1]) &&
+            Character.isHighSurrogate(text[text.length - 2])
+        ) 2 else 1
 
     /** '*' cycles casing within Word/Multitap — LOWER -> CAP_NEXT ->
      *  ALL_CAPS -> Emoji -> LOWER — and does nothing in Number mode (no
@@ -893,7 +969,12 @@ class T9InputController(
     /** Called with the result of voice recognition to insert spoken text
      *  at the cursor. */
     fun appendVoiceResult(text: String) {
-        val needsLeadingSpace = cursor > 0 && committed.getOrNull(cursor - 1) != ' '
+        // TurboType: the word still being typed goes in first, so the
+        // dictated text lands after it, not before; and a space is only
+        // added when the character before isn't already a space or a new
+        // line.
+        confirmPending()
+        val needsLeadingSpace = cursor > 0 && committed.getOrNull(cursor - 1)?.isWhitespace() == false
         insertAtCursor((if (needsLeadingSpace) " " else "") + text)
         render()
     }
@@ -947,9 +1028,21 @@ class T9InputController(
     /** Every candidate lookup goes through here so the engine knows the
      *  word before the cursor (used for TT9-style word-pair ordering). */
     private fun lookup(digits: String): List<String> {
+        if (marksEnabled() && mode == InputMode.WORD) {
+            MarkSuggestions.forDigits(
+                digits, punctuationList, punctuationList.getOrNull(guessPunctuationIndex()) ?: ".", wordBeforeMark
+            ) { keys ->
+                if (learnsWords) engine.setPreviousWord(previousWordBeforeCursor())
+                candidateProvider(keys)
+            }.let { if (it != null) return it }
+        }
         if (learnsWords) engine.setPreviousWord(previousWordBeforeCursor())
         return candidateProvider(digits)
     }
+
+    /** The '1' / number / word + mark suggestions (TurboType) are for typed
+     *  text, not the recipient field, which shows raw digits. */
+    private fun marksEnabled() = !previewRawDigits
 
     /** The whole word immediately before the cursor, or null when the
      *  cursor is mid-word (a compound) or at the very start. */
@@ -967,6 +1060,10 @@ class T9InputController(
         val candidates = if (pendingDigits.isNotEmpty()) lookup(pendingDigits) else emptyList()
         val preview = when {
             punctuationPickerActive -> punctuationList[punctuationIndex]
+            // TurboType: a multitap letter still being chosen stays visible
+            // when anything redraws (pressing * mid-letter used to hide it).
+            multiTapKey != null -> engine.multiTapCharsFor(multiTapKey!!).getOrNull(multiTapIndex)
+                ?.let { applyCaseTransform(it) }.orEmpty()
             pendingDigits.isNotEmpty() && previewRawDigits -> pendingDigits
             pendingDigits.isNotEmpty() -> {
                 val best = candidates.getOrNull(candidateIndex) ?: pendingDigits

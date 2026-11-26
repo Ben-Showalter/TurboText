@@ -341,6 +341,16 @@ class Tt9WordEngine(private val context: Context, private val digitCode: (String
 
     override fun isDictionaryWord(word: String): Boolean = indexOf(word) != null
 
+    override fun clearLearning() {
+        uses.clear()
+        pairs.clear()
+        val edit = freqPrefs.edit()
+        for (k in freqPrefs.all.keys) if (k.startsWith("u:") || k.startsWith("w:")) edit.remove(k)
+        edit.putBoolean("uses_migrated", true).apply()
+        pairPrefs.edit().remove("pairs").apply()
+        lastKey = null
+    }
+
     override fun removeWord(word: String) {
         val seq = digitCode(word)
         customBySeq[seq]?.removeAll { it.equals(word, ignoreCase = true) }

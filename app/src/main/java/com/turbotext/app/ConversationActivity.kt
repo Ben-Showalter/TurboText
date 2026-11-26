@@ -105,6 +105,7 @@ class ConversationActivity : AppCompatActivity() {
         inputController = T9InputController(
             engine = engine,
             outputView = composeText,
+            initialMode = SettingsHelper.getLastTypingMode(this),
             // While a message is selected this softkey is Search instead.
             onModeChanged = { label -> if (selectedMessageIndex == null) softLeftLabel.text = label },
             onSuggestionsChanged = { candidates, selected, windowSize -> renderSuggestions(candidates, selected, windowSize) },
@@ -386,6 +387,7 @@ class ConversationActivity : AppCompatActivity() {
                     else -> InputMode.NUMBER
                 }
                 inputController.selectMode(newMode)
+                SettingsHelper.setLastTypingMode(this, newMode)
             }
             .show()
     }
@@ -1298,8 +1300,11 @@ class ConversationActivity : AppCompatActivity() {
                     // everything character by character first. Handling
                     // BACK the same as DEL here because on this phone the
                     // physical Clear key sends KEYCODE_BACK, not KEYCODE_DEL.
+                    // Only a fresh press leaves (TurboType): a held Clear
+                    // keeps deleting and stops at the start, rather than
+                    // leaving the conversation part way through the hold.
                     if (inputController.isCursorAtStart()) {
-                        finish()
+                        if (event.repeatCount == 0) finish()
                     } else {
                         inputController.onKeyDown(KeyEvent.KEYCODE_DEL, event)
                     }

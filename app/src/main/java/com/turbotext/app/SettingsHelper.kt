@@ -77,6 +77,16 @@ object SettingsHelper {
     /** Ask the carrier for a delivery report on picture messages (the
      *  "Delivered" label). Off by default: older TurboText and DPAD never
      *  asked, and picture failures to iPhones began after it was turned on. */
+    /** The letter mode last chosen for messages (T9 Word or ABC), so it
+     *  carries over between conversations and restarts (TurboType). */
+    fun getLastTypingMode(context: Context): InputMode =
+        if (prefs(context).getString("last_typing_mode", null) == "MULTITAP") InputMode.MULTITAP else InputMode.WORD
+
+    fun setLastTypingMode(context: Context, mode: InputMode) {
+        if (mode == InputMode.NUMBER) return
+        prefs(context).edit().putString("last_typing_mode", mode.name).apply()
+    }
+
     fun isMmsDeliveryReports(context: Context): Boolean =
         prefs(context).getBoolean("mms_delivery_reports", false)
 

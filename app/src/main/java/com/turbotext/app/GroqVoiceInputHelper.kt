@@ -38,6 +38,12 @@ class GroqVoiceInputHelper(private val context: Context) {
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
+    /** Bumped by cancelRecording(), so an upload already under way is
+     *  dropped and its text never lands after you've moved on (TurboType). */
+    @Volatile private var generation = 0
+
+    val isRecording: Boolean get() = recorder != null
+
     /** Call on key-down. Returns false if recording couldn't start, so
      *  the caller can decide how to handle that. Always the phone's mic. */
     fun startRecording(): Boolean {
@@ -65,6 +71,7 @@ class GroqVoiceInputHelper(private val context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "startRecording failed", e)
             recorder = null
+            file.delete()
             false
         }
     }
@@ -75,6 +82,7 @@ class GroqVoiceInputHelper(private val context: Context) {
         val mr = recorder
         val file = outputFile
         recorder = null
+        outputFile = null
         if (mr == null || file == null) {
             onError("Recording didn't start")
             return
@@ -93,10 +101,16 @@ class GroqVoiceInputHelper(private val context: Context) {
         mr.release()
         Log.i(TAG, "recording stopped, uploading ${file.length()} bytes")
 
-        if (GroqConfig.getApiKey(context).isBlank() || GroqConfig.getApiKey(context) == "PUT_YOUR_GROQ_API_KEY_HERE") {
-            onError("No Groq API key set yet — see README")
+        // Read once per upload, never logged.
+        val apiKey = GroqConfig.getApiKey(context)
+        if (apiKey.isBlank() || apiKey == "PUT_YOUR_GROQ_API_KEY_HERE") {
+            onError("No API key")
             file.delete()
             return
+        }
+        val myGeneration = generation
+        fun deliver(block: () -> Unit) {
+            mainHandler.post { if (myGeneration == generation) block() }
         }
 
         Thread {
@@ -125,28 +139,34 @@ class GroqVoiceInputHelper(private val context: Context) {
 
                 val request = Request.Builder()
                     .url("https://api.groq.com/openai/v1/audio/transcriptions")
-                    .addHeader("Authorization", "Bearer ${GroqConfig.getApiKey(context)}")
+                    .addHeader("Authorization", "Bearer $apiKey")
                     .post(requestBody)
                     .build()
 
                 client.newCall(request).execute().use { response ->
                     val bodyStr = response.body?.string() ?: ""
                     if (!response.isSuccessful) {
-                        Log.e(TAG, "Groq error ${response.code}: $bodyStr")
-                        mainHandler.post { onError("Groq error ${response.code} — check your API key / internet") }
+                        Log.e(TAG, "Groq error ${response.code}")
+                        // Short plain words for the status line (TurboType).
+                        val message = when (response.code) {
+                            401, 403 -> "Voice key not accepted"
+                            429 -> "Voice limit reached, try later"
+                            else -> "Voice service error ${response.code}"
+                        }
+                        deliver { onError(message) }
                         return@Thread
                     }
                     val text = JSONObject(bodyStr).optString("text").trim()
                     Log.i(TAG, "Groq transcription: ${text.length} chars")
-                    if (text.isNotEmpty()) VibrationPatterns.tick(context, 40)
-                    mainHandler.post { onResult(text) }
+                    if (text.isNotEmpty() && myGeneration == generation) VibrationPatterns.tick(context, 40)
+                    deliver { onResult(text) }
                 }
             } catch (e: IOException) {
                 Log.e(TAG, "network error", e)
-                mainHandler.post { onError("No internet connection reached Groq") }
+                deliver { onError("No internet") }
             } catch (e: Exception) {
                 Log.e(TAG, "transcription error", e)
-                mainHandler.post { onError("Voice error: ${e.message}") }
+                deliver { onError("Voice error") }
             } finally {
                 file.delete()
                 trimmedFile.delete()
@@ -156,6 +176,7 @@ class GroqVoiceInputHelper(private val context: Context) {
 
     /** Discards an in-progress recording without sending it anywhere. */
     fun cancelRecording() {
+        generation++
         try {
             recorder?.stop()
         } catch (e: Exception) {

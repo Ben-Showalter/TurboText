@@ -37,6 +37,10 @@ not be able to push there yourself.
   - Groq dictation and translation;
   - in-app updates from GitHub Releases;
   - alerts on the outer screen.
+- **TurboType** (`Ben-Showalter/TurboType`) is the sister keyboard: a system keyboard built from TurboText's
+  typing code. Keyboard fixes flow both ways. TurboType's `1`-key number and word + mark suggestions, whole-emoji
+  delete, safe held Clear and voice fixes were brought back (`MarkSuggestions`, `T9InputController`). Word ranking
+  flows **from** TurboText (`WordRanking`) **to** TurboType, never back.
 - **Flip Launcher** (`Ben-Showalter/flip-launcher`) has no direct link to TurboText. It opens the default
   texting app, and counts and reads aloud TurboText's notifications through its notification listener. So
   notification changes affect the launcher.
