@@ -100,8 +100,12 @@ object MmsTransmitter {
         groupMms: Boolean,
         subscriptionId: Int = com.klinker.android.send_message.Settings.DEFAULT_SUBSCRIPTION_ID
     ): Uri? {
+        // "+1 269-359-3836" went out as an unknown address and Verizon
+        // refused the picture (0x84): send plain "+digits" (MmsAddress).
+        val to = recipients.map { MmsAddress.clean(it) }
+        AppLog.event("Mms", "to: " + recipients.zip(to).joinToString { (a, b) -> MmsAddress.describe(a, b) })
         return try {
-            sendInternal(context, recipients, body, parts, subscriptionId, groupMms)
+            sendInternal(context, to, body, parts, subscriptionId, groupMms)
         } catch (e: Exception) {
             Log.e(TAG, "MmsTransmitter: send failed", e)
             null

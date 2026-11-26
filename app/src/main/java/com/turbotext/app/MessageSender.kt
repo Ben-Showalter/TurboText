@@ -103,6 +103,8 @@ object MessageSender {
         // Group recipients go out in one consistent format — a test showed
         // "(555) 491-8332" and "+1 555-535-6558" in the same send, and only
         // one of them being handled correctly.
+        // Every picture message's recipients are cleaned in MmsTransmitter
+        // (MmsAddress); groups are also put in one consistent format here.
         val to = if (route == Route.MMS_GROUP) cleaned.map { repo.normalizePhoneNumber(it) } else cleaned
         onStatus("Sending…")
         val uri = MmsTransmitter.send(context, to, body, parts, groupMms = route == Route.MMS_GROUP)

@@ -114,6 +114,10 @@ message that can't be reacted to); Copy is also in Options.
     learned, read the way Signal does), and on Verizon's network add `X-VzW-MDN` with it (`VerizonNetwork`)
     when mms_config has none. US Mobile's SIM has no mms_config headers, and without our number Verizon refused
     pictures with 0x84 "sender address unresolved";
+  - **recipients must be plain `+digits`** (`MmsAddress.clean`, applied in `MmsTransmitter.send`). The MMS
+    library only marks digits, "+", "-" and "." as a phone number; "+1 269-359-3836" went out as an unknown
+    address and Verizon refused it with 0x84. The same contact's address is written differently depending on
+    how the conversation was opened, so this looked random;
   - keep pictures within `AttachmentPolicy` (600 KB cap);
   - **picture delivery reports are off by default** (Advanced > Picture Delivery Reports).
 
